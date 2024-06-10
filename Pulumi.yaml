@@ -1,0 +1,10 @@
+name: cape-cod
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: CAPE IaC deployment project
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: ""
