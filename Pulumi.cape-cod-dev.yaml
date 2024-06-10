@@ -1,3 +1,12 @@
 encryptionsalt: v1:PZ8pzBjNSVk=:v1:SGEZ1sCsg7aCAu5i:Ntz5ud8IjMsY1H5RLI/n6zmuuIK9sQ==
 config:
-  aws:region: us-east-2
+    aws:region: us-east-2
+    cape-cod:meta:
+        glue:
+            etl:
+                - name: gphl-cre-alert-etl
+                  key: glue/etl/etl_gphl_cre_alert.py
+                  srcpth: ./assets/etl/etl_gphl_cre_alert.py
+                - name: tnl-alert-etl
+                  key: glue/etl/etl_tnl_alert.py
+                  srcpth: ./assets/etl/etl_tnl_alert.py
