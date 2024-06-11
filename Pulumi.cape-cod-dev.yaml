@@ -10,3 +10,29 @@ config:
                 - name: tnl-alert-etl
                   key: glue/etl/etl_tnl_alert.py
                   srcpth: ./assets/etl/etl_tnl_alert.py
+    cape-cod:datalakehouse:
+        tributaries:
+            - name: hai
+              buckets:
+                  raw:
+                      name:
+                      crawler:
+                  clean:
+                      name:
+                      crawler:
+                          classifier: cape-csv-standard-classifier
+              glue:
+                  - name: tnl
+                    script: glue/etl/etl_tnl_alert.py
+                    prefix: tnl
+                    suffixes:
+                        - xlsx
+                    pymodules:
+                        - openpyxl==3.1.2
+                  - name: gphl-cre
+                    script: glue/etl/etl_gphl_cre_alert.py
+                    prefix: gphl-cre
+                    suffixes:
+                        - docx
+                    pymodules:
+                        - python-docx==1.1.2
