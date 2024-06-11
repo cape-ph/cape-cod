@@ -129,6 +129,36 @@ class DatalakeHouse(ComponentResource):
         self.register_outputs({"datalakehouse_name": self.name})
 
 
+class CatalogDatabase(ComponentResource):
+    """The metadata catalog for the datalake house."""
+
+    def __init__(
+        self,
+        name: str,
+        bucket: aws.s3.BucketV2,
+        location="database",
+        opts=None,
+    ):
+        # By calling super(), we ensure any instantiation of this class
+        # inherits from the ComponentResource class so we don't have to declare
+        # all the same things all over again.
+        super().__init__("capeinfra:datalake:CatalogDatabase", name, None, opts)
+
+        self.name = f"{name}"
+
+        # The parent part of the resource definition ensures the new component
+        # resource acts like anything else in the Pulumi ecosystem when being
+        # called in code.
+        self.catalog_database = aws.glue.CatalogDatabase(
+            self.name,
+            location_uri=bucket.bucket.apply(lambda b: f"s3://{b}/{location}"),
+            opts=ResourceOptions(parent=self),
+        )
+        # We also need to register all the expected outputs for this component
+        # resource that will get returned by default.
+        self.register_outputs({"catalog_database_name": self.catalog_database.name})
+
+
 class Tributary(ComponentResource):
     """Represents a single domain in the data lake.
 
@@ -160,11 +190,8 @@ class Tributary(ComponentResource):
         self.name = f"{name}-tributary"
         self.catalog = db
 
-        # TODO: fill in the constituent parts of the tributary and register
-        #       self as their parent
-        # - raw
-        # - clean
-        # - crawler (raw and clean iff configured)
+        # configure the raw/clean buckets for the tributary. this will go down
+        # into the crawlers for the buckets as well (IFF configured)
         self.buckets = {}
         buckets_cfg = cfg.get("buckets", {})
         for bucket_type in [Tributary.RAW, Tributary.CLEAN]:
@@ -176,7 +203,15 @@ class Tributary(ComponentResource):
         self.register_outputs({"tributary_name": self.name})
 
     def configure_bucket(self, bucket_type: str, bucket_cfg: dict):
-        """"""
+        """Creates/configures a raw or clean bucket based on config values.
+
+        If a crawler is configured for the bucket, this will be added as well.
+
+        Args:
+            bucket_type: The type ('raw'/'clean') of the bucket being created.
+            bucket_cfg: The config dict for te bucket, as specified in the
+                        pulumi stack config.
+        """
         bucket_name = bucket_cfg.get("name") or f"{self.name}-{bucket_type}-bucket"
         self.buckets[bucket_type] = VersionedBucket(
             bucket_name,
@@ -188,7 +223,14 @@ class Tributary(ComponentResource):
         )
 
     def configure_crawler(self, name: str, bucket: aws.s3.BucketV2, crawler_cfg: dict):
-        """"""
+        """Creates/configures a crawler for a bucket based on config values.
+
+        Args:
+            name: The resource name for the crawler.
+            bucket: The bucket to be crawled.
+            crawler_cfg: The config dict for the crawler as specified in the
+                         pulumi stack config.
+        """
         if crawler_cfg:
             crawler = Crawler(
                 name,
@@ -201,38 +243,8 @@ class Tributary(ComponentResource):
             # crawler.add_trigger_function()
 
 
-class CatalogDatabase(ComponentResource):
-    """The metadata catalog for the datalake house."""
-
-    def __init__(
-        self,
-        name: str,
-        bucket: aws.s3.BucketV2,
-        location="database",
-        opts=None,
-    ):
-        # By calling super(), we ensure any instantiation of this class
-        # inherits from the ComponentResource class so we don't have to declare
-        # all the same things all over again.
-        super().__init__("capeinfra:datalake:CatalogDatabase", name, None, opts)
-
-        self.name = f"{name}"
-
-        # The parent part of the resource definition ensures the new component
-        # resource acts like anything else in the Pulumi ecosystem when being
-        # called in code.
-        self.catalog_database = aws.glue.CatalogDatabase(
-            self.name,
-            location_uri=bucket.bucket.apply(lambda b: f"s3://{b}/{location}"),
-            opts=ResourceOptions(parent=self),
-        )
-        # We also need to register all the expected outputs for this component
-        # resource that will get returned by default.
-        self.register_outputs({"catalog_database_name": self.catalog_database.name})
-
-
 class Crawler(ComponentResource):
-    """"""
+    """A crawler for object storage."""
 
     def __init__(
         self,
@@ -297,6 +309,9 @@ class Crawler(ComponentResource):
             ),
             opts=ResourceOptions(parent=self),
         )
+
+        # if we have specified custom classifiers in the config, get the actual
+        # names for them from our mapping.
         custom_classifiers = (
             [
                 CUSTOM_CLASSIFIERS[c].name
@@ -306,6 +321,7 @@ class Crawler(ComponentResource):
             if classifiers
             else []
         )
+
         self.crawler = aws.glue.Crawler(
             self.name,
             role=self.role.arn,
@@ -319,6 +335,7 @@ class Crawler(ComponentResource):
             classifiers=custom_classifiers,
             opts=ResourceOptions(parent=self),
         )
+
         # We also need to register all the expected outputs for this component resource that will get returned by default.
         self.register_outputs({"crawler_name": self.crawler.name})
 
