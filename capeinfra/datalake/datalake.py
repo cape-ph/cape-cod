@@ -34,8 +34,7 @@ class DatalakeHouse(ComponentResource):
 
         catalog_name = f"{self.name}-catalog"
 
-        # first we need to create an object storage location for the metadata
-        # catalog to live in
+        # create an object storage location for the metadata catalog to live in
         # NOTE: this object storage will change often and the concept of
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
@@ -43,15 +42,32 @@ class DatalakeHouse(ComponentResource):
             f"{catalog_name}-bucket", opts=ResourceOptions(parent=self)
         )
 
-        # next we need to create the metadata catalog database
+        # and the metadata catalog database itself
         self.catalog = CatalogDatabase(
             catalog_name,
             self.catalog_bucket,
             location=f"{catalog_name}-database",
         )
 
-        # TODO: fill in the constituent parts of the lakehouse and register
-        #       self as their parent
+        athena_prefix = f"{self.name}-athena"
+
+        # like the catalog, athena results require an object storage location
+        # NOTE: this object storage will change often and the concept of
+        #       versions of the database doesn't really make sense. so
+        #       this is not versioned object storage
+        self.athena_results_bucket = aws.s3.BucketV2("f{athena_prefix}-bucket")
+        aws.athena.Workgroup(
+            f"{athena_prefix}-workgroup",
+            configuration=aws.athena.WorkgroupConfigurationArgs(
+                enforce_workgroup_configuration=True,
+                result_configuration=aws.athena.WorkgroupConfigurationResultConfigurationArgs(
+                    output_location=self.athena_results_bucket.bucket.apply(
+                        lambda b: f"s3://{b}/output"
+                    )
+                ),
+            ),
+        )
+        # TODO: tributaries
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -104,7 +120,6 @@ class CatalogDatabase(ComponentResource):
         # By calling super(), we ensure any instantiation of this class
         # inherits from the ComponentResource class so we don't have to declare
         # all the same things all over again.
-        # TODO: Decide on our replacement for `pkg:index` here.
         super().__init__("capeinfra:datalake:CatalogDatabase", name, None, opts)
 
         self.name = f"{name}"
