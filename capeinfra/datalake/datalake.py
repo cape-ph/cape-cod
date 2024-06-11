@@ -48,8 +48,6 @@ CUSTOM_CLASSIFIERS = {
 #   - all tributaries/lochs (based on config)
 #   - athena results bucket
 # - figure out where roles/perms fit in here
-# - make issue for sns queue instead of notifications
-# - make issue for fixing up assets in this repo (should come from elsewhere)
 
 
 class DatalakeHouse(ComponentResource):
@@ -110,7 +108,8 @@ class DatalakeHouse(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        # TODO: tributaries
+        # create the parts of the datalake from the tributary configuration
+        # (e.g. hai, genomics, etc)
         tributary_config = datalake_config.get("tributaries")
         self.tributaries = []
         if tributary_config:
@@ -239,8 +238,7 @@ class Tributary(ComponentResource):
                 classifiers=crawler_cfg.get("classifiers", []),
                 opts=ResourceOptions(parent=self),
             )
-            # TODO: wire this up once buckets are good
-            # crawler.add_trigger_function()
+            crawler.add_trigger_function()
 
 
 class Crawler(ComponentResource):
@@ -340,7 +338,8 @@ class Crawler(ComponentResource):
         self.register_outputs({"crawler_name": self.crawler.name})
 
     def add_trigger_function(self):
-        """"""
+        """Adds a trigger function for lambda to kick off the crawler."""
+
         crawler_trigger_role = aws.iam.Role(
             f"{self.name}-lambda-trigger-role",
             assume_role_policy=json.dumps(
@@ -355,6 +354,7 @@ class Crawler(ComponentResource):
                     ],
                 }
             ),
+            opts=ResourceOptions(parent=self),
         )
         # Attach the Lambda service role for logging privileges
         aws.iam.RolePolicyAttachment(
@@ -387,7 +387,7 @@ class Crawler(ComponentResource):
         )
         # Create our Lambda function that triggers the given glue job
         self.trigger_function = aws.lambda_.Function(
-            f"{self.name}-lambda-trigger-function",
+            f"{self.name}-lambda-function",
             role=crawler_trigger_role.arn,
             code=AssetArchive(
                 {
@@ -412,16 +412,15 @@ class Crawler(ComponentResource):
         # Give our function permission to invoke
         # Add a bucket notification to trugger our lambda automatically
         for bucket in self.buckets:
-            bucket_name = bucket.bucket.apply(lambda b: f"{b}")
             crawler_function_permission = aws.lambda_.Permission(
-                f"{self.name}-{bucket_name}-allow-lambda",
+                f"{self.name}-allow-lambda",
                 action="lambda:InvokeFunction",
                 function=self.trigger_function.arn,
                 principal="s3.amazonaws.com",
                 source_arn=bucket.arn,
             )
             aws.s3.BucketNotification(
-                f"{self.name}-{bucket_name}-bucket-notification",
+                f"{self.name}-bucket-notification",
                 bucket=bucket.id,
                 lambda_functions=[
                     aws.s3.BucketNotificationLambdaFunctionArgs(
