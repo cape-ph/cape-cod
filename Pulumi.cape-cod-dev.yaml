@@ -20,19 +20,22 @@ config:
                   clean:
                       name:
                       crawler:
-                          classifier: cape-csv-standard-classifier
-              glue:
-                  - name: tnl
-                    script: glue/etl/etl_tnl_alert.py
-                    prefix: tnl
-                    suffixes:
-                        - xlsx
-                    pymodules:
-                        - openpyxl==3.1.2
-                  - name: gphl-cre
-                    script: glue/etl/etl_gphl_cre_alert.py
-                    prefix: gphl-cre
-                    suffixes:
-                        - docx
-                    pymodules:
-                        - python-docx==1.1.2
+                          classifiers:
+                              - cape-csv-standard-classifier
+              pipelines:
+                  data:
+                      etl:
+                          - name: tnl
+                            script: glue/etl/etl_tnl_alert.py
+                            prefix: tnl
+                            suffixes:
+                                - xlsx
+                            pymodules:
+                                - openpyxl==3.1.2
+                          - name: gphl-cre
+                            script: glue/etl/etl_gphl_cre_alert.py
+                            prefix: gphl-cre
+                            suffixes:
+                                - docx
+                            pymodules:
+                                - python-docx==1.1.2
