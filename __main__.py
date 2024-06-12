@@ -11,4 +11,6 @@ from capeinfra.meta.capemeta import CapeMeta
 CAPE_STACK_NS = pulumi.get_stack()
 
 cape_meta = CapeMeta(f"{CAPE_STACK_NS}-meta")
-datalake_house = DatalakeHouse(f"{CAPE_STACK_NS}-datalakehouse")
+datalake_house = DatalakeHouse(
+    f"{CAPE_STACK_NS}-datalakehouse", cape_meta.automation_assets_bucket.bucket
+)
