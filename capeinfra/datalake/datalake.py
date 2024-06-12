@@ -56,6 +56,7 @@ class DatalakeHouse(ComponentResource):
     def __init__(
         self,
         name: str,
+        auto_assets_bucket: aws.s3.BucketV2,
         opts=None,
     ):
         # By calling super(), we ensure any instantiation of this class
@@ -119,6 +120,7 @@ class DatalakeHouse(ComponentResource):
                         trib_config.get("name"),
                         trib_config,
                         self.catalog.catalog_database,
+                        auto_assets_bucket,
                         opts=ResourceOptions(parent=self),
                     )
                 )
@@ -179,6 +181,7 @@ class Tributary(ComponentResource):
         name: str,
         cfg: dict,
         db: aws.glue.CatalogDatabase,
+        auto_assets_bucket: aws.s3.BucketV2,
         opts=None,
     ):
         # By calling super(), we ensure any instantiation of this class
@@ -196,6 +199,27 @@ class Tributary(ComponentResource):
         for bucket_type in [Tributary.RAW, Tributary.CLEAN]:
             bucket_cfg = buckets_cfg.get(bucket_type, {})
             self.configure_bucket(bucket_type, bucket_cfg)
+
+        # now setup any configured ETL jobs for the tributary
+        etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", [])
+        lambda_perms = []
+        lambda_funct_args = []
+        for etl_cfg in etl_cfgs:
+            lperm, largs = self.configure_etl(etl_cfg, auto_assets_bucket)
+            if lperm:
+                lambda_perms.append(lperm)
+            if largs:
+                lambda_funct_args.append(largs)
+
+        # Add a bucket notification to trigger our ETL functions automatically
+        # if they were configured
+        if lambda_funct_args:
+            aws.s3.BucketNotification(
+                f"{cfg['name']}-raw-bucket-notification",
+                bucket=self.buckets[Tributary.RAW].bucket.id,
+                lambda_functions=lambda_funct_args,
+                opts=ResourceOptions(depends_on=lambda_perms, parent=self),
+            )
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -239,6 +263,37 @@ class Tributary(ComponentResource):
                 opts=ResourceOptions(parent=self),
             )
             crawler.add_trigger_function()
+
+    def configure_etl(self, cfg, auto_assets_bucket: aws.s3.BucketV2):
+        """Configure an ETL job.
+
+        Args:
+            cfg: The ETL configuration from the pulumi config.
+            auto_assets_bucket: The BucketV2 instance that contains the
+                                automation assets.
+        """
+        etl_job = Job(
+            cfg["name"],
+            self.buckets[Tributary.RAW].bucket,
+            self.buckets[Tributary.CLEAN].bucket,
+            auto_assets_bucket,
+            cfg["script"],
+            default_args={
+                "--additional-python-modules": ",".join(cfg["pymodules"]),
+                "--CLEAN_BUCKET_NAME": self.buckets[Tributary.CLEAN].bucket.bucket,
+            },
+        )
+
+        etl_lambda_function, etl_lambda_permission = etl_job.add_trigger_function()
+
+        etl_lambda_function_args = aws.s3.BucketNotificationLambdaFunctionArgs(
+            events=["s3:ObjectCreated:*"],
+            lambda_function_arn=etl_lambda_function.arn,
+            filter_prefix=cfg["prefix"],
+            filter_suffix=",".join(f".{s}" for s in cfg["suffixes"]),
+        )
+
+        return etl_lambda_permission, etl_lambda_function_args
 
 
 class Crawler(ComponentResource):
@@ -430,3 +485,189 @@ class Crawler(ComponentResource):
                 ],
                 opts=ResourceOptions(depends_on=[crawler_function_permission]),
             )
+
+
+class Job(ComponentResource):
+    def __init__(
+        self,
+        name: str,
+        raw_bucket: aws.s3.BucketV2,
+        clean_bucket: aws.s3.BucketV2,
+        script_bucket: aws.s3.BucketV2,
+        script_path: str,
+        default_args: dict | None = None,
+        opts=None,
+    ):
+        # By calling super(), we ensure any instantiation of this class
+        # inherits from the ComponentResource class so we don't have to declare
+        # all the same things all over again.
+        super().__init__("capeinfra:datalake:Job", name, None, opts)
+
+        self.name = f"{name}-etl-job"
+        self.raw_bucket = raw_bucket
+        self.clean_bucket = clean_bucket
+
+        self.role = aws.iam.Role(
+            f"{self.name}-role",
+            assume_role_policy=json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "glue.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ],
+                }
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.role_policy = aws.iam.RolePolicy(
+            f"{self.name}-role-policy",
+            role=self.role.id,
+            policy=Output.all(
+                raw_bucket=raw_bucket.bucket,
+                clean_bucket=clean_bucket.bucket,
+                script_bucket=script_bucket.bucket,
+            ).apply(
+                lambda args: json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:PutLogEvents",
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                ],
+                                "Resource": "arn:aws:logs:*:*:*",
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": ["s3:GetObject"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{args['script_bucket']}/{script_path}",
+                                    f"arn:aws:s3:::{args['raw_bucket']}/*",
+                                    f"arn:aws:s3:::{args['raw_bucket']}",
+                                ],
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": ["s3:PutObject"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{args['clean_bucket']}/*",
+                                    f"arn:aws:s3:::{args['clean_bucket']}",
+                                ],
+                            },
+                        ],
+                    }
+                )
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.job = aws.glue.Job(
+            self.name,
+            role_arn=self.role.arn,
+            command=aws.glue.JobCommandArgs(
+                script_location=script_bucket.bucket.apply(
+                    lambda b: f"s3://{b}/{script_path}"
+                ),
+                python_version="3",
+            ),
+            default_arguments=default_args,
+            execution_property=aws.glue.JobExecutionPropertyArgs(
+                # TODO: this number is just pulled out of thin air to allow more
+                #       than one to run at a time. we should figure out what a good
+                #       number really is.
+                max_concurrent_runs=5,
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+        self.register_outputs({"job_name": self.job.name})
+
+    def add_trigger_function(self):
+        """"""
+        etl_role = aws.iam.Role(
+            f"{self.name}-lambda-trigger-role",
+            assume_role_policy=json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "lambda.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ],
+                }
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Attach the Lambda service role for logging privileges
+        aws.iam.RolePolicyAttachment(
+            f"{self.name}-lambda-service-role-attachment",
+            role=etl_role.name,
+            policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Attach the Lambda service role for logging privileges
+        aws.iam.RolePolicy(
+            f"{self.name}-lambda-role-policy",
+            role=etl_role.id,
+            policy=self.job.name.apply(
+                lambda glue_job: json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": ["glue:StartJobRun", "glue:GetJobRun"],
+                                "Resource": [f"arn:aws:glue:*:*:job/{glue_job}"],
+                            },
+                        ],
+                    }
+                )
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Create our Lambda function that triggers the given glue job
+        etl_function = aws.lambda_.Function(
+            f"{self.name}-lambda-trigger-function",
+            role=etl_role.arn,
+            code=AssetArchive(
+                {"index.py": FileAsset("./assets/lambda/hai_lambda_glue_trigger.py")}
+            ),
+            runtime="python3.11",
+            # in this case, the zip file for the lambda deployment is
+            # being created by this code. and the zip file will be
+            # called index. so the handler must be start with `index`
+            # and the actual function in the script must be named
+            # the same as the value here
+            handler="index.index_handler",
+            environment={
+                "variables": {
+                    "GLUE_JOB_NAME": self.job.name,
+                    "RAW_BUCKET_NAME": self.raw_bucket.bucket,
+                }
+            },
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Give our function permission to invoke
+        etl_permission = aws.lambda_.Permission(
+            f"{self.name}-allow-raw-bucket-etl-lambda",
+            action="lambda:InvokeFunction",
+            function=etl_function.arn,
+            principal="s3.amazonaws.com",
+            source_arn=self.raw_bucket.arn,
+            opts=ResourceOptions(parent=self),
+        )
+
+        return etl_function, etl_permission
