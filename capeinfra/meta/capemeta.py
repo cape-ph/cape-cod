@@ -7,15 +7,12 @@ from ..objectstorage import VersionedBucket
 
 
 class CapeMeta(ComponentResource):
+
     def __init__(self, name, opts=None):
         # By calling super(), we ensure any instantiation of this class
         # inherits from the ComponentResource class so we don't have to declare
         # all the same things all over again.
         super().__init__("capeinfra:meta:capemeta:CapeMeta", name, None, opts)
-
-        # TODO:
-        # - automation asset bucket (scripts, etc)
-        # - etl scripts (until we have these repos deploying themselves)
 
         # The parent part of the resource definition ensures the new component
         # resource acts like anything else in the Pulumi ecosystem when being
@@ -41,7 +38,5 @@ class CapeMeta(ComponentResource):
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs(
-            {
-                "{name}-automation_assets_bucket_name": self.automation_assets_bucket.bucket
-            }
+            {"cape-meta-automation-assets-bucket": self.automation_assets_bucket.bucket}
         )
