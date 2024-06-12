@@ -8,7 +8,7 @@ from capeinfra.pipeline.data import DataCrawler, EtlJob
 
 
 class DatalakeHouse(ComponentResource):
-    """Top level object in the CAPE infrastructure for data storage."""
+    """Top level object in the CAPE infrastructure for datalake storage."""
 
     def __init__(
         self,
@@ -16,9 +16,7 @@ class DatalakeHouse(ComponentResource):
         auto_assets_bucket: aws.s3.BucketV2,
         opts=None,
     ):
-        # By calling super(), we ensure any instantiation of this class
-        # inherits from the ComponentResource class so we don't have to declare
-        # all the same things all over again.
+        # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:datalake:DatalakeHouse", name, None, opts)
 
         self.name = f"{name}"
@@ -97,16 +95,11 @@ class CatalogDatabase(ComponentResource):
         location="database",
         opts=None,
     ):
-        # By calling super(), we ensure any instantiation of this class
-        # inherits from the ComponentResource class so we don't have to declare
-        # all the same things all over again.
+        # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:datalake:CatalogDatabase", name, None, opts)
 
         self.name = f"{name}"
 
-        # The parent part of the resource definition ensures the new component
-        # resource acts like anything else in the Pulumi ecosystem when being
-        # called in code.
         self.catalog_database = aws.glue.CatalogDatabase(
             self.name,
             location_uri=bucket.bucket.apply(lambda b: f"s3://{b}/{location}"),
@@ -120,7 +113,7 @@ class CatalogDatabase(ComponentResource):
 class Tributary(ComponentResource):
     """Represents a single domain in the data lake.
 
-    A tributary in the CAPE data lake sense is an encapsulation of:
+    A tributary in the CAPE datalake sense is an encapsulation of:
       - an object storage location for raw data.
       - an object storage location for clean data.
       - a lambda job that kicks off when raw data lands. this may kick off lots
@@ -141,9 +134,7 @@ class Tributary(ComponentResource):
         auto_assets_bucket: aws.s3.BucketV2,
         opts=None,
     ):
-        # By calling super(), we ensure any instantiation of this class
-        # inherits from the ComponentResource class so we don't have to declare
-        # all the same things all over again.
+        # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:datalake:Tributary", name, None, opts)
 
         self.name = f"{name}-tributary"
@@ -169,7 +160,9 @@ class Tributary(ComponentResource):
                 lambda_funct_args.append(largs)
 
         # Add a bucket notification to trigger our ETL functions automatically
-        # if they were configured
+        # if they were configured.
+        # NOTE: only checking the existence of function args here as if there
+        #       are no function args, there's no need for a notification.
         if lambda_funct_args:
             aws.s3.BucketNotification(
                 f"{cfg['name']}-raw-bucket-notification",
@@ -228,6 +221,9 @@ class Tributary(ComponentResource):
             cfg: The ETL configuration from the pulumi config.
             auto_assets_bucket: The BucketV2 instance that contains the
                                 automation assets.
+        Returns:
+            A tuple of the lambda permission resource and lambda function args
+            for the etl trigger lambda function that calls this job.
         """
         etl_job = EtlJob(
             cfg["name"],

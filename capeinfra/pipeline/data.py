@@ -36,9 +36,18 @@ class DataCrawler(ComponentResource):
         classifiers=None,
         opts=None,
     ):
-        # By calling super(), we ensure any instantiation of this class
-        # inherits from the ComponentResource class so we don't have to declare
-        # all the same things all over again.
+        """Constuctor.
+
+        Args:
+            name: The name for the resource.
+            buckets: One or more buckets (a list of them if more than one) that
+                     the crawler will crawl.
+            db: The catalog database where the crawler will write metadata.
+            classifiers: A list of custom classifiers for the crawler, if any.
+            opts: The ResourceOptions to apply to the crawler resource.
+        Returns:
+        """
+        # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:datalake:Crawler", name, None, opts)
 
         self.name = f"{name}-crawler"
@@ -60,12 +69,14 @@ class DataCrawler(ComponentResource):
             ),
             opts=ResourceOptions(parent=self),
         )
+
         self.service_role = aws.iam.RolePolicyAttachment(
             f"{self.name}-service-role",
             role=self.role.name,
             policy_arn="arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
             opts=ResourceOptions(parent=self),
         )
+
         self.role_policy = aws.iam.RolePolicy(
             f"{name}-role-policy",
             role=self.role.id,
@@ -118,7 +129,8 @@ class DataCrawler(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        # We also need to register all the expected outputs for this component resource that will get returned by default.
+        # We also need to register all the expected outputs for this component
+        # resource that will get returned by default.
         self.register_outputs({"crawler_name": self.crawler.name})
 
     def add_trigger_function(self):
@@ -140,6 +152,7 @@ class DataCrawler(ComponentResource):
             ),
             opts=ResourceOptions(parent=self),
         )
+
         # Attach the Lambda service role for logging privileges
         aws.iam.RolePolicyAttachment(
             f"{self.name}-lambda-service-role-attachment",
@@ -147,6 +160,7 @@ class DataCrawler(ComponentResource):
             policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             opts=ResourceOptions(parent=self),
         )
+
         # Attach the Lambda service role for logging privileges
         aws.iam.RolePolicy(
             f"{self.name}-lambda-role-policy",
@@ -169,10 +183,12 @@ class DataCrawler(ComponentResource):
             ),
             opts=ResourceOptions(parent=self),
         )
+
         # Create our Lambda function that triggers the given glue job
         self.trigger_function = aws.lambda_.Function(
             f"{self.name}-lambda-function",
             role=crawler_trigger_role.arn,
+            # NOTE: Lambdas want a zip file as opposed to an s3 script location
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
@@ -217,6 +233,8 @@ class DataCrawler(ComponentResource):
 
 
 class EtlJob(ComponentResource):
+    """An extract/transform/load job."""
+
     def __init__(
         self,
         name: str,
@@ -227,9 +245,23 @@ class EtlJob(ComponentResource):
         default_args: dict | None = None,
         opts=None,
     ):
-        # By calling super(), we ensure any instantiation of this class
-        # inherits from the ComponentResource class so we don't have to declare
-        # all the same things all over again.
+        """Constuctor.
+
+        Args:
+            name: The name for the resource.
+            raw_bucket: The raw object storage location the ETL job will use as
+                        its source.
+            clean_bucket: The clean object storage location the ETL job will
+                          use as the sink for the output of transform.
+            script_bucket: The object storage location where etl scripts are
+                           kept.
+            script_path: The path in `script_bucket` to the ETL script for this
+                        job.
+            default_args: default arguments for this ETL job if any.
+            opts: The ResourceOptions to apply to the crawler resource.
+        Returns:
+        """
+        # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:datalake:Job", name, None, opts)
 
         self.name = f"{name}-etl-job"
@@ -319,7 +351,12 @@ class EtlJob(ComponentResource):
         self.register_outputs({"job_name": self.job.name})
 
     def add_trigger_function(self):
-        """"""
+        """Adds a trigger function to kick off this job.
+
+        Returns:
+            A tuple containing the lambda function resource that will trigger
+            this job and the lambda permission the function will execute with.
+        """
         etl_role = aws.iam.Role(
             f"{self.name}-lambda-trigger-role",
             assume_role_policy=json.dumps(
