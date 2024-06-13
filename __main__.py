@@ -12,7 +12,7 @@ CAPE_STACK_NS = pulumi.get_stack()
 # general stack scaffolding
 cape_meta = CapeMeta(f"{CAPE_STACK_NS}-meta")
 
-# here there be datas
+# here there be data
 datalake_house = DatalakeHouse(
     f"{CAPE_STACK_NS}-datalakehouse", cape_meta.automation_assets_bucket.bucket
 )
