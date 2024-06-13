@@ -107,7 +107,9 @@ class CatalogDatabase(ComponentResource):
         )
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
-        self.register_outputs({"catalog_database_name": self.catalog_database.name})
+        self.register_outputs(
+            {"catalog_database_name": self.catalog_database.name}
+        )
 
 
 class Tributary(ComponentResource):
@@ -185,17 +187,23 @@ class Tributary(ComponentResource):
             bucket_cfg: The config dict for te bucket, as specified in the
                         pulumi stack config.
         """
-        bucket_name = bucket_cfg.get("name") or f"{self.name}-{bucket_type}-bucket"
+        bucket_name = (
+            bucket_cfg.get("name") or f"{self.name}-{bucket_type}-bucket"
+        )
         self.buckets[bucket_type] = VersionedBucket(
             bucket_name,
             opts=ResourceOptions(parent=self),
         )
 
         self.configure_crawler(
-            bucket_name, self.buckets[bucket_type].bucket, bucket_cfg.get("crawler", {})
+            bucket_name,
+            self.buckets[bucket_type].bucket,
+            bucket_cfg.get("crawler", {}),
         )
 
-    def configure_crawler(self, name: str, bucket: aws.s3.BucketV2, crawler_cfg: dict):
+    def configure_crawler(
+        self, name: str, bucket: aws.s3.BucketV2, crawler_cfg: dict
+    ):
         """Creates/configures a crawler for a bucket based on config values.
 
         Args:
@@ -233,11 +241,15 @@ class Tributary(ComponentResource):
             cfg["script"],
             default_args={
                 "--additional-python-modules": ",".join(cfg["pymodules"]),
-                "--CLEAN_BUCKET_NAME": self.buckets[Tributary.CLEAN].bucket.bucket,
+                "--CLEAN_BUCKET_NAME": self.buckets[
+                    Tributary.CLEAN
+                ].bucket.bucket,
             },
         )
 
-        etl_lambda_function, etl_lambda_permission = etl_job.add_trigger_function()
+        etl_lambda_function, etl_lambda_permission = (
+            etl_job.add_trigger_function()
+        )
 
         etl_lambda_function_args = aws.s3.BucketNotificationLambdaFunctionArgs(
             events=["s3:ObjectCreated:*"],

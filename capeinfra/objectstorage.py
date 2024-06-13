@@ -12,11 +12,15 @@ class VersionedBucket(ComponentResource):
 
     def __init__(self, name, opts=None):
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:objectstorage:S3VersionedBucket", name, None, opts)
+        super().__init__(
+            "capeinfra:objectstorage:S3VersionedBucket", name, None, opts
+        )
 
         self.name = f"{name}-bucket"
 
-        self.bucket = aws.s3.BucketV2(f"{self.name}", opts=ResourceOptions(parent=self))
+        self.bucket = aws.s3.BucketV2(
+            f"{self.name}", opts=ResourceOptions(parent=self)
+        )
 
         self.versioning = aws.s3.BucketVersioningV2(
             f"{name}-versioning",

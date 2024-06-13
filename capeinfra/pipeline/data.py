@@ -3,7 +3,13 @@
 import json
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, ComponentResource, FileAsset, Output, ResourceOptions
+from pulumi import (
+    AssetArchive,
+    ComponentResource,
+    FileAsset,
+    Output,
+    ResourceOptions,
+)
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
@@ -51,7 +57,9 @@ class DataCrawler(ComponentResource):
         super().__init__("capeinfra:datalake:Crawler", name, None, opts)
 
         self.name = f"{name}-crawler"
-        self.buckets = buckets = buckets if isinstance(buckets, list) else [buckets]
+        self.buckets = buckets = (
+            buckets if isinstance(buckets, list) else [buckets]
+        )
 
         self.role = aws.iam.Role(
             f"{self.name}-role",
@@ -172,7 +180,10 @@ class DataCrawler(ComponentResource):
                         "Statement": [
                             {
                                 "Effect": "Allow",
-                                "Action": ["glue:StartCrawler", "glue:GetCrawler"],
+                                "Action": [
+                                    "glue:StartCrawler",
+                                    "glue:GetCrawler",
+                                ],
                                 "Resource": [
                                     f"arn:aws:glue:*:*:crawler/{glue_crawler}"
                                 ],
@@ -393,8 +404,13 @@ class EtlJob(ComponentResource):
                         "Statement": [
                             {
                                 "Effect": "Allow",
-                                "Action": ["glue:StartJobRun", "glue:GetJobRun"],
-                                "Resource": [f"arn:aws:glue:*:*:job/{glue_job}"],
+                                "Action": [
+                                    "glue:StartJobRun",
+                                    "glue:GetJobRun",
+                                ],
+                                "Resource": [
+                                    f"arn:aws:glue:*:*:job/{glue_job}"
+                                ],
                             },
                         ],
                     }
@@ -408,7 +424,11 @@ class EtlJob(ComponentResource):
             f"{self.name}-lambda-trigger-function",
             role=etl_role.arn,
             code=AssetArchive(
-                {"index.py": FileAsset("./assets/lambda/hai_lambda_glue_trigger.py")}
+                {
+                    "index.py": FileAsset(
+                        "./assets/lambda/hai_lambda_glue_trigger.py"
+                    )
+                }
             ),
             runtime="python3.11",
             # in this case, the zip file for the lambda deployment is

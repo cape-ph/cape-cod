@@ -21,7 +21,9 @@ def index_handler(event, context):
     glue_crawler_name = os.getenv("GLUE_CRAWLER_NAME")
 
     # TODO this should be removed before any real deployment (dev is ok)
-    print(f"Received event: {json.dumps(event, indent=2)} with context {context}")
+    print(
+        f"Received event: {json.dumps(event, indent=2)} with context {context}"
+    )
 
     if glue_crawler_name is None:
         msg = "No glue crawler provided. Not crawling..."
@@ -42,7 +44,10 @@ def index_handler(event, context):
                 return {"statusCode": 500, "body": msg}
 
         glue_client.start_crawler(Name=glue_crawler_name)
-        return {"statusCode": 200, "body": f"Started crawling with {glue_crawler_name}"}
+        return {
+            "statusCode": 200,
+            "body": f"Started crawling with {glue_crawler_name}",
+        }
     except Exception as e:
         print(e)
         return {

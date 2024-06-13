@@ -35,5 +35,7 @@ class CapeMeta(ComponentResource):
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs(
-            {"cape-meta-automation-assets-bucket": self.automation_assets_bucket.bucket}
+            {
+                "cape-meta-automation-assets-bucket": self.automation_assets_bucket.bucket
+            }
         )
