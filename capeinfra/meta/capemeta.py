@@ -1,6 +1,5 @@
 """Contains resources used by the whole CAPE infra deployment."""
 
-import pulumi_aws as aws
 from pulumi import ComponentResource, Config, FileAsset, ResourceOptions
 
 from ..objectstorage import VersionedBucket
