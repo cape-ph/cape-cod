@@ -21,7 +21,9 @@ def index_handler(event, context):
     raw_bucket_name = os.getenv("RAW_BUCKET_NAME")
 
     # TODO this should be removed before any real deployment (dev is ok)
-    print(f"Received event: {json.dumps(event, indent=2)} with context {context}")
+    print(
+        f"Received event: {json.dumps(event, indent=2)} with context {context}"
+    )
 
     if glue_job_name is None:
         msg = "No glue job provided. Not starting a glue job"

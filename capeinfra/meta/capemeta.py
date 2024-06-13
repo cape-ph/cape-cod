@@ -1,30 +1,22 @@
 """Contains resources used by the whole CAPE infra deployment."""
 
-import pulumi_aws as aws
 from pulumi import ComponentResource, Config, FileAsset, ResourceOptions
 
 from ..objectstorage import VersionedBucket
 
 
 class CapeMeta(ComponentResource):
+    """Contains resources needed by all parts of the infra."""
+
     def __init__(self, name, opts=None):
-        # By calling super(), we ensure any instantiation of this class
-        # inherits from the ComponentResource class so we don't have to declare
-        # all the same things all over again.
+        # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:meta:capemeta:CapeMeta", name, None, opts)
 
-        # TODO:
-        # - automation asset bucket (scripts, etc)
-        # - etl scripts (until we have these repos deploying themselves)
-
-        # The parent part of the resource definition ensures the new component
-        # resource acts like anything else in the Pulumi ecosystem when being
-        # called in code.
         self.automation_assets_bucket = VersionedBucket(
             f"{name}-automation-assets", opts=ResourceOptions(parent=self)
         )
 
-        # Glue script setup
+        # Setup for the glue script assets
         config = Config("cape-cod")
         meta_config = config.require_object("meta")
 
@@ -35,6 +27,7 @@ class CapeMeta(ComponentResource):
                     etl_def["name"],
                     key=etl_def["key"],
                     # NOTE: These should always be file assets in the ETL case
+                    #       (as opposed to archive assets)
                     source=FileAsset(etl_def["srcpth"]),
                 )
 
@@ -42,6 +35,6 @@ class CapeMeta(ComponentResource):
         # resource that will get returned by default.
         self.register_outputs(
             {
-                "{name}-automation_assets_bucket_name": self.automation_assets_bucket.bucket
+                "cape-meta-automation-assets-bucket": self.automation_assets_bucket.bucket
             }
         )

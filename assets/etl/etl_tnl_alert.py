@@ -140,20 +140,29 @@ else:
     for s in data["Testing-Results"]:
         search = comp_pattern.search(s)
         pairs.append(
-            (re.sub(org_pattern, "", s), search.group(0) if search else "UNKNOWN")
+            (
+                re.sub(org_pattern, "", s),
+                search.group(0) if search else "UNKNOWN",
+            )
         )
 
     # extract the lists and put them in the right places
     interim["Mechanism (*Submitters Report)"], interim["Organism"] = zip(*pairs)
 
-interim["Date Received"] = pd.to_datetime(data["Date_Received"], errors="coerce")
-interim["Date Reported"] = pd.to_datetime(data["Date_Reported"], errors="coerce")
+interim["Date Received"] = pd.to_datetime(
+    data["Date_Received"], errors="coerce"
+)
+interim["Date Reported"] = pd.to_datetime(
+    data["Date_Reported"], errors="coerce"
+)
 interim["Patient_Name"] = data.apply(
     lambda x: "{Last_Name}, {First_Name}".format(**x), axis=1
 )
 interim["DOB"] = pd.to_datetime(data["DOB"], errors="coerce")
 interim["Source"] = data["Specimen"].apply(lambda x: x.capitalize())
-interim["Date of Collection"] = pd.to_datetime(data["Date_Collection"], errors="coerce")
+interim["Date of Collection"] = pd.to_datetime(
+    data["Date_Collection"], errors="coerce"
+)
 interim["Testing Lab"] = "TNL"
 
 # write out the transformed data

@@ -105,7 +105,9 @@ data.reset_index(drop=True, inplace=True)
 #             include it in the AR query, but we still have it if we end up
 #             needing it for anything else
 interim = pd.DataFrame()
-interim["Mechanism (*Submitters Report)"] = data["Anti-Microbial Resistance RT-PCR"]
+interim["Mechanism (*Submitters Report)"] = data[
+    "Anti-Microbial Resistance RT-PCR"
+]
 interim["Organism"] = data["Organism ID"]
 interim["Date Received"] = date_received
 interim["Date Reported"] = date_received
