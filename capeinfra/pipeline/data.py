@@ -42,7 +42,7 @@ class DataCrawler(ComponentResource):
         classifiers=None,
         opts=None,
     ):
-        """Constuctor.
+        """Constructor.
 
         Args:
             name: The name for the resource.
@@ -256,7 +256,7 @@ class EtlJob(ComponentResource):
         default_args: dict | None = None,
         opts=None,
     ):
-        """Constuctor.
+        """Constructor.
 
         Args:
             name: The name for the resource.
