@@ -1,0 +1,16 @@
+name: Pulumi Maintenance
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    public_stack:
+        name: Update public stack config
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: update public config
+              uses: mikefarah/yq@master
+              with:
+                  cmd: yq  -i '.config = load("Pulumi.cape-cod-dev.yaml").config | (.. | select(length == 1 and has("secure"))) |= "SET_SECRET"' Pulumi.cape-cod-public.yaml
