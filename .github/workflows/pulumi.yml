@@ -1,4 +1,4 @@
-name: Pulumi Maintenance
+name: Pulumi
 on:
     push:
         branches: [main]
@@ -6,7 +6,7 @@ on:
 
 jobs:
     public_stack:
-        name: Update public stack config
+        name: Update public stack
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
