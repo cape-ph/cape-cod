@@ -5,13 +5,13 @@ Control_) Pulumi IaC (Infrastructure as Code).
 
 ## 🧬 Features
 
-**NOTE:** Any of the below features can change at any time. This whole system
-is a work in progress.
+**NOTE:** Any of the below features can change at any time. This whole system is
+a work in progress.
 
 The CAPE infrastructure currently consists of:
 
-- A system-wide object store for reusable ETL scripts and Lambda functions
-  (this is currently used to prime the system and may not always be around).
+- A system-wide object store for reusable ETL scripts and Lambda functions (this
+  is currently used to prime the system and may not always be around).
 - A data lake for any number of configurable domains (called `Tributaries`)
   which have their own raw and clean object storage and feed the lake over all
   via shared data catalog.
@@ -32,13 +32,14 @@ Install [python](https://www.python.org/downloads/) and
 [pulumi](https://www.pulumi.com/docs/install/) according to their instructions.
 
 **_NOTE:_** Usage of the term `stack` is overloaded by `pulumi` and some
-providers. E.g. a stack in AWS is often used in the context of
-`CloudFormation`. For the purposes of this document, if `stack` is used with no
-other qualifier, we are talking about a `pulumi` stack.
+providers. E.g. a stack in AWS is often used in the context of `CloudFormation`.
+For the purposes of this document, if `stack` is used with no other qualifier,
+we are talking about a `pulumi` stack.
 
-Pulumi uses the currently configured (by the aws cli) AWS credentials. There
-are a number of ways to do this that are dependent on how your AWS account is
-set up. See [the pulumi docs on the subject](https://www.pulumi.com/registry/packages/aws/installation-configuration/)
+Pulumi uses the currently configured (by the aws cli) AWS credentials. There are
+a number of ways to do this that are dependent on how your AWS account is set
+up. See
+[the pulumi docs on the subject](https://www.pulumi.com/registry/packages/aws/installation-configuration/)
 for info on how to setup. The rest of this section assumes this has been done.
 
 Open a terminal, clone this repo and `cd` to the root.
@@ -62,16 +63,16 @@ into. Execute the following
 pulumi stack init cape-cod-public
 ```
 
-This will setup the `pulumi` state for our public stack. At this point we need
-a disclaimer...
+This will setup the `pulumi` state for our public stack. At this point we need a
+disclaimer...
 
 **This stack should only be used for informational purposes and is in no way
 secure. If you wish to use the public stack as a start for your own stack with
-your own encryption key, see the [Extending The cape-cod Stack](#extending-the-cape-cod-stack)
-section below. There are no encrypted values in this stack by design, and
-values that should be encrypted will start with an unencrypted value of
-SET_SECRET. Any SET_SECRET values will likely need to be set before this stack
-can be deployed.**
+your own encryption key, see the
+[Extending The cape-cod Stack](#extending-the-cape-cod-stack) section below.
+There are no encrypted values in this stack by design, and values that should be
+encrypted will start with an unencrypted value of SET_SECRET. Any SET_SECRET
+values will likely need to be set before this stack can be deployed.**
 
 At this point you should have a new stack in your state. This can be verified
 with
@@ -89,8 +90,8 @@ pulumi stack select cape-cod-public
 
 This will make the public version of our dev stack active.
 
-The encryption key for this stack is `insecure`. This will be needed for the
-a number of `pulumi` commands.
+The encryption key for this stack is `insecure`. This will be needed for the a
+number of `pulumi` commands.
 
 We need to make sure there are no values in the config that are in need of
 setting before we can deploy. So execute
@@ -100,8 +101,8 @@ grep -i set_secret Pulumi.cape-cod-public.yaml
 ```
 
 If any results are returned, these keys should be set to values that make sense
-for your circumstances. See the [Config Values](#config-values) table
-below for hints on what values are expected.
+for your circumstances. See the [Config Values](#config-values) table below for
+hints on what values are expected.
 
 **_NOTE:_** This config will change over time, and as you pull upstream changes
 into your clone new secret config keys may be added. You should get ion the
@@ -145,21 +146,20 @@ values, execute the following
 pulumi stack init [stack-name] --copy-config-from cape-cod-public
 ```
 
-**_NOTE:_** This will set the new stack as the active one, so any config
-changes you make or deployments/previews will apply to the new stack. If
-you do not wish to immediately select your new stack, pass `--no-select` to the
-command.
+**_NOTE:_** This will set the new stack as the active one, so any config changes
+you make or deployments/previews will apply to the new stack. If you do not wish
+to immediately select your new stack, pass `--no-select` to the command.
 
-You will be asked to provide an encryption key for the new stack (and to
-confirm it again).
+You will be asked to provide an encryption key for the new stack (and to confirm
+it again).
 
 **_NOTE:_** Be sure to manage this key in a secure manner as it will be needed
 for nearly all future pulumi actions for this stack.
 
 You will then be prompted for the original stack's encryption key in order to
 decrypt any secret values so they can be re-encrypted with the new encryption
-key when copied over. On completion, you will have a new stack that is a copy
-of the public stack with your new encryption key.
+key when copied over. On completion, you will have a new stack that is a copy of
+the public stack with your new encryption key.
 
 ### Config Values
 
@@ -179,16 +179,17 @@ cape-cod:meta:
 
 Some dotted names contain items such as `[something|something_else]`. In these
 cases both `something` and `something_else` are valid, though they are
-different. E.g. in the case of `cape-cod:datalakehouse.tributaries.buckets.[raw|clean]`,
-there are keys for both `cape-cod:datalakehouse.tributaries.buckets.raw` and
+different. E.g. in the case of
+`cape-cod:datalakehouse.tributaries.buckets.[raw|clean]`, there are keys for
+both `cape-cod:datalakehouse.tributaries.buckets.raw` and
 `cape-cod:datalakehouse.tributaries.buckets.clean`, and the keys apply to
 different bucket configs.
 
-If a key is marked as optional but a lower level key is marked as required,
-this implies that if provided, the lower level key is required if the higher
-key is provided. E.g. `cape-cod:meta.glue.etl` is optional, but if any items
-are defined in that sequence, the key `cape-cod:meta.glue.etl.name` is
-required for each item.
+If a key is marked as optional but a lower level key is marked as required, this
+implies that if provided, the lower level key is required if the higher key is
+provided. E.g. `cape-cod:meta.glue.etl` is optional, but if any items are
+defined in that sequence, the key `cape-cod:meta.glue.etl.name` is required for
+each item.
 
 | name                                                                          | required?    | secret? | data format | description                                                                                                                                                                                                                                                              |
 | ----------------------------------------------------------------------------- | ------------ | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -219,4 +220,6 @@ required for each item.
 
 ## 🥼 Contributing
 
-If you plan to contribute, please check the [contribution guidelines](https://github.com/cape-ph/.github/blob/main/CONTRIBUTING.md) first.
+If you plan to contribute, please check the
+[contribution guidelines](https://github.com/cape-ph/.github/blob/main/CONTRIBUTING.md)
+first.
