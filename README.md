@@ -3,7 +3,7 @@
 Welcome to the home of the Center For Applied Pathogen Genomics (_and Outbreak
 Control_) Pulumi IaC (Infrastructure as Code).
 
-## ✨ Features
+## 🧬 Features
 
 **NOTE:** Any of the below features can change at any time. This whole system
 is a work in progress.
@@ -17,7 +17,7 @@ The CAPE infrastructure currently consists of:
     via shared data catalog.
 -   More to come
 
-## ⚡ Requirements
+## 🦠 Requirements
 
 -   [Python 3.10+](https://www.python.org/)
 -   [Pulumi](https://www.pulumi.com/)
@@ -26,7 +26,7 @@ The CAPE infrastructure currently consists of:
     adding more as we go and just having the ability to create what we currently
     use may not be the full list in the long term.
 
-## 🛠️ Setup
+## 🧫 Setup
 
 Install [python](https://www.python.org/downloads/) and
 [pulumi](https://www.pulumi.com/docs/install/) according to their instructions.
@@ -134,7 +134,7 @@ If there are no errors, the stack should be deployable assuming the AWS account
 is permissive enough and the user performing the deployment has authorization
 for all operations.
 
-## 📦 Usage/Deployment
+## 🔬 Usage/Deployment
 
 ### Extending the cape-cod Stack
 
@@ -217,6 +217,6 @@ required for each item.
 
 ## 🗒️ Links
 
-## 🚀 Contributing
+## 🥼 Contributing
 
 If you plan to contribute, please check the [contribution guidelines](https://github.com/cape-ph/.github/blob/main/CONTRIBUTING.md) first.
