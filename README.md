@@ -179,7 +179,7 @@ cape-cod:meta:
 
 Some dotted names contain items such as `[something|something_else]`. In these
 cases both `something` and `something_else` are valid, though they are
-different. E.g. in the case of `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean]`,
+different. E.g. in the case of `cape-cod:datalakehouse.tributaries.buckets.[raw|clean]`,
 there are keys for both `cape-cod:datalakehouse.tributaries.buckets.raw` and
 `cape-cod:datalakehouse.tributaries.buckets.clean`, and the keys apply to
 different bucket configs.
