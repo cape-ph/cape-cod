@@ -28,6 +28,7 @@ class VersionedBucket(ComponentResource):
             versioning_configuration=aws.s3.BucketVersioningV2VersioningConfigurationArgs(
                 status="Enabled"
             ),
+            opts=ResourceOptions(parent=self),
         )
 
         # We also need to register all the expected outputs for this component
@@ -47,5 +48,9 @@ class VersionedBucket(ComponentResource):
             The newly created bucket object.
         """
         return aws.s3.BucketObjectv2(
-            f"{self.name}-{name}", bucket=self.bucket.id, key=key, source=source
+            f"{self.name}-{name}",
+            bucket=self.bucket.id,
+            key=key,
+            source=source,
+            opts=ResourceOptions(parent=self),
         )
