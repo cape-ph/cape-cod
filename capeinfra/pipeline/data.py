@@ -219,6 +219,7 @@ class DataCrawler(ComponentResource):
                     "GLUE_CRAWLER_NAME": self.crawler.name,
                 }
             },
+            opts=ResourceOptions(parent=self),
         )
         # Give our function permission to invoke
         # Add a bucket notification to trugger our lambda automatically
@@ -229,6 +230,7 @@ class DataCrawler(ComponentResource):
                 function=self.trigger_function.arn,
                 principal="s3.amazonaws.com",
                 source_arn=bucket.arn,
+                opts=ResourceOptions(parent=self),
             )
             aws.s3.BucketNotification(
                 f"{self.name}-bucket-notification",
@@ -239,7 +241,9 @@ class DataCrawler(ComponentResource):
                         lambda_function_arn=self.trigger_function.arn,
                     )
                 ],
-                opts=ResourceOptions(depends_on=[crawler_function_permission]),
+                opts=ResourceOptions(
+                    depends_on=[crawler_function_permission], parent=self
+                ),
             )
 
 
