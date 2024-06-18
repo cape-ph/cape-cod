@@ -245,6 +245,7 @@ class Tributary(ComponentResource):
                     Tributary.CLEAN
                 ].bucket.bucket,
             },
+            opts=ResourceOptions(parent=self),
         )
 
         etl_lambda_function, etl_lambda_permission = (
