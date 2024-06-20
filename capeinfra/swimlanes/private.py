@@ -54,7 +54,7 @@ class PrivateSwimlane(ScopedSwimlane):
             The default config dict for this swimlane.
         """
         return {
-            # by default (if not overidden in config) this will get ip space
+            # by default (if not overridden in config) this will get ip space
             # 10.0.0.0-255
             "cidr-block": "10.0.0.0/24",
         }
