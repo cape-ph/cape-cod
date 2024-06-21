@@ -2,8 +2,7 @@
 
 from abc import abstractmethod
 
-import pulumi_aws as aws
-from pulumi import ComponentResource, Config, FileAsset, ResourceOptions
+from pulumi import ComponentResource, Config
 
 
 class ScopedSwimlane(ComponentResource):
@@ -15,7 +14,7 @@ class ScopedSwimlane(ComponentResource):
 
     def __init__(self, name, opts=None):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(self.type_name, name, None, opts)
+        super().__init__(self.type_name, name, None, opts=opts)
         self._cfg_dict = None
 
     @property
