@@ -28,6 +28,10 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
+        # Nothing to register at this time, but call to signal to pulumi that
+        # we're done
+        self.register_outputs({})
+
     @property
     def type_name(self) -> str:
         """Implementation of abstract property `type_name`.
