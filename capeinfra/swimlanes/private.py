@@ -24,13 +24,16 @@ class PrivateSwimlane(ScopedSwimlane):
                 ),
                 enable_dns_hostnames=True,
                 enable_dns_support=True,
+                # NOTE: to set the name of a VPC resource, you have to add a
+                #       tag with the key `Name`. yay consistency :smh:
+                tags={"Name": f"{name}-vpc"},
             ),
             opts=ResourceOptions(parent=self),
         )
 
         # Nothing to register at this time, but call to signal to pulumi that
         # we're done
-        self.register_outputs({})
+        self.register_outputs({f"{name}-vpc-id": self.vpc.id})
 
     @property
     def type_name(self) -> str:
