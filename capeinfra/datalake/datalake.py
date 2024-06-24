@@ -6,6 +6,8 @@ from pulumi import ComponentResource, Config, ResourceOptions
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 
+from ..pulumi import DescribedComponentResource
+
 
 class DatalakeHouse(ComponentResource):
     """Top level object in the CAPE infrastructure for datalake storage."""
@@ -112,7 +114,7 @@ class CatalogDatabase(ComponentResource):
         )
 
 
-class Tributary(ComponentResource):
+class Tributary(DescribedComponentResource):
     """Represents a single domain in the data lake.
 
     A tributary in the CAPE datalake sense is an encapsulation of:
@@ -187,11 +189,10 @@ class Tributary(ComponentResource):
             bucket_cfg: The config dict for te bucket, as specified in the
                         pulumi stack config.
         """
-        bucket_name = (
-            bucket_cfg.get("name") or f"{self.name}-{bucket_type}-bucket"
-        )
+        bucket_name = bucket_cfg.get("name") or f"{self.name}-{bucket_type}"
         self.buckets[bucket_type] = VersionedBucket(
             bucket_name,
+            desc_name=f"{self.desc_name} {bucket_type}",
             opts=ResourceOptions(parent=self),
         )
 
