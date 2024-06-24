@@ -1,19 +1,21 @@
 """Contains resources used by the whole CAPE infra deployment."""
 
-from pulumi import ComponentResource, Config, FileAsset, ResourceOptions
+from pulumi import Config, FileAsset, ResourceOptions
 
 from ..objectstorage import VersionedBucket
+from ..pulumi import DescribedComponentResource
 
 
-class CapeMeta(ComponentResource):
+class CapeMeta(DescribedComponentResource):
     """Contains resources needed by all parts of the infra."""
 
-    def __init__(self, name, opts=None):
+    def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:meta:capemeta:CapeMeta", name, None, opts)
-
+        super().__init__("capeinfra:meta:capemeta:CapeMeta", name, **kwargs)
         self.automation_assets_bucket = VersionedBucket(
-            f"{name}-automation-assets", opts=ResourceOptions(parent=self)
+            f"{name}-assets",
+            desc_name=f"{self.desc_name} automation assets",
+            opts=ResourceOptions(parent=self),
         )
 
         # Setup for the glue script assets
