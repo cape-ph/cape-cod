@@ -4,29 +4,35 @@
 #       aws, gcp, and azure (we're only implementing aws at this time though)
 
 import pulumi_aws as aws
-from pulumi import Archive, Asset, ComponentResource, ResourceOptions
+from pulumi import Archive, Asset, ResourceOptions
+
+from .pulumi import DescribedComponentResource
 
 
-class VersionedBucket(ComponentResource):
+class VersionedBucket(DescribedComponentResource):
     """An object storage location with versioning turned on."""
 
-    def __init__(self, name, opts=None):
+    def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
-            "capeinfra:objectstorage:S3VersionedBucket", name, None, opts
+            "capeinfra:objectstorage:S3VersionedBucket",
+            name,
+            **kwargs,
         )
 
-        self.name = f"{name}-bucket"
+        self.name = f"{name}-s3b"
 
         self.bucket = aws.s3.BucketV2(
-            f"{self.name}", opts=ResourceOptions(parent=self)
+            f"{self.name}",
+            opts=ResourceOptions(parent=self),
+            tags={"desc-name": f"{self.desc_name} S3 Bucket"},
         )
 
         self.versioning = aws.s3.BucketVersioningV2(
-            f"{name}-versioning",
+            f"{self.name}-vrsn",
             bucket=self.bucket.id,
             versioning_configuration=aws.s3.BucketVersioningV2VersioningConfigurationArgs(
-                status="Enabled"
+                status="Enabled",
             ),
             opts=ResourceOptions(parent=self),
         )
