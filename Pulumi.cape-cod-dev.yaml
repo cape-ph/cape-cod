@@ -45,3 +45,16 @@ config:
                                 - docx
                             pymodules:
                                 - python-docx==1.1.2
+            - name: genomics
+              buckets:
+                  raw:
+                      name:
+                      crawler:
+                  clean:
+                      name:
+                      crawler:
+                          classifiers:
+                              - cape-csv-standard-classifier
+              pipelines:
+                  data:
+                      etl:
