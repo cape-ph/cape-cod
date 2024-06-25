@@ -13,7 +13,7 @@ class CapeMeta(DescribedComponentResource):
         # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:meta:capemeta:CapeMeta", name, **kwargs)
         self.automation_assets_bucket = VersionedBucket(
-            f"{name}-assets",
+            f"{name}-assets-vbkt",
             desc_name=f"{self.desc_name} automation assets",
             opts=ResourceOptions(parent=self),
         )
