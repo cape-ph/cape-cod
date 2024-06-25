@@ -20,10 +20,10 @@ class VersionedBucket(DescribedComponentResource):
             **kwargs,
         )
 
-        self.name = f"{name}-s3b"
+        self.name = f"{name}"
 
         self.bucket = aws.s3.BucketV2(
-            f"{self.name}",
+            f"{self.name}-s3",
             opts=ResourceOptions(parent=self),
             tags={"desc-name": f"{self.desc_name} S3 Bucket"},
         )
