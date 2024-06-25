@@ -1,7 +1,7 @@
 """Contains data lake related declaratiohs."""
 
 import pulumi_aws as aws
-from pulumi import ComponentResource, Config, ResourceOptions
+from pulumi import Config, ResourceOptions
 
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
@@ -9,17 +9,20 @@ from capeinfra.pipeline.data import DataCrawler, EtlJob
 from ..pulumi import DescribedComponentResource
 
 
-class DatalakeHouse(ComponentResource):
+class DatalakeHouse(DescribedComponentResource):
     """Top level object in the CAPE infrastructure for datalake storage."""
 
     def __init__(
         self,
         name: str,
         auto_assets_bucket: aws.s3.BucketV2,
-        opts=None,
+        *args,
+        **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:DatalakeHouse", name, None, opts)
+        super().__init__(
+            "capeinfra:datalake:DatalakeHouse", name, *args, **kwargs
+        )
 
         self.name = f"{name}"
 
@@ -33,7 +36,9 @@ class DatalakeHouse(ComponentResource):
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
         self.catalog_bucket = aws.s3.BucketV2(
-            f"{catalog_name}-bucket", opts=ResourceOptions(parent=self)
+            f"{catalog_name}-s3",
+            opts=ResourceOptions(parent=self),
+            tags={"desc_name": f"{self.desc_name} data catalog s3 bucket"},
         )
 
         # and the metadata catalog database itself
@@ -42,6 +47,7 @@ class DatalakeHouse(ComponentResource):
             self.catalog_bucket,
             location=f"{catalog_name}-database",
             opts=ResourceOptions(parent=self),
+            desc_name=f"{self.desc_name} data catalog database",
         )
 
         athena_prefix = f"{self.name}-athena"
@@ -51,10 +57,12 @@ class DatalakeHouse(ComponentResource):
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
         self.athena_results_bucket = aws.s3.BucketV2(
-            f"{athena_prefix}-bucket", opts=ResourceOptions(parent=self)
+            f"{athena_prefix}-s3",
+            opts=ResourceOptions(parent=self),
+            tags={"desc_name": f"{self.desc_name} athena results s3 bucket"},
         )
         aws.athena.Workgroup(
-            f"{athena_prefix}-workgroup",
+            f"{athena_prefix}-wrkgrp",
             configuration=aws.athena.WorkgroupConfigurationArgs(
                 enforce_workgroup_configuration=True,
                 result_configuration=aws.athena.WorkgroupConfigurationResultConfigurationArgs(
@@ -64,6 +72,7 @@ class DatalakeHouse(ComponentResource):
                 ),
             ),
             opts=ResourceOptions(parent=self),
+            tags={"desc_name": f"{self.desc_name} athena workgroup"},
         )
 
         # create the parts of the datalake from the tributary configuration
@@ -72,13 +81,16 @@ class DatalakeHouse(ComponentResource):
         self.tributaries = []
         if tributary_config:
             for trib_config in tributary_config:
+
+                trib_name = trib_config.get("name")
                 self.tributaries.append(
                     Tributary(
-                        trib_config.get("name"),
+                        f"{self.name}-T-{trib_name}",
                         trib_config,
                         self.catalog.catalog_database,
                         auto_assets_bucket,
                         opts=ResourceOptions(parent=self),
+                        desc_name=f"{self.desc_name} {trib_name} tributary",
                     )
                 )
 
@@ -87,7 +99,7 @@ class DatalakeHouse(ComponentResource):
         self.register_outputs({"datalakehouse_name": self.name})
 
 
-class CatalogDatabase(ComponentResource):
+class CatalogDatabase(DescribedComponentResource):
     """The metadata catalog for the datalake house."""
 
     def __init__(
@@ -95,10 +107,13 @@ class CatalogDatabase(ComponentResource):
         name: str,
         bucket: aws.s3.BucketV2,
         location="database",
-        opts=None,
+        *args,
+        **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:CatalogDatabase", name, None, opts)
+        super().__init__(
+            "capeinfra:datalake:CatalogDatabase", name, *args, **kwargs
+        )
 
         self.name = f"{name}"
 
@@ -106,6 +121,7 @@ class CatalogDatabase(ComponentResource):
             self.name,
             location_uri=bucket.bucket.apply(lambda b: f"s3://{b}/{location}"),
             opts=ResourceOptions(parent=self),
+            tags={"desc_name": self.desc_name or "AWS Glue Catalog Database"},
         )
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -136,12 +152,13 @@ class Tributary(DescribedComponentResource):
         cfg: dict,
         db: aws.glue.CatalogDatabase,
         auto_assets_bucket: aws.s3.BucketV2,
-        opts=None,
+        *args,
+        **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:Tributary", name, None, opts)
+        super().__init__("capeinfra:datalake:Tributary", name, *args, **kwargs)
 
-        self.name = f"{name}-tributary"
+        self.name = f"{name}"
         self.catalog = db
 
         # configure the raw/clean buckets for the tributary. this will go down
@@ -169,7 +186,7 @@ class Tributary(DescribedComponentResource):
         #       are no function args, there's no need for a notification.
         if lambda_funct_args:
             aws.s3.BucketNotification(
-                f"{cfg['name']}-raw-bucket-notification",
+                f"{self.name}-raw-s3ntfn",
                 bucket=self.buckets[Tributary.RAW].bucket.id,
                 lambda_functions=lambda_funct_args,
                 opts=ResourceOptions(depends_on=lambda_perms, parent=self),
@@ -189,7 +206,9 @@ class Tributary(DescribedComponentResource):
             bucket_cfg: The config dict for te bucket, as specified in the
                         pulumi stack config.
         """
-        bucket_name = bucket_cfg.get("name") or f"{self.name}-{bucket_type}"
+        bucket_name = (
+            bucket_cfg.get("name") or f"{self.name}-{bucket_type}-vbkt"
+        )
         self.buckets[bucket_type] = VersionedBucket(
             bucket_name,
             desc_name=f"{self.desc_name} {bucket_type}",
@@ -199,27 +218,34 @@ class Tributary(DescribedComponentResource):
         self.configure_crawler(
             bucket_name,
             self.buckets[bucket_type].bucket,
+            bucket_type,
             bucket_cfg.get("crawler", {}),
         )
 
     def configure_crawler(
-        self, name: str, bucket: aws.s3.BucketV2, crawler_cfg: dict
+        self,
+        vbname: str,
+        bucket: aws.s3.BucketV2,
+        bucket_type: str,
+        crawler_cfg: dict,
     ):
         """Creates/configures a crawler for a bucket based on config values.
 
         Args:
-            name: The resource name for the crawler.
+            vbname: The VersionedBucket name for the crawler to crawl.
             bucket: The bucket to be crawled.
+            bucket_type: The type (e.g. raw, clean) of the bucket being crawled.
             crawler_cfg: The config dict for the crawler as specified in the
                          pulumi stack config.
         """
         if crawler_cfg:
             crawler = DataCrawler(
-                name,
+                f"{vbname}-crwl",
                 bucket,
                 self.catalog,
                 classifiers=crawler_cfg.get("classifiers", []),
                 opts=ResourceOptions(parent=self),
+                desc_name=f"{self.desc_name} {bucket_type} data crawler",
             )
             crawler.add_trigger_function()
 
@@ -234,8 +260,9 @@ class Tributary(DescribedComponentResource):
             A tuple of the lambda permission resource and lambda function args
             for the etl trigger lambda function that calls this job.
         """
+
         etl_job = EtlJob(
-            cfg["name"],
+            f"{self.name}-ETL-{cfg['name']}",
             self.buckets[Tributary.RAW].bucket,
             self.buckets[Tributary.CLEAN].bucket,
             auto_assets_bucket,
@@ -247,6 +274,7 @@ class Tributary(DescribedComponentResource):
                 ].bucket.bucket,
             },
             opts=ResourceOptions(parent=self),
+            desc_name=(f"{self.desc_name} raw to clean ETL job"),
         )
 
         etl_lambda_function, etl_lambda_permission = (
