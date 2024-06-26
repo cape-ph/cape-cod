@@ -12,21 +12,28 @@ from ..swimlane import ScopedSwimlane
 class PrivateSwimlane(ScopedSwimlane):
     """Contains resources for the private swimlane of the CAPE Infra."""
 
-    def __init__(self, name, opts=None):
+    def __init__(self, name, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(name, opts)
+        super().__init__(name, *args, **kwargs)
+
+        vpc_name = f"{name}-vpc"
 
         self.vpc = aws.ec2.Vpc(
-            f"{name}-vpc",
+            vpc_name,
             args=aws.ec2.VpcArgs(
                 cidr_block=self.get_config_dict().get(
                     "cidr-block", self.default_cfg["cidr-block"]
                 ),
                 enable_dns_hostnames=True,
                 enable_dns_support=True,
-                # NOTE: to set the name of a VPC resource, you have to add a
-                #       tag with the key `Name`. yay consistency :smh:
-                tags={"Name": f"{name}-vpc"},
+                # NOTE: to set the name of a VPC resource (the name that's
+                #       visible within AWS), you have to add a tag with the key
+                #       `Name`. this is the only resource encountered to date
+                #       that acts that way. yay consistency :smh:
+                tags={
+                    "Name": vpc_name,
+                    "desc_name": f"{self.desc_name} VPC",
+                },
             ),
             opts=ResourceOptions(parent=self),
         )

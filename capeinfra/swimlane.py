@@ -2,19 +2,21 @@
 
 from abc import abstractmethod
 
-from pulumi import ComponentResource, Config
+from pulumi import Config
+
+from .pulumi import DescribedComponentResource
 
 
-class ScopedSwimlane(ComponentResource):
+class ScopedSwimlane(DescribedComponentResource):
     """Base class for all scoped swimlanes.
 
     A scoped swimlane is the logical grouping of public, protected or private
     resources in the CAPE infra.
     """
 
-    def __init__(self, name, opts=None):
+    def __init__(self, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(self.type_name, name, None, opts=opts)
+        super().__init__(self.type_name, *args, **kwargs)
         self._cfg_dict = None
 
     @property
