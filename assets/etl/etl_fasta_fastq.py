@@ -32,6 +32,7 @@ def extract_objname_from_objkey(objkey):
 
 
 # TODO:
+# * GET ME MOVED TO MY OWN REPO
 # * fasta and fastq handling are very similar. these 2 functions could be
 #   cleaned up quite a bit to remove similarities if desired. for now these are
 #   being left as 2 fcuntions in case we need to change how we're handling the
