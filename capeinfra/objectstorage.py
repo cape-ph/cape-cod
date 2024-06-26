@@ -25,7 +25,7 @@ class VersionedBucket(DescribedComponentResource):
         self.bucket = aws.s3.BucketV2(
             f"{self.name}-s3",
             opts=ResourceOptions(parent=self),
-            tags={"desc-name": f"{self.desc_name} S3 Bucket"},
+            tags={"desc_name": f"{self.desc_name} S3 Bucket"},
         )
 
         self.versioning = aws.s3.BucketVersioningV2(
