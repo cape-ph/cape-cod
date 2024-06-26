@@ -54,7 +54,15 @@ config:
                       name:
                       crawler:
                           classifiers:
-                              - cape-csv-standard-classifier
               pipelines:
                   data:
                       etl:
+                          - name: fastx
+                            script: glue/etl/etl_fasta_fastq.py
+                            prefix: fastx
+                            suffixes:
+                                - fasta
+                                - fastq
+                                - gz
+                            pymodules:
+                                - pyfastx==2.1.0
