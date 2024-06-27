@@ -10,6 +10,9 @@ config:
         - name: etl-tnl
           key: glue/etl/etl_tnl_alert.py
           srcpth: ./assets/etl/etl_tnl_alert.py
+        - name: etl-fastx
+          key: glue/etl/etl_fasta_fastq.py
+          srcpth: ./assets/etl/etl_fasta_fastq.py
   cape-cod:swimlanes:
     private:
       # TODO: This is huge. way bigger than we need. For growth but also
@@ -45,3 +48,24 @@ config:
                   - docx
                 pymodules:
                   - python-docx==1.1.2
+      - name: genomics
+        buckets:
+          raw:
+            name:
+            crawler:
+          clean:
+            name:
+            crawler:
+              classifiers:
+        pipelines:
+          data:
+            etl:
+              - name: fastx
+                script: glue/etl/etl_fasta_fastq.py
+                prefix: fastx
+                suffixes:
+                  - gz
+                  - fasta
+                  - fastq
+                pymodules:
+                  - pyfastx==2.1.0
