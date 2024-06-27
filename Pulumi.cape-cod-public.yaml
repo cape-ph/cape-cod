@@ -4,12 +4,18 @@ config:
   cape-cod:meta:
     glue:
       etl:
-        - name: gphl-cre-alert-etl
+        - name: etl-gphl-cre
           key: glue/etl/etl_gphl_cre_alert.py
           srcpth: ./assets/etl/etl_gphl_cre_alert.py
-        - name: tnl-alert-etl
+        - name: etl-tnl
           key: glue/etl/etl_tnl_alert.py
           srcpth: ./assets/etl/etl_tnl_alert.py
+  cape-cod:swimlanes:
+    private:
+      # TODO: This is huge. way bigger than we need. For growth but also
+      # cause we don't really know what address space we need yet. Adjust
+      # as needed
+      cidr-block: 10.0.0.0/16
   cape-cod:datalakehouse:
     tributaries:
       - name: hai
