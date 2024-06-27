@@ -1,7 +1,6 @@
 import enum
 import io
 import json
-import pprint
 import sys
 
 import boto3 as boto3
@@ -125,13 +124,6 @@ alert_obj_key = parameters["ALERT_OBJ_KEY"]
 clean_bucket_name = parameters["CLEAN_BUCKET_NAME"]
 
 
-# NOTE: for now we'll take the alert object key and change out the file
-#       extension for the clean data (leaving all namespacing and such). this
-#       will probably need to change.
-# NOTE: these may be a number of different extension formats, so we're just
-#       chopping off at the first '.'
-clean_obj_key = f"{alert_obj_key[0:alert_obj_key.find('.')]}.json"
-
 # and we need the object name itself (no leading namespacing info)
 obj_name = extract_objname_from_objkey(alert_obj_key)
 
@@ -185,6 +177,14 @@ except Exception as e:
     #       nothing more specific
     logger.error(f"Could not determine filetype for {obj_name}: {e}")
     raise e
+
+
+# NOTE: for now we'll take the alert object key and change out the file
+#       extension for the clean data (leaving all namespacing and such) and add
+#       the format (fasta/fastq). this will probably need to change.
+# NOTE: these may be a number of different extension formats, so we're just
+#       chopping off at the first '.'
+clean_obj_key = f"{alert_obj_key[0:alert_obj_key.find('.')]}.{frmt}.json"
 
 
 # write out our "clean" data
