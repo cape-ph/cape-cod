@@ -178,7 +178,7 @@ class Tributary(DescribedComponentResource):
             if lperm:
                 lambda_perms.append(lperm)
             if largs:
-                lambda_funct_args.append(largs)
+                lambda_funct_args.extend(largs)
 
         # Add a bucket notification to trigger our ETL functions automatically
         # if they were configured.
@@ -281,13 +281,19 @@ class Tributary(DescribedComponentResource):
             etl_job.add_trigger_function()
         )
 
-        etl_lambda_function_args = aws.s3.BucketNotificationLambdaFunctionArgs(
-            events=["s3:ObjectCreated:*"],
-            lambda_function_arn=etl_lambda_function.arn,
-            filter_prefix=cfg["prefix"],
-            # `or []` below handles when the suffixes key exists but there are
-            # no items in the list
-            filter_suffix=",".join(f".{s}" for s in cfg["suffixes"] or []),
-        )
+        # if we have suffixes defined, we'll make a different set of args for
+        # each. if we have no suffixes defined, we'll make one set of args, but
+        # the suffix will be left pblank (meaning all suffixes will trigger)
+        suffixes = [s for s in cfg["suffixes"] or [""]]
+        etl_lambda_function_args = []
+        for s in suffixes:
+            etl_lambda_function_args.append(
+                aws.s3.BucketNotificationLambdaFunctionArgs(
+                    events=["s3:ObjectCreated:*"],
+                    lambda_function_arn=etl_lambda_function.arn,
+                    filter_prefix=cfg["prefix"],
+                    filter_suffix=s,
+                )
+            )
 
         return etl_lambda_permission, etl_lambda_function_args
