@@ -60,24 +60,12 @@ config:
               pipelines:
                   data:
                       etl:
-                          - name: fastxgz
+                          - name: fastx
                             script: glue/etl/etl_fasta_fastq.py
                             prefix: fastx
                             suffixes:
                                 - gz
-                            pymodules:
-                                - pyfastx==2.1.0
-                          - name: fasta
-                            script: glue/etl/etl_fasta_fastq.py
-                            prefix: fastx
-                            suffixes:
                                 - fasta
-                            pymodules:
-                                - pyfastx==2.1.0
-                          - name: fastq
-                            script: glue/etl/etl_fasta_fastq.py
-                            prefix: fastx
-                            suffixes:
                                 - fastq
                             pymodules:
                                 - pyfastx==2.1.0
