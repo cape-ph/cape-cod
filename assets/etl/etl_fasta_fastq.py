@@ -57,7 +57,7 @@ def handle_fasta(objkey, fname, raw_bucket):
     fa = pyfastx.Fasta(fname)
 
     return {
-        "raw_object": f"s3://{raw_bucket}{objkey}",
+        "raw_object": f"s3://{raw_bucket}/{objkey}",
         "file_name": fname,
         "format": FastxTypes.FASTA.value,
         "fasta_type": fa.type,
@@ -85,7 +85,7 @@ def handle_fastq(objkey, fname, raw_bucket):
     fq = pyfastx.Fastq(fname)
 
     return {
-        "raw_object": f"s3://{raw_bucket}{objkey}",
+        "raw_object": f"s3://{raw_bucket}/{objkey}",
         "file_name": fname,
         "format": FastxTypes.FASTQ.value,
         "num_sequences": len(fq),
