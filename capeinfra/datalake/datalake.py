@@ -285,7 +285,9 @@ class Tributary(DescribedComponentResource):
             events=["s3:ObjectCreated:*"],
             lambda_function_arn=etl_lambda_function.arn,
             filter_prefix=cfg["prefix"],
-            filter_suffix=",".join(f".{s}" for s in cfg["suffixes"]),
+            # `or []` below handles when the suffixes key exists but there are
+            # no items in the list
+            filter_suffix=",".join(f".{s}" for s in cfg["suffixes"] or []),
         )
 
         return etl_lambda_permission, etl_lambda_function_args
