@@ -5,6 +5,13 @@ import json
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
+from ..iam import (
+    get_bucket_reader_policy,
+    get_etl_job_s3_policy,
+    get_service_assume_role,
+    get_start_crawler_policy,
+    get_start_etl_job_policy,
+)
 from ..pulumi import DescribedComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
@@ -60,18 +67,7 @@ class DataCrawler(DescribedComponentResource):
 
         self.role = aws.iam.Role(
             f"{self.name}-role",
-            assume_role_policy=json.dumps(
-                {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {"Service": "glue.amazonaws.com"},
-                            "Action": "sts:AssumeRole",
-                        }
-                    ],
-                }
-            ),
+            assume_role_policy=get_service_assume_role("glue.amazonaws.com"),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": (f"{self.desc_name} data crawler role")},
         )
@@ -88,24 +84,7 @@ class DataCrawler(DescribedComponentResource):
             role=self.role.id,
             policy=Output.all(
                 buckets=[bucket.bucket for bucket in buckets], db=db.name
-            ).apply(
-                lambda args: json.dumps(
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Effect": "Allow",
-                                "Action": ["s3:GetObject", "s3:ListBucket"],
-                                "Resource": [
-                                    f"arn:aws:s3:::{bucket}/*",
-                                    f"arn:aws:s3:::{bucket}",
-                                ],
-                            }
-                            for bucket in args["buckets"]
-                        ],
-                    }
-                )
-            ),
+            ).apply(lambda args: get_bucket_reader_policy(args["buckets"])),
             opts=ResourceOptions(parent=self),
         )
 
@@ -145,18 +124,7 @@ class DataCrawler(DescribedComponentResource):
 
         crawler_trigger_role = aws.iam.Role(
             f"{self.name}-lmbdtrgrole",
-            assume_role_policy=json.dumps(
-                {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {"Service": "lambda.amazonaws.com"},
-                            "Action": "sts:AssumeRole",
-                        }
-                    ],
-                }
-            ),
+            assume_role_policy=get_service_assume_role("lambda.amazonaws.com"),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} lambda trigger role"},
         )
@@ -174,23 +142,7 @@ class DataCrawler(DescribedComponentResource):
             f"{self.name}-lmbdroleplcy",
             role=crawler_trigger_role.id,
             policy=self.crawler.name.apply(
-                lambda glue_crawler: json.dumps(
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Effect": "Allow",
-                                "Action": [
-                                    "glue:StartCrawler",
-                                    "glue:GetCrawler",
-                                ],
-                                "Resource": [
-                                    f"arn:aws:glue:*:*:crawler/{glue_crawler}"
-                                ],
-                            },
-                        ],
-                    }
-                )
+                lambda glue_crawler: get_start_crawler_policy(glue_crawler)
             ),
             opts=ResourceOptions(parent=self),
         )
@@ -288,18 +240,7 @@ class EtlJob(DescribedComponentResource):
 
         self.role = aws.iam.Role(
             f"{self.name}-role",
-            assume_role_policy=json.dumps(
-                {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {"Service": "glue.amazonaws.com"},
-                            "Action": "sts:AssumeRole",
-                        }
-                    ],
-                }
-            ),
+            assume_role_policy=get_service_assume_role("glue.amazonaws.com"),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} role"},
         )
@@ -312,38 +253,11 @@ class EtlJob(DescribedComponentResource):
                 clean_bucket=clean_bucket.bucket,
                 script_bucket=script_bucket.bucket,
             ).apply(
-                lambda args: json.dumps(
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Effect": "Allow",
-                                "Action": [
-                                    "logs:PutLogEvents",
-                                    "logs:CreateLogGroup",
-                                    "logs:CreateLogStream",
-                                ],
-                                "Resource": "arn:aws:logs:*:*:*",
-                            },
-                            {
-                                "Effect": "Allow",
-                                "Action": ["s3:GetObject"],
-                                "Resource": [
-                                    f"arn:aws:s3:::{args['script_bucket']}/{script_path}",
-                                    f"arn:aws:s3:::{args['raw_bucket']}/*",
-                                    f"arn:aws:s3:::{args['raw_bucket']}",
-                                ],
-                            },
-                            {
-                                "Effect": "Allow",
-                                "Action": ["s3:PutObject"],
-                                "Resource": [
-                                    f"arn:aws:s3:::{args['clean_bucket']}/*",
-                                    f"arn:aws:s3:::{args['clean_bucket']}",
-                                ],
-                            },
-                        ],
-                    }
+                lambda args: get_etl_job_s3_policy(
+                    args["raw_bucket"],
+                    args["clean_bucket"],
+                    args["script_bucket"],
+                    script_path,
                 )
             ),
             opts=ResourceOptions(parent=self),
@@ -379,18 +293,7 @@ class EtlJob(DescribedComponentResource):
         """
         etl_role = aws.iam.Role(
             f"{self.name}-lmbdtrgrole",
-            assume_role_policy=json.dumps(
-                {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {"Service": "lambda.amazonaws.com"},
-                            "Action": "sts:AssumeRole",
-                        }
-                    ],
-                }
-            ),
+            assume_role_policy=get_service_assume_role("lambda.amazonaws.com"),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} lambda trigger role"},
         )
@@ -408,23 +311,7 @@ class EtlJob(DescribedComponentResource):
             f"{self.name}-lmbdroleplcy",
             role=etl_role.id,
             policy=self.job.name.apply(
-                lambda glue_job: json.dumps(
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Effect": "Allow",
-                                "Action": [
-                                    "glue:StartJobRun",
-                                    "glue:GetJobRun",
-                                ],
-                                "Resource": [
-                                    f"arn:aws:glue:*:*:job/{glue_job}"
-                                ],
-                            },
-                        ],
-                    }
-                )
+                lambda glue_job: get_start_etl_job_policy(glue_job)
             ),
             opts=ResourceOptions(parent=self),
         )
