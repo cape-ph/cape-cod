@@ -44,7 +44,7 @@ def get_bucket_reader_policy(
     Returns:
         The policy statement as a json encoded string.
     """
-
+    buckets = [buckets] if isinstance(buckets, aws.s3.BucketV2) else buckets
     return json.dumps(
         {
             "Version": "2012-10-17",
