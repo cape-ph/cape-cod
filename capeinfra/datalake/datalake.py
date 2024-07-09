@@ -264,8 +264,11 @@ class Tributary(DescribedComponentResource):
                 opts=opts,
             )
 
-            # TODO: wire up pre/suffixes for crawler
-            crawler.create_object_notifications(None, None, opts)
+            crawler.create_object_notifications(
+                prefix=crawler_cfg.get("prefix"),
+                suffixes=crawler_cfg.get("suffixes"),
+                opts=opts,
+            )
 
     def configure_etl(self, cfg, auto_assets_bucket: aws.s3.BucketV2):
         """Configure an ETL job.
