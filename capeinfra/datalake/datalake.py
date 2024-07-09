@@ -3,6 +3,7 @@
 import pulumi_aws as aws
 from pulumi import Config, ResourceOptions
 
+from capeinfra.iam import get_start_crawler_policy
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 
@@ -178,7 +179,7 @@ class Tributary(DescribedComponentResource):
             if lperm:
                 lambda_perms.append(lperm)
             if largs:
-                lambda_funct_args.extend(largs)
+                lambda_funct_args.append(largs)
 
         # Add a bucket notification to trigger our ETL functions automatically
         # if they were configured.
@@ -238,16 +239,33 @@ class Tributary(DescribedComponentResource):
             crawler_cfg: The config dict for the crawler as specified in the
                          pulumi stack config.
         """
+        opts = ResourceOptions(parent=self)
         if crawler_cfg:
             crawler = DataCrawler(
                 f"{vbname}-crwl",
                 bucket,
                 self.catalog,
                 classifiers=crawler_cfg.get("classifiers", []),
-                opts=ResourceOptions(parent=self),
+                opts=opts,
                 desc_name=f"{self.desc_name} {bucket_type} data crawler",
             )
-            crawler.add_trigger_function()
+
+            opts.depends_on = [crawler]
+            crawler.add_trigger_function(
+                "./assets/lambda/lambda_glue_crawler_trigger.py",
+                crawler.crawler.id.apply(
+                    lambda glue_crawler: get_start_crawler_policy(glue_crawler)
+                ),
+                {
+                    "GLUE_CRAWLER_NAME": crawler.crawler.name.apply(
+                        lambda n: f"{n}"
+                    ),
+                },
+                opts=opts,
+            )
+
+            # TODO: wire up pre/suffixes for crawler
+            crawler.create_object_notifications(None, None, opts)
 
     def configure_etl(self, cfg, auto_assets_bucket: aws.s3.BucketV2):
         """Configure an ETL job.
