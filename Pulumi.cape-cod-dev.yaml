@@ -29,6 +29,12 @@ config:
                   clean:
                       name:
                       crawler:
+                          # NOTE: prefix/suffix only apply to bucket
+                          #       notifications. if we move away from those
+                          #       (e.g. to scheduled jobs), we'll need to move
+                          #       filtering to the lambda...
+                          prefix:
+                          suffixes:
                           classifiers:
                               - cape-csv-standard-classifier
               pipelines:
