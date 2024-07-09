@@ -52,7 +52,7 @@ class ObjectStorageTriggerable(DescribedComponentResource):
         )
 
     @property
-    def source_buckets(self):
+    def source_buckets(self) -> list[aws.s3.BucketV2]:
         """Property representing the source buckets that cause the trigger.
 
         Some subclasses will have a list of source buckets and others will have
@@ -60,6 +60,9 @@ class ObjectStorageTriggerable(DescribedComponentResource):
         a list regardless of internals.
 
         THIS PROPERTY IS REQUIRED FOR ALL SUBCLASSES.
+
+        Returns:
+            A list of source buckets that cause the trigger.
         """
         raise NotImplementedError(
             "ObjectStorageTriggerable subclasses must implement "
