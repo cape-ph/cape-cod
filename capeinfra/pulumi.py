@@ -6,7 +6,7 @@ from pulumi import ComponentResource
 class DescribedComponentResource(ComponentResource):
     """Extension of ComponentResource that takes a descriptive name."""
 
-    def __init__(self, *args, desc_name=None, **kwargs):
+    def __init__(self, comp_type, name, *args, desc_name=None, **kwargs):
         """Constructor.
 
         Takes all the same args/kwargs as pulumi's ComponentResource in addition
@@ -16,5 +16,6 @@ class DescribedComponentResource(ComponentResource):
             desc_name: A descriptive name that can be added to tags for child
                        components because names are so restricted in length.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(comp_type, name, *args, **kwargs)
+        self.name = name
         self.desc_name = desc_name
