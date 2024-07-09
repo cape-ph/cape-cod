@@ -1,7 +1,5 @@
 """Abstractions for data pipelines."""
 
-import json
-
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
@@ -9,10 +7,9 @@ from ..iam import (
     get_bucket_reader_policy,
     get_etl_job_s3_policy,
     get_service_assume_role,
-    get_start_crawler_policy,
     get_start_etl_job_policy,
 )
-from ..pulumi import DescribedComponentResource
+from ..pulumi import DescribedComponentResource, ObjectStorageTriggerable
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
@@ -34,8 +31,8 @@ CUSTOM_CLASSIFIERS = {
 }
 
 
-class DataCrawler(DescribedComponentResource):
-    """A crawler for object storage."""
+class DataCrawler(ObjectStorageTriggerable):
+    """A triggerable crawler for object storage."""
 
     def __init__(
         self,
@@ -60,10 +57,10 @@ class DataCrawler(DescribedComponentResource):
         # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:datalake:Crawler", name, *args, **kwargs)
 
-        self.name = f"{name}"
-        self.buckets = buckets = (
-            buckets if isinstance(buckets, list) else [buckets]
-        )
+        self.buckets = buckets if isinstance(buckets, list) else [buckets]
+
+        # TODO: get the role/attach/policy pattern below using the
+        #       `get_tailored_role`
 
         self.role = aws.iam.Role(
             f"{self.name}-role",
@@ -83,7 +80,8 @@ class DataCrawler(DescribedComponentResource):
             f"{name}-rlplcy",
             role=self.role.id,
             policy=Output.all(
-                buckets=[bucket.bucket for bucket in buckets], db=db.name
+                buckets=[bucket.bucket for bucket in self.source_buckets],
+                db=db.name,
             ).apply(lambda args: get_bucket_reader_policy(args["buckets"])),
             opts=ResourceOptions(parent=self),
         )
@@ -108,7 +106,7 @@ class DataCrawler(DescribedComponentResource):
                 aws.glue.CrawlerS3TargetArgs(
                     path=bucket.bucket.apply(lambda b: f"s3://{b}/")
                 )
-                for bucket in buckets
+                for bucket in self.source_buckets
             ],
             classifiers=custom_classifiers,
             opts=ResourceOptions(parent=self),
@@ -119,86 +117,14 @@ class DataCrawler(DescribedComponentResource):
         # resource that will get returned by default.
         self.register_outputs({"crawler_name": self.crawler.name})
 
-    def add_trigger_function(self):
-        """Adds a trigger function for lambda to kick off the crawler."""
+    @property
+    def source_buckets(self) -> list[aws.s3.BucketV2]:
+        """Property to return the source buckets for triggering the crawler.
 
-        crawler_trigger_role = aws.iam.Role(
-            f"{self.name}-lmbdtrgrole",
-            assume_role_policy=get_service_assume_role("lambda.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} lambda trigger role"},
-        )
-
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicyAttachment(
-            f"{self.name}-lmbdsvcroleatch",
-            role=crawler_trigger_role.name,
-            policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicy(
-            f"{self.name}-lmbdroleplcy",
-            role=crawler_trigger_role.id,
-            policy=self.crawler.name.apply(
-                lambda glue_crawler: get_start_crawler_policy(glue_crawler)
-            ),
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Create our Lambda function that triggers the given glue job
-        self.trigger_function = aws.lambda_.Function(
-            f"{self.name}-lmbdfnct",
-            role=crawler_trigger_role.arn,
-            # NOTE: Lambdas want a zip file as opposed to an s3 script location
-            code=AssetArchive(
-                {
-                    "index.py": FileAsset(
-                        "./assets/lambda/lambda_glue_crawler_trigger.py"
-                    )
-                }
-            ),
-            runtime="python3.11",
-            # in this case, the zip file for the lambda deployment is
-            # being created by this code. and the zip file will be
-            # called index. so the handler must be start with `index`
-            # and the actual function in the script must be named
-            # the same as the value here
-            handler="index.index_handler",
-            environment={
-                "variables": {
-                    "GLUE_CRAWLER_NAME": self.crawler.name,
-                }
-            },
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} lambda trigger function"},
-        )
-        # Give our function permission to invoke
-        # Add a bucket notification to trugger our lambda automatically
-        for bucket in self.buckets:
-            crawler_function_permission = aws.lambda_.Permission(
-                f"{self.name}-allow-lmbd",
-                action="lambda:InvokeFunction",
-                function=self.trigger_function.arn,
-                principal="s3.amazonaws.com",
-                source_arn=bucket.arn,
-                opts=ResourceOptions(parent=self),
-            )
-
-            aws.s3.BucketNotification(
-                f"{self.name}-s3ntfn",
-                bucket=bucket.id,
-                lambda_functions=[
-                    aws.s3.BucketNotificationLambdaFunctionArgs(
-                        events=["s3:ObjectCreated:*"],
-                        lambda_function_arn=self.trigger_function.arn,
-                    )
-                ],
-                opts=ResourceOptions(
-                    depends_on=[crawler_function_permission], parent=self
-                ),
-            )
+        Returns:
+            A list of source buckets for triggering the crawler
+        """
+        return self.buckets
 
 
 class EtlJob(DescribedComponentResource):
