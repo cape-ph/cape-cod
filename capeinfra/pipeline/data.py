@@ -8,6 +8,7 @@ from ..iam import (
     get_etl_job_s3_policy,
     get_service_assume_role,
     get_start_etl_job_policy,
+    get_tailored_role,
 )
 from ..pulumi import DescribedComponentResource, ObjectStorageTriggerable
 
@@ -59,30 +60,17 @@ class DataCrawler(ObjectStorageTriggerable):
 
         self.buckets = buckets if isinstance(buckets, list) else [buckets]
 
-        # TODO: get the role/attach/policy pattern below using the
-        #       `get_tailored_role`
-
-        self.role = aws.iam.Role(
-            f"{self.name}-role",
-            assume_role_policy=get_service_assume_role("glue.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": (f"{self.desc_name} data crawler role")},
-        )
-
-        self.service_role = aws.iam.RolePolicyAttachment(
-            f"{self.name}-svcrole",
-            role=self.role.name,
-            policy_arn="arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        self.role_policy = aws.iam.RolePolicy(
-            f"{name}-rlplcy",
-            role=self.role.id,
-            policy=Output.all(
+        # get a role for the trigger function
+        self.crawler_role = get_tailored_role(
+            self.name,
+            f"{self.desc_name} data crawler role",
+            "",
+            "glue.amazonaws.com",
+            Output.all(
                 buckets=[bucket.bucket for bucket in self.source_buckets],
                 db=db.name,
             ).apply(lambda args: get_bucket_reader_policy(args["buckets"])),
+            "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
             opts=ResourceOptions(parent=self),
         )
 
@@ -100,7 +88,7 @@ class DataCrawler(ObjectStorageTriggerable):
 
         self.crawler = aws.glue.Crawler(
             f"{self.name}-gcrwl",
-            role=self.role.arn,
+            role=self.crawler_role.arn,
             database_name=db.name,
             s3_targets=[
                 aws.glue.CrawlerS3TargetArgs(
