@@ -179,7 +179,7 @@ class Tributary(DescribedComponentResource):
             if lperm:
                 lambda_perms.append(lperm)
             if largs:
-                lambda_funct_args.append(largs)
+                lambda_funct_args.extend(largs)
 
         # Add a bucket notification to trigger our ETL functions automatically
         # if they were configured.
