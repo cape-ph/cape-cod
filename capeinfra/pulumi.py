@@ -12,7 +12,7 @@ from pulumi import (
     ResourceOptions,
 )
 
-from .iam import get_tailored_role
+from .iam import get_inline_role
 
 
 class DescribedComponentResource(ComponentResource):
@@ -51,6 +51,21 @@ class ObjectStorageTriggerable(DescribedComponentResource):
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
         )
 
+        # contains a mapping of {
+        #   bucket_id: (trigger_permission, function_args[])
+        # }
+        # needed as some triggerables are used in unison on a single bucket
+        # (e.g. many etl jobs can operate on one bucket, perhaps with different
+        # prefixes) and some triggerables themselves can be used on many
+        # buckets, so we need this info externally to this class to be able to
+        # setup bucket notifications
+        # NOTE: if we move away from bucket notifications and into something
+        #       like message queues, this madness will likely become moot
+        #       (though other madness may ensue)
+        self.trigger_meta = {}
+        # self.trigger_permission = None
+        # self.trigger_function_args = []
+
     @property
     def source_buckets(self) -> list[aws.s3.BucketV2]:
         """Property representing the source buckets that cause the trigger.
@@ -69,12 +84,34 @@ class ObjectStorageTriggerable(DescribedComponentResource):
             "source_buckets property"
         )
 
+    @property
+    def _default_filters(self) -> list:
+        """Property that returns the default empty filter for object storage.
+
+        The default object storage filter specifies no prefix and allows all
+        suffixes.
+
+        This default filter is only used when no filters are specified in the
+        configuration. If any filters are provided, this filter will not be used
+        at all (unless provided manually in the configuration).
+
+        Returns:
+            A single element list containing the default object storage filter.
+        """
+        return [
+            {
+                "prefix": "",
+                "suffixes": [""],
+            }
+        ]
+
     def add_trigger_function(
         self,
         script_path: str,
         role_policy: Input,
         env_vars: dict[str, typing.Any] | None,
-        opts: ResourceOptions | None,
+        filters: list | None = None,
+        opts: ResourceOptions | None = None,
     ):
         """Adds a trigger function for this resource.
 
@@ -90,8 +127,10 @@ class ObjectStorageTriggerable(DescribedComponentResource):
                       script.
             opts: The resource options to set for the triggered function.
         """
+        opts = opts or ResourceOptions(parent=self)
+
         # get a role for the trigger function
-        self.trigger_role = get_tailored_role(
+        self.trigger_role = get_inline_role(
             self.name,
             f"{self.desc_name} trigger role",
             self.service_prefix,
@@ -121,10 +160,17 @@ class ObjectStorageTriggerable(DescribedComponentResource):
             tags={"desc_name": f"{self.desc_name} trigger function"},
         )
 
-    def create_object_notifications(
+        # NOTE: the permission and function args only apply if we're doing
+        #       bucket notifications (e.g. triggering the function on
+        #       ObjectCreated S3 event). This needs to be re-thought if we move
+        #       to something like message queues.
+        self._init_function_args_and_perms(filters=filters)
+
+    def _init_function_args_and_perms(
         self,
-        prefix: str | None = None,
-        suffixes: list | None = None,
+        filters: list | None = None,
+        # prefix: str | None = None,
+        # suffixes: list | None = None,
         opts: ResourceOptions | None = None,
     ):
         """Creates object storage notifications that trigger our function.
@@ -144,50 +190,67 @@ class ObjectStorageTriggerable(DescribedComponentResource):
                   ComponentResources created here (e.g. permissions, bucket
                   notifications)
         """
-        perms = []
-        funct_args = []
+        # perms = []
+        # funct_args = []
         opts = opts or ResourceOptions(parent=self)
 
-        suffixes = suffixes or [""]
-        prefix = prefix or ""
+        filters = filters or self._default_filters
+        # suffixes = suffixes or [""]
+        # prefix = prefix or ""
 
         # Give our function permission to invoke a function for each source
         # bucket we're configured for
         for bucket in self.source_buckets:
-            perms.append(
+
+            # make sure we're setup for holding perms and args for this bucket
+            localopts = copy.copy(opts)
+
+            localopts.depends_on = [bucket]
+            self.trigger_meta.setdefault(
+                bucket.id.apply(lambda i: f"{i}"), {"perms": [], "args": []}
+            )
+
+            self.trigger_meta[bucket.id.apply(lambda i: f"{i}")][
+                "perms"
+            ].append(
                 aws.lambda_.Permission(
                     f"{self.name}-allow-{self.service_prefix}",
                     action="lambda:InvokeFunction",
                     function=self.trigger_function.arn,
                     principal="s3.amazonaws.com",
                     source_arn=bucket.arn,
-                    opts=opts,
+                    opts=localopts,
                 )
             )
 
             # create a set of function args for each suffix given (or a default
             # set of args if there were no suffixes given).
-            for s in suffixes:
-                funct_args.append(
-                    aws.s3.BucketNotificationLambdaFunctionArgs(
-                        events=["s3:ObjectCreated:*"],
-                        lambda_function_arn=self.trigger_function.arn,
-                        filter_prefix=prefix,
-                        filter_suffix=s,
+            for flt in filters:
+                prefix = flt.get("prefix") or ""
+                suffixes = flt.get("suffixes") or [""]
+                for s in suffixes:
+                    self.trigger_meta[bucket.id.apply(lambda i: f"{i}")][
+                        "args"
+                    ].append(
+                        aws.s3.BucketNotificationLambdaFunctionArgs(
+                            events=["s3:ObjectCreated:*"],
+                            lambda_function_arn=self.trigger_function.arn,
+                            filter_prefix=prefix,
+                            filter_suffix=s,
+                        )
                     )
-                )
 
             # we're setting a dependency on the options object that will be
             # different per loop iteration, so just make a local copy we can
             # change as needed
-            localopts = copy.copy(opts)
-            localopts.depends_on = perms
+            # localopts = copy.copy(opts)
+            # localopts.depends_on = perms
 
             # Add a bucket notification to trigger our functions automatically
             # if they were configured.
-            aws.s3.BucketNotification(
-                f"{self.name}-s3ntfn",
-                bucket=bucket.id,
-                lambda_functions=funct_args,
-                opts=localopts,
-            )
+            # aws.s3.BucketNotification(
+            #     f"{self.name}-s3ntfn",
+            #     bucket=bucket.id,
+            #     lambda_functions=funct_args,
+            #     opts=localopts,
+            # )

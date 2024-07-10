@@ -172,9 +172,9 @@ following YAML
 
 ```yaml
 cape-cod:meta:
-    glue:
-        etl:
-            - name: <THIS VALUE>
+  glue:
+    etl:
+      - name: <THIS VALUE>
 ```
 
 Some dotted names contain items such as `[something|something_else]`. In these
@@ -190,6 +190,8 @@ implies that if provided, the lower level key is required if the higher key is
 provided. E.g. `cape-cod:meta.glue.etl` is optional, but if any items are
 defined in that sequence, the key `cape-cod:meta.glue.etl.name` is required for
 each item.
+
+**_update for filters_**
 
 | name                                                                          | required?    | secret? | data format | description                                                                                                                                                                                                                                                              |
 | ----------------------------------------------------------------------------- | ------------ | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

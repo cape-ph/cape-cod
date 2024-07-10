@@ -3,7 +3,7 @@
 import pulumi_aws as aws
 from pulumi import Config, ResourceOptions
 
-from capeinfra.iam import get_start_crawler_policy
+from capeinfra.iam import get_start_crawler_policy, get_start_etl_job_policy
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 
@@ -159,6 +159,9 @@ class Tributary(DescribedComponentResource):
         # This maintains parental relationships within the pulumi stack
         super().__init__("capeinfra:datalake:Tributary", name, *args, **kwargs)
 
+        self.crawlers = []
+        self.etl_jobs = []
+
         self.name = f"{name}"
         self.catalog = db
 
@@ -170,32 +173,66 @@ class Tributary(DescribedComponentResource):
             bucket_cfg = buckets_cfg.get(bucket_type, {})
             self.configure_bucket(bucket_type, bucket_cfg)
 
+        # self.create_object_notifications(self.crawlers)
         # now setup any configured ETL jobs for the tributary
         etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", [])
-        lambda_perms = []
-        lambda_funct_args = []
-        for etl_cfg in etl_cfgs:
-            lperm, largs = self.configure_etl(etl_cfg, auto_assets_bucket)
-            if lperm:
-                lambda_perms.append(lperm)
-            if largs:
-                lambda_funct_args.extend(largs)
+        # lambda_perms = []
+        # lambda_funct_args = []
 
-        # Add a bucket notification to trigger our ETL functions automatically
-        # if they were configured.
-        # NOTE: only checking the existence of function args here as if there
-        #       are no function args, there's no need for a notification.
-        if lambda_funct_args:
-            aws.s3.BucketNotification(
-                f"{self.name}-raw-s3ntfn",
-                bucket=self.buckets[Tributary.RAW].bucket.id,
-                lambda_functions=lambda_funct_args,
-                opts=ResourceOptions(depends_on=lambda_perms, parent=self),
-            )
+        # TODO: only gphl job running. need to make sure the notifications are
+        #       made with *all* config stuff at the same time
+
+        for etl_cfg in etl_cfgs:
+            self.configure_etl(etl_cfg, auto_assets_bucket)
+            # lperm, largs = self.configure_etl(etl_cfg, auto_assets_bucket)
+            # if lperm:
+            #     lambda_perms.append(lperm)
+            # if largs:
+            #     lambda_funct_args.extend(largs)
+
+        # self.create_object_notifications(self.etl_jobs)
+        # # Add a bucket notification to trigger our ETL functions automatically
+        # # if they were configured.
+        # # NOTE: only checking the existence of function args here as if there
+        # #       are no function args, there's no need for a notification.
+        # if lambda_funct_args:
+        #     aws.s3.BucketNotification(
+        #         f"{self.name}-raw-s3ntfn",
+        #         bucket=self.buckets[Tributary.RAW].bucket.id,
+        #         lambda_functions=lambda_funct_args,
+        #         opts=ResourceOptions(depends_on=lambda_perms, parent=self),
+        #     )
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs({"tributary_name": self.name})
+
+    def create_object_notifications(self, triggerables):
+        """"""
+        aggregate_meta = {}
+        for t in triggerables:
+            if not aggregate_meta:
+                aggregate_meta.update(t.trigger_meta)
+            else:
+                for bucket_id, bmeta in t.trigger_meta.items():
+                    aggregate_meta.setdefault(
+                        bucket_id.apply(lambda b: f"{b}"),
+                        dict(perms=list(), args=list()),
+                    )
+                    aggregate_meta[bucket_id.apply(lambda b: f"{b}")][
+                        "perms"
+                    ].extend(bmeta["perms"])
+                    aggregate_meta[bucket_id.apply(lambda b: f"{b}")][
+                        "args"
+                    ].extend(bmeta["args"])
+
+        for bucket_id, bmeta in aggregate_meta.items():
+            aws.s3.BucketNotification(
+                f"{self.name}-s3ntfn",
+                bucket=bucket_id.apply(lambda b: f"{b}"),
+                lambda_functions=bmeta["args"],
+                opts=ResourceOptions(depends_on=bmeta["perms"], parent=self),
+            )
 
     def configure_bucket(self, bucket_type: str, bucket_cfg: dict):
         """Creates/configures a raw or clean bucket based on config values.
@@ -261,14 +298,17 @@ class Tributary(DescribedComponentResource):
                         lambda n: f"{n}"
                     ),
                 },
+                filters=crawler_cfg.get("filters"),
                 opts=opts,
             )
 
-            crawler.create_object_notifications(
-                prefix=crawler_cfg.get("prefix"),
-                suffixes=crawler_cfg.get("suffixes"),
-                opts=opts,
-            )
+            self.crawlers.append(crawler)
+            # crawler.create_object_notifications(
+            #     filters=crawler_cfg.get("filters"),
+            #     # prefix=crawler_cfg.get("prefix"),
+            #     # suffixes=crawler_cfg.get("suffixes"),
+            #     opts=opts,
+            # )
 
     def configure_etl(self, cfg, auto_assets_bucket: aws.s3.BucketV2):
         """Configure an ETL job.
@@ -298,23 +338,42 @@ class Tributary(DescribedComponentResource):
             desc_name=(f"{self.desc_name} raw to clean ETL job"),
         )
 
-        etl_lambda_function, etl_lambda_permission = (
-            etl_job.add_trigger_function()
+        etl_job.add_trigger_function(
+            "./assets/lambda/hai_lambda_glue_trigger.py",
+            etl_job.job.name.apply(
+                lambda glue_job: get_start_etl_job_policy(glue_job)
+            ),
+            {
+                "GLUE_JOB_NAME": etl_job.job.name,
+                "RAW_BUCKET_NAME": etl_job.raw_bucket.bucket,
+            },
+            filters=cfg.get("filters"),
+            opts=ResourceOptions(parent=self),
         )
 
-        # if we have suffixes defined, we'll make a different set of args for
-        # each. if we have no suffixes defined, we'll make one set of args, but
-        # the suffix will be left pblank (meaning all suffixes will trigger)
-        suffixes = [s for s in cfg["suffixes"] or [""]]
-        etl_lambda_function_args = []
-        for s in suffixes:
-            etl_lambda_function_args.append(
-                aws.s3.BucketNotificationLambdaFunctionArgs(
-                    events=["s3:ObjectCreated:*"],
-                    lambda_function_arn=etl_lambda_function.arn,
-                    filter_prefix=cfg["prefix"],
-                    filter_suffix=s,
-                )
-            )
+        self.etl_jobs.append(etl_job)
+        # etl_job.create_object_notifications(
+        #     filters=cfg.get("filters")
+        #     # prefix=cfg.get("prefix"), suffixes=cfg.get("suffixes")
+        # )
 
-        return etl_lambda_permission, etl_lambda_function_args
+        # etl_lambda_function, etl_lambda_permission = (
+        #     etl_job.add_trigger_function()
+        # )
+        #
+        # # if we have suffixes defined, we'll make a different set of args for
+        # # each. if we have no suffixes defined, we'll make one set of args, but
+        # # the suffix will be left pblank (meaning all suffixes will trigger)
+        # suffixes = [s for s in cfg["suffixes"] or [""]]
+        # etl_lambda_function_args = []
+        # for s in suffixes:
+        #     etl_lambda_function_args.append(
+        #         aws.s3.BucketNotificationLambdaFunctionArgs(
+        #             events=["s3:ObjectCreated:*"],
+        #             lambda_function_arn=etl_lambda_function.arn,
+        #             filter_prefix=cfg["prefix"],
+        #             filter_suffix=s,
+        #         )
+        #     )
+
+        # return etl_lambda_permission, etl_lambda_function_args

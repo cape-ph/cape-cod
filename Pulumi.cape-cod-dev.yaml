@@ -29,12 +29,13 @@ config:
                   clean:
                       name:
                       crawler:
-                          # NOTE: prefix/suffix only apply to bucket
-                          #       notifications. if we move away from those
-                          #       (e.g. to scheduled jobs), we'll need to move
-                          #       filtering to the lambda...
-                          prefix:
-                          suffixes:
+                          filters:
+                              # NOTE: prefix/suffix only apply to bucket
+                              #       notifications. if we move away from those
+                              #       (e.g. to scheduled jobs), we'll need to move
+                              #       filtering to the lambda...
+                              - prefix:
+                                suffixes:
                           classifiers:
                               - cape-csv-standard-classifier
               pipelines:
@@ -42,16 +43,18 @@ config:
                       etl:
                           - name: tnl
                             script: glue/etl/etl_tnl_alert.py
-                            prefix: tnl
-                            suffixes:
-                                - xlsx
+                            filters:
+                                - prefix: tnl
+                                  suffixes:
+                                      - xlsx
                             pymodules:
                                 - openpyxl==3.1.2
                           - name: gphl-cre
                             script: glue/etl/etl_gphl_cre_alert.py
-                            prefix: gphl-cre
-                            suffixes:
-                                - docx
+                            filters:
+                                - prefix: gphl-cre
+                                  suffixes:
+                                      - docx
                             pymodules:
                                 - python-docx==1.1.2
             - name: genomics

@@ -174,14 +174,12 @@ def get_etl_job_s3_policy(
     )
 
 
-# TODO: do not like this name and don't think it's great to have this as
-#       a function called all over the place. feels like we could
-#       do roles/poilicies better. most of ours are inline (as opposed to
-#       managed), and many are the same minus a specific bucket name or
-#       something like that. need to figure out how to improve.
+# TODO: feels like we could do roles/poilicies better. most of ours are inline
+#       (as opposed to managed), and many are the same minus a specific bucket
+#       name or something like that. need to figure out how to improve.
 # NOTE: done as a function for now because this pattern is in a number of
 #       places (lambda trigger functions, data crawlers, glue jobs, etc)
-def get_tailored_role(
+def get_inline_role(
     name: str,
     desc_name: str,
     srvc_prfx: str,
@@ -190,7 +188,7 @@ def get_tailored_role(
     srvc_policy_attach: str | None,
     opts: ResourceOptions | None,
 ) -> aws.iam.Role:
-    """Get a tailored role fir the given arguments.
+    """Get an inline role fir the given arguments.
 
     Args:
         name: The resource name the role is being used on.
@@ -206,10 +204,10 @@ def get_tailored_role(
               here.
 
     Returns:
-        The tailored role.
+        The inline role.
     """
     # first create the inline role
-    tailored_role = aws.iam.Role(
+    inline_role = aws.iam.Role(
         f"{name}-{srvc_prfx}role",
         assume_role_policy=get_service_assume_role(assume_role_srvc),
         opts=opts,
@@ -220,7 +218,7 @@ def get_tailored_role(
     if srvc_policy_attach is not None:
         aws.iam.RolePolicyAttachment(
             f"{name}-{srvc_prfx}svcroleatch",
-            role=tailored_role.name,
+            role=inline_role.name,
             policy_arn=srvc_policy_attach,
             opts=opts,
         )
@@ -228,9 +226,9 @@ def get_tailored_role(
     # and now add the policy rules we were given to the role
     aws.iam.RolePolicy(
         f"{name}-{srvc_prfx}roleplcy",
-        role=tailored_role.id,
+        role=inline_role.id,
         policy=role_policy,
         opts=opts,
     )
 
-    return tailored_role
+    return inline_role

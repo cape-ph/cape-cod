@@ -1,16 +1,14 @@
 """Abstractions for data pipelines."""
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
+from pulumi import Output, ResourceOptions
 
 from ..iam import (
     get_bucket_reader_policy,
     get_etl_job_s3_policy,
-    get_service_assume_role,
-    get_start_etl_job_policy,
-    get_tailored_role,
+    get_inline_role,
 )
-from ..pulumi import DescribedComponentResource, ObjectStorageTriggerable
+from ..pulumi import ObjectStorageTriggerable
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
@@ -61,7 +59,7 @@ class DataCrawler(ObjectStorageTriggerable):
         self.buckets = buckets if isinstance(buckets, list) else [buckets]
 
         # get a role for the trigger function
-        self.crawler_role = get_tailored_role(
+        self.crawler_role = get_inline_role(
             self.name,
             f"{self.desc_name} data crawler role",
             "",
@@ -115,7 +113,7 @@ class DataCrawler(ObjectStorageTriggerable):
         return self.buckets
 
 
-class EtlJob(DescribedComponentResource):
+class EtlJob(ObjectStorageTriggerable):
     """An extract/transform/load job."""
 
     def __init__(
@@ -152,17 +150,13 @@ class EtlJob(DescribedComponentResource):
         self.raw_bucket = raw_bucket
         self.clean_bucket = clean_bucket
 
-        self.role = aws.iam.Role(
-            f"{self.name}-role",
-            assume_role_policy=get_service_assume_role("glue.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} role"},
-        )
-
-        self.role_policy = aws.iam.RolePolicy(
-            f"{self.name}-roleplcy",
-            role=self.role.id,
-            policy=Output.all(
+        # get a role for the trigger function
+        self.etl_role = get_inline_role(
+            self.name,
+            f"{self.desc_name} ETL job role",
+            "",
+            "glue.amazonaws.com",
+            Output.all(
                 raw_bucket=raw_bucket.bucket,
                 clean_bucket=clean_bucket.bucket,
                 script_bucket=script_bucket.bucket,
@@ -174,12 +168,38 @@ class EtlJob(DescribedComponentResource):
                     script_path,
                 )
             ),
+            srvc_policy_attach=None,
             opts=ResourceOptions(parent=self),
         )
 
+        # self.role = aws.iam.Role(
+        #     f"{self.name}-role",
+        #     assume_role_policy=get_service_assume_role("glue.amazonaws.com"),
+        #     opts=ResourceOptions(parent=self),
+        #     tags={"desc_name": f"{self.desc_name} role"},
+        # )
+        #
+        # self.role_policy = aws.iam.RolePolicy(
+        #     f"{self.name}-roleplcy",
+        #     role=self.role.id,
+        #     policy=Output.all(
+        #         raw_bucket=raw_bucket.bucket,
+        #         clean_bucket=clean_bucket.bucket,
+        #         script_bucket=script_bucket.bucket,
+        #     ).apply(
+        #         lambda args: get_etl_job_s3_policy(
+        #             args["raw_bucket"],
+        #             args["clean_bucket"],
+        #             args["script_bucket"],
+        #             script_path,
+        #         )
+        #     ),
+        #     opts=ResourceOptions(parent=self),
+        # )
+
         self.job = aws.glue.Job(
             self.name,
-            role_arn=self.role.arn,
+            role_arn=self.etl_role.arn,
             command=aws.glue.JobCommandArgs(
                 script_location=script_bucket.bucket.apply(
                     lambda b: f"s3://{b}/{script_path}"
@@ -198,74 +218,83 @@ class EtlJob(DescribedComponentResource):
         )
         self.register_outputs({"job_name": self.job.name})
 
-    def add_trigger_function(self):
-        """Adds a trigger function to kick off this job.
+    @property
+    def source_buckets(self) -> list[aws.s3.BucketV2]:
+        """Property to return the source buckets for triggering the crawler.
 
         Returns:
-            A tuple containing the lambda function resource that will trigger
-            this job and the lambda permission the function will execute with.
+            A list of source buckets for triggering the crawler
         """
-        etl_role = aws.iam.Role(
-            f"{self.name}-lmbdtrgrole",
-            assume_role_policy=get_service_assume_role("lambda.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} lambda trigger role"},
-        )
+        return [self.raw_bucket]
 
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicyAttachment(
-            f"{self.name}-lmbdsvcroleatch",
-            role=etl_role.name,
-            policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicy(
-            f"{self.name}-lmbdroleplcy",
-            role=etl_role.id,
-            policy=self.job.name.apply(
-                lambda glue_job: get_start_etl_job_policy(glue_job)
-            ),
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Create our Lambda function that triggers the given glue job
-        etl_function = aws.lambda_.Function(
-            f"{self.name}-lmbdtrgfnct",
-            role=etl_role.arn,
-            code=AssetArchive(
-                {
-                    "index.py": FileAsset(
-                        "./assets/lambda/hai_lambda_glue_trigger.py"
-                    )
-                }
-            ),
-            runtime="python3.11",
-            # in this case, the zip file for the lambda deployment is
-            # being created by this code. and the zip file will be
-            # called index. so the handler must be start with `index`
-            # and the actual function in the script must be named
-            # the same as the value here
-            handler="index.index_handler",
-            environment={
-                "variables": {
-                    "GLUE_JOB_NAME": self.job.name,
-                    "RAW_BUCKET_NAME": self.raw_bucket.bucket,
-                }
-            },
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} lambda trigger function"},
-        )
-
-        # Give our function permission to invoke
-        etl_permission = aws.lambda_.Permission(
-            f"{self.name}-allow-lmbd",
-            action="lambda:InvokeFunction",
-            function=etl_function.arn,
-            principal="s3.amazonaws.com",
-            source_arn=self.raw_bucket.arn,
-            opts=ResourceOptions(parent=self),
-        )
-
-        return etl_function, etl_permission
+    # def add_trigger_function(self):
+    #     """Adds a trigger function to kick off this job.
+    #
+    #     Returns:
+    #         A tuple containing the lambda function resource that will trigger
+    #         this job and the lambda permission the function will execute with.
+    #     """
+    #     etl_role = aws.iam.Role(
+    #         f"{self.name}-lmbdtrgrole",
+    #         assume_role_policy=get_service_assume_role("lambda.amazonaws.com"),
+    #         opts=ResourceOptions(parent=self),
+    #         tags={"desc_name": f"{self.desc_name} lambda trigger role"},
+    #     )
+    #
+    #     # Attach the Lambda service role for logging privileges
+    #     aws.iam.RolePolicyAttachment(
+    #         f"{self.name}-lmbdsvcroleatch",
+    #         role=etl_role.name,
+    #         policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+    #         opts=ResourceOptions(parent=self),
+    #     )
+    #
+    #     # Attach the Lambda service role for logging privileges
+    #     aws.iam.RolePolicy(
+    #         f"{self.name}-lmbdroleplcy",
+    #         role=etl_role.id,
+    #         policy=self.job.name.apply(
+    #             lambda glue_job: get_start_etl_job_policy(glue_job)
+    #         ),
+    #         opts=ResourceOptions(parent=self),
+    #     )
+    #
+    #     # Create our Lambda function that triggers the given glue job
+    #     etl_function = aws.lambda_.Function(
+    #         f"{self.name}-lmbdtrgfnct",
+    #         role=etl_role.arn,
+    #         code=AssetArchive(
+    #             {
+    #                 "index.py": FileAsset(
+    #                     "./assets/lambda/hai_lambda_glue_trigger.py"
+    #                 )
+    #             }
+    #         ),
+    #         runtime="python3.11",
+    #         # in this case, the zip file for the lambda deployment is
+    #         # being created by this code. and the zip file will be
+    #         # called index. so the handler must be start with `index`
+    #         # and the actual function in the script must be named
+    #         # the same as the value here
+    #         handler="index.index_handler",
+    #         environment={
+    #             "variables": {
+    #                 "GLUE_JOB_NAME": self.job.name,
+    #                 "RAW_BUCKET_NAME": self.raw_bucket.bucket,
+    #             }
+    #         },
+    #         opts=ResourceOptions(parent=self),
+    #         tags={"desc_name": f"{self.desc_name} lambda trigger function"},
+    #     )
+    #
+    #     # Give our function permission to invoke
+    #     etl_permission = aws.lambda_.Permission(
+    #         f"{self.name}-allow-lmbd",
+    #         action="lambda:InvokeFunction",
+    #         function=etl_function.arn,
+    #         principal="s3.amazonaws.com",
+    #         source_arn=self.raw_bucket.arn,
+    #         opts=ResourceOptions(parent=self),
+    #     )
+    #
+    #     return etl_function, etl_permission
