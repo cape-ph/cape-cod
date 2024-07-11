@@ -58,8 +58,6 @@ config:
                   clean:
                       name:
                       crawler:
-                          exclude:
-                          schedule: "0/5 * * * ? *"
                           classifiers:
               pipelines:
                   data:
