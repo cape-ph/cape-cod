@@ -35,13 +35,20 @@ CUSTOM_CLASSIFIERS = {
 class DataCrawler(DescribedComponentResource):
     """A crawler for object storage."""
 
+    # default schedule for our crawlers will be every hour
+    DEFAULT_SCHEDULE = "* 0/1 * * * *"
+
     def __init__(
         self,
         name: str,
+        # TODO: should consider handling prefixes in each bucket
         buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
         db: aws.glue.CatalogDatabase,
         *args,
         classifiers=None,
+        schedule: str | None = None,
+        # TODO: should consider handling different exclusions for each bucket
+        excludes: list | None = None,
         **kwargs,
     ):
         """Constructor.
@@ -52,6 +59,15 @@ class DataCrawler(DescribedComponentResource):
                      the crawler will crawl.
             db: The catalog database where the crawler will write metadata.
             classifiers: A list of custom classifiers for the crawler, if any.
+            schedule: a cron formatted schedule string for the crawler's
+                      periodicity. NOTE: this cannot be faster than every 5
+                      minutes. see here for more:
+                      https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
+            excludes: a list of exclude paths for the crawler. see here for
+                      more:
+                      https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
+                      NOTE: at this time, all given exclusions apply to all
+                      buckets the crawler is set up for.
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -62,6 +78,9 @@ class DataCrawler(DescribedComponentResource):
         self.buckets = buckets = (
             buckets if isinstance(buckets, list) else [buckets]
         )
+
+        self.schedule = schedule or self.DEFAULT_SCHEDULE
+        self.excludes = excludes or []
 
         # get a role for the crawler
         self.crawler_role = get_inline_role(
@@ -95,11 +114,13 @@ class DataCrawler(DescribedComponentResource):
             database_name=db.name,
             s3_targets=[
                 aws.glue.CrawlerS3TargetArgs(
-                    path=bucket.bucket.apply(lambda b: f"s3://{b}/")
+                    path=bucket.bucket.apply(lambda b: f"s3://{b}/"),
+                    exclusions=self.excludes,
                 )
                 for bucket in buckets
             ],
             classifiers=custom_classifiers,
+            schedule=self.schedule,
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Data Crawler"},
         )
@@ -109,7 +130,13 @@ class DataCrawler(DescribedComponentResource):
         self.register_outputs({"crawler_name": self.crawler.name})
 
     def add_trigger_function(self):
-        """Adds a trigger function for lambda to kick off the crawler."""
+        """Adds a trigger function for lambda to kick off the crawler.
+
+        NOTE: We currently only support scheduled crawlers. The trigger
+              function way of doing things works, but we have no way to
+              configure switching between the 2. This code is left here cause
+              it's a useful way to kick off crawlers in some cases.
+        """
 
         # get a role for the crawler trigger function
         self.trigger_role = get_inline_role(
