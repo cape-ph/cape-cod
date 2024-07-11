@@ -120,7 +120,7 @@ class DataCrawler(DescribedComponentResource):
                 for bucket in buckets
             ],
             classifiers=custom_classifiers,
-            schedule=self.schedule,
+            schedule=f"cron({self.schedule})",
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Data Crawler"},
         )
