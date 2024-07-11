@@ -206,6 +206,8 @@ each item.
 | `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean]`                     | _optional_   | no      | `mapping`   | A mapping of config for the raw/clean bucket for the tributary.                                                                                                                                                                                                          |
 | `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].name`                | _optional_   | no      | `string`    | A name for the raw/clean bucket. If not provided a sensible default will be used.                                                                                                                                                                                        |
 | `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler`             | _optional_   | no      | `mapping`   | Crawler config for the raw/clean bucket. Only needed if a crawler is needed for the raw bucket.                                                                                                                                                                          |
+| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler.exclude`     | _optional_   | no      | `string[]`  | A list of glob patterns the crawler should not crawl. More info on format can be found [in AWS's documentation][awscrawlerpaths].                                                                                                                                        |
+| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler.schedule`    | _optional_   | no      | `string`    | A cron-formatted string for the schedule of the crawler. The fastest possible schedule is every five minutes. More info can be found [in AWS's documentation][awscron].                                                                                                  |
 | `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler.classifiers` | _optional_   | no      | `string[]`  | A list of custom classifiers for the crawler. If not provided the AWS schema detection will be allowed to figure out what to use (which may not be possible depending on the raw data schema). These classifiers must exist either in AWS or as part of this deployment. |
 | `cape-cod:datalakehouse.tributaries.pipelines`                                | _optional_   | no      | `mapping`   | Mapping of pipeline config for the tributary. We support different types of pipelines (e.g. data and analysis).                                                                                                                                                          |
 | `cape-cod:datalakehouse.tributaries.pipelines.data`                           | _optional_   | no      | `mapping`   | Mapping of data pipeline config for the tributary.                                                                                                                                                                                                                       |
@@ -223,3 +225,10 @@ each item.
 If you plan to contribute, please check the
 [contribution guidelines](https://github.com/cape-ph/.github/blob/main/CONTRIBUTING.md)
 first.
+
+<!--Reference links follow...-->
+
+[awscron]:
+  https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
+[awscrawlerpaths]:
+  https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
