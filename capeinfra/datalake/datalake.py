@@ -239,15 +239,16 @@ class Tributary(DescribedComponentResource):
                          pulumi stack config.
         """
         if crawler_cfg:
-            crawler = DataCrawler(
+            DataCrawler(
                 f"{vbname}-crwl",
                 bucket,
                 self.catalog,
                 classifiers=crawler_cfg.get("classifiers", []),
+                schedule=f"Cron({crawler_cfg.get('schedule')})",
+                excludes=crawler_cfg.get("excludes"),
                 opts=ResourceOptions(parent=self),
                 desc_name=f"{self.desc_name} {bucket_type} data crawler",
             )
-            crawler.add_trigger_function()
 
     def configure_etl(self, cfg, auto_assets_bucket: aws.s3.BucketV2):
         """Configure an ETL job.
