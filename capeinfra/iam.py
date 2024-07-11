@@ -6,6 +6,7 @@ Helpfully, the big three cloud providers all use this term.
 import json
 
 import pulumi_aws as aws
+from pulumi import Output, ResourceOptions
 
 
 def get_service_assume_role(srvc: str) -> str:
@@ -171,3 +172,63 @@ def get_etl_job_s3_policy(
             ],
         },
     )
+
+
+# TODO: feels like we could do roles/poilicies better. most of ours are inline
+#       (as opposed to managed), and many are the same minus a specific bucket
+#       name or something like that. need to figure out how to improve.
+# NOTE: done as a function for now because this pattern is in a number of
+#       places (lambda trigger functions, data crawlers, glue jobs, etc)
+def get_inline_role(
+    name: str,
+    desc_name: str,
+    srvc_prfx: str,
+    assume_role_srvc: str,
+    role_policy: Output,
+    srvc_policy_attach: str | None = None,
+    opts: ResourceOptions | None = None,
+) -> aws.iam.Role:
+    """Get an inline role fir the given arguments.
+
+    Args:
+        name: The resource name the role is being used on.
+        desc_name: The descriptive name (e.g. for tagging) for the role. this
+                   will be used as-is, so it needs to be fully rendered
+        srvc_prfx: the service prefix to use in the name (e.g. `lmbd` for aws
+                   lambda)
+        role_policy: The policy to attach to the role.
+        srvc_policy_attach: Optional identified (e.g. ARN for aws) for a service
+                            role policy to attach to the role in addition to the
+                            role_policy
+        opts: The pulumi ResourceOptions to add to ComponentResources created
+              here.
+
+    Returns:
+        The inline role.
+    """
+    # first create the inline role
+    inline_role = aws.iam.Role(
+        f"{name}-{srvc_prfx}role",
+        assume_role_policy=get_service_assume_role(assume_role_srvc),
+        opts=opts,
+        tags={"desc_name": desc_name},
+    )
+
+    # if we were told to also attach a service role's policy, do so
+    if srvc_policy_attach is not None:
+        aws.iam.RolePolicyAttachment(
+            f"{name}-{srvc_prfx}svcroleatch",
+            role=inline_role.name,
+            policy_arn=srvc_policy_attach,
+            opts=opts,
+        )
+
+    # and now add the policy rules we were given to the role
+    aws.iam.RolePolicy(
+        f"{name}-{srvc_prfx}roleplcy",
+        role=inline_role.id,
+        policy=role_policy,
+        opts=opts,
+    )
+
+    return inline_role
