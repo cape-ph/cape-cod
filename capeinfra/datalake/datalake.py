@@ -244,8 +244,8 @@ class Tributary(DescribedComponentResource):
                 bucket,
                 self.catalog,
                 classifiers=crawler_cfg.get("classifiers", []),
-                schedule=f"Cron({crawler_cfg.get('schedule')})",
-                excludes=crawler_cfg.get("excludes"),
+                schedule=crawler_cfg.get("schedule"),
+                excludes=crawler_cfg.get("exclude"),
                 opts=ResourceOptions(parent=self),
                 desc_name=f"{self.desc_name} {bucket_type} data crawler",
             )
