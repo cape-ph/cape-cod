@@ -1,14 +1,12 @@
 """Abstractions for data pipelines."""
 
-import json
-
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
 from ..iam import (
     get_bucket_reader_policy,
     get_etl_job_s3_policy,
-    get_service_assume_role,
+    get_inline_role,
     get_start_crawler_policy,
     get_start_etl_job_policy,
 )
@@ -65,26 +63,17 @@ class DataCrawler(DescribedComponentResource):
             buckets if isinstance(buckets, list) else [buckets]
         )
 
-        self.role = aws.iam.Role(
-            f"{self.name}-role",
-            assume_role_policy=get_service_assume_role("glue.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": (f"{self.desc_name} data crawler role")},
-        )
-
-        self.service_role = aws.iam.RolePolicyAttachment(
-            f"{self.name}-svcrole",
-            role=self.role.name,
-            policy_arn="arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        self.role_policy = aws.iam.RolePolicy(
-            f"{name}-rlplcy",
-            role=self.role.id,
-            policy=Output.all(
-                buckets=[bucket.bucket for bucket in buckets], db=db.name
+        # get a role for the crawler
+        self.crawler_role = get_inline_role(
+            self.name,
+            f"{self.desc_name} data crawler role",
+            "",
+            "glue.amazonaws.com",
+            Output.all(
+                buckets=[bucket.bucket for bucket in self.buckets],
+                db=db.name,
             ).apply(lambda args: get_bucket_reader_policy(args["buckets"])),
+            "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
             opts=ResourceOptions(parent=self),
         )
 
@@ -102,7 +91,7 @@ class DataCrawler(DescribedComponentResource):
 
         self.crawler = aws.glue.Crawler(
             f"{self.name}-gcrwl",
-            role=self.role.arn,
+            role=self.crawler_role.arn,
             database_name=db.name,
             s3_targets=[
                 aws.glue.CrawlerS3TargetArgs(
@@ -122,35 +111,23 @@ class DataCrawler(DescribedComponentResource):
     def add_trigger_function(self):
         """Adds a trigger function for lambda to kick off the crawler."""
 
-        crawler_trigger_role = aws.iam.Role(
-            f"{self.name}-lmbdtrgrole",
-            assume_role_policy=get_service_assume_role("lambda.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} lambda trigger role"},
-        )
-
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicyAttachment(
-            f"{self.name}-lmbdsvcroleatch",
-            role=crawler_trigger_role.name,
-            policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicy(
-            f"{self.name}-lmbdroleplcy",
-            role=crawler_trigger_role.id,
-            policy=self.crawler.name.apply(
+        # get a role for the crawler trigger function
+        self.trigger_role = get_inline_role(
+            f"{self.name}-trgrole",
+            f"{self.desc_name} data crawler trigger role",
+            "lmbd",
+            "lambda.amazonaws.com",
+            self.crawler.name.apply(
                 lambda glue_crawler: get_start_crawler_policy(glue_crawler)
             ),
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             opts=ResourceOptions(parent=self),
         )
 
         # Create our Lambda function that triggers the given glue job
         self.trigger_function = aws.lambda_.Function(
             f"{self.name}-lmbdfnct",
-            role=crawler_trigger_role.arn,
+            role=self.trigger_role.arn,
             # NOTE: Lambdas want a zip file as opposed to an s3 script location
             code=AssetArchive(
                 {
@@ -238,17 +215,12 @@ class EtlJob(DescribedComponentResource):
         self.raw_bucket = raw_bucket
         self.clean_bucket = clean_bucket
 
-        self.role = aws.iam.Role(
-            f"{self.name}-role",
-            assume_role_policy=get_service_assume_role("glue.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} role"},
-        )
-
-        self.role_policy = aws.iam.RolePolicy(
-            f"{self.name}-roleplcy",
-            role=self.role.id,
-            policy=Output.all(
+        self.etl_role = get_inline_role(
+            self.name,
+            f"{self.desc_name} ETL job role",
+            "",
+            "glue.amazonaws.com",
+            Output.all(
                 raw_bucket=raw_bucket.bucket,
                 clean_bucket=clean_bucket.bucket,
                 script_bucket=script_bucket.bucket,
@@ -260,12 +232,13 @@ class EtlJob(DescribedComponentResource):
                     script_path,
                 )
             ),
+            srvc_policy_attach=None,
             opts=ResourceOptions(parent=self),
         )
 
         self.job = aws.glue.Job(
             self.name,
-            role_arn=self.role.arn,
+            role_arn=self.etl_role.arn,
             command=aws.glue.JobCommandArgs(
                 script_location=script_bucket.bucket.apply(
                     lambda b: f"s3://{b}/{script_path}"
@@ -291,35 +264,23 @@ class EtlJob(DescribedComponentResource):
             A tuple containing the lambda function resource that will trigger
             this job and the lambda permission the function will execute with.
         """
-        etl_role = aws.iam.Role(
-            f"{self.name}-lmbdtrgrole",
-            assume_role_policy=get_service_assume_role("lambda.amazonaws.com"),
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} lambda trigger role"},
-        )
-
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicyAttachment(
-            f"{self.name}-lmbdsvcroleatch",
-            role=etl_role.name,
-            policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Attach the Lambda service role for logging privileges
-        aws.iam.RolePolicy(
-            f"{self.name}-lmbdroleplcy",
-            role=etl_role.id,
-            policy=self.job.name.apply(
+        # get a role for the etl job trigger
+        self.trigger_role = get_inline_role(
+            f"{self.name}-trgrole",
+            f"{self.desc_name} ETL job trigger role",
+            "lmbd",
+            "lambda.amazonaws.com",
+            self.job.name.apply(
                 lambda glue_job: get_start_etl_job_policy(glue_job)
             ),
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             opts=ResourceOptions(parent=self),
         )
 
         # Create our Lambda function that triggers the given glue job
         etl_function = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
-            role=etl_role.arn,
+            role=self.trigger_role.arn,
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
