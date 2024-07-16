@@ -218,6 +218,10 @@ each item.
 | `cape-cod:datalakehouse.tributaries.pipelines.data.etl.suffixes`              | **required** | no      | `string[]`  | A list of suffixes to limit the ETL to. All suffixes will be passed through ETL if the list is empty.                                                                                                                                                                    |
 | `cape-cod:datalakehouse.tributaries.pipelines.data.etl.pymodules`             | **required** | no      | `string[]`  | A list of python modules (using [PEP 440](https://peps.python.org/pep-0440/) version specification if needed) to ensure are available for the ETL script. **NOTE** these will be installed as the ETL script is spun up, increasing execution time and monetary cost.    |
 
+## 📐 Design Discussion
+
+- [Writeup of some queuing considerations](./README.queuing.md)
+
 ## 🗒️ Links
 
 ## 🥼 Contributing
