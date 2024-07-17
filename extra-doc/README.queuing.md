@@ -26,6 +26,13 @@ Some areas in which queues are used to solve specific problems:
   handler may need to `sleep` or otherwise spin until a resource is available,
   costing money to wait.
 
+AWS provides a few different queuing options for different circumstances. For
+the most part we will be looking at `Simple Queue Service (SQS)` and
+`Simple Notification Service (SNS)`. In many cases these can be considered quite
+similar except for SQS is one publisher to one subscriber, where `SNS` is one
+publisher to many subscribers. `EventBridge` also exists, which is like a
+queuing system for AWS events.
+
 Some items to keep in mind in the following sections:
 
 - Putting messages in a queue can trigger a handler action. This action has a
