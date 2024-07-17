@@ -75,6 +75,28 @@ class DatalakeHouse(DescribedComponentResource):
             tags={"desc_name": f"{self.desc_name} athena workgroup"},
         )
 
+        self.tributary_atrr_ddb = aws.dynamodb.Table(
+            f"{self.name}-tribattrs-ddb",
+            name=f"{self.name}-TributaryAttributes",
+            billing_mode="PAY_PER_REQUEST",
+            hash_key="bucket_name",
+            attributes=[
+                {
+                    "name": "bucket_name",
+                    "type": "S",
+                },
+                # NOTE: we do not need to define any part of the "schema" here
+                #       that isn't needed in an index. and the only indexy
+                #       thing here is the hash key.
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} Tributary attributes DynamoDB Table"
+                ),
+            },
+        )
+
         # create the parts of the datalake from the tributary configuration
         # (e.g. hai, genomics, etc)
         tributary_config = datalake_config.get("tributaries")
