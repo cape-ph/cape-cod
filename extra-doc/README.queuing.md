@@ -40,8 +40,8 @@ Some items to keep in mind in the following sections:
 
 ## Message Consumption Models
 
-When considering the queing system for any given problem, how the contets of the
-queue are consumed is primary consideration. We consider the push and pull
+When considering the queuing system for any given problem, how the contents of
+the queue are consumed is primary consideration. We consider the push and pull
 consumption models below.
 
 ### Push
@@ -90,7 +90,7 @@ available. This means messgages that come in immediately following the
 sautration may not get handled until messages that come in just after handlers
 are available again.
 
-Another potential problem with _push_ queues is that they only reall handle a
+Another potential problem with _push_ queues is that they only really handle a
 single consumer of messages. The consumer may in turn kick off a number of other
 actions, but like the aforementioned events on new raw objects, there can be
 only one handler.
@@ -100,7 +100,7 @@ only one handler.
 In the _pull_ system, queue handlers are scheduled instead of being triggered on
 new messages. In this case, the queue handler may be aware of how many messages
 can be handled at any given time (perhaps as the result of some ad hoc
-calulation) and can act accordingly. Note the number of messages that can be
+calculation) and can act accordingly. Note the number of messages that can be
 handled may be 0, in which case the handler would give up until it's next
 scheduled run.
 
