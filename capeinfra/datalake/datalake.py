@@ -216,7 +216,12 @@ class Tributary(DescribedComponentResource):
             self.configure_bucket(bucket_type, bucket_cfg)
 
         # now setup any configured ETL jobs for the tributary
-        etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", [])
+        # NOTE: in the case the etl key is specified but empty, the final
+        #       `or []` gives us an empty list
+        # TODO: there's a good amount of defensive coding around things that
+        #       could go wrong in the config file. we should do something to put
+        #       that all in one place instead of scattered everywhere...
+        etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", []) or []
 
         lambda_perms = []
         lambda_funct_args = []
@@ -229,10 +234,6 @@ class Tributary(DescribedComponentResource):
 
             # put the ETL job configuration into the tributary attributes table
             # for the raw bucket
-            # TODO: in the case of the genomics tributary, this table item
-            #       *always* reports the item is different, even doing a `pulumi
-            #       preview` immendiately following a `pulumi up`. Need to
-            #       figure out why...
             aws.dynamodb.TableItem(
                 f"{self.name}-{etl_cfg['name']}-ddbitem",
                 table_name=tributary_attrs_ddb.name,
@@ -248,14 +249,10 @@ class Tributary(DescribedComponentResource):
                         "prefix": {"S": etl_cfg["prefix"]},
                         "etl_job": {"S": job.job.id},
                         "suffixes": {
-                            # NOTE: originally tried to use "L" (list) instead
-                            #       of "SS" (string set) here, and it lead to
-                            #       an error on preview as the "L" seemed to be
-                            #       interpreted as a string. As this should be
-                            #       a set of unique file extensions to process,
-                            #       a set should be fine here
-                            # "SS": [s for s in etl_cfg["suffixes"] or [""]]
-                            "SS": etl_cfg.get("suffixes", [""])
+                            "L": [
+                                {"S": suf}
+                                for suf in etl_cfg.get("suffixes", [""])
+                            ]
                         },
                     }
                 ),
