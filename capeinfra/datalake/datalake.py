@@ -1,7 +1,9 @@
 """Contains data lake related declaratiohs."""
 
+import json
+
 import pulumi_aws as aws
-from pulumi import Config, ResourceOptions
+from pulumi import Config, Input, Output, ResourceOptions
 
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
@@ -78,16 +80,36 @@ class DatalakeHouse(DescribedComponentResource):
         self.tributary_atrr_ddb = aws.dynamodb.Table(
             f"{self.name}-tribattrs-ddb",
             name=f"{self.name}-TributaryAttributes",
+            # NOTE: this table will be accessed as needed to do ETL jobs.
+            #       it'll be pretty hard (at least till this is use for a
+            #       while) to come up with read/write metrics to set this table
+            #       up as PROVISIONED with those values. We'd probably be much
+            #       cheaper to go that route if we have a really solid idea of
+            #       how many reads/writes this table needs
             billing_mode="PAY_PER_REQUEST",
             hash_key="bucket_name",
+            range_key="prefix",
             attributes=[
+                # NOTE: we do not need to define any part of the "schema" here
+                #       that isn't needed in an index.
+                # TODO: right now the index (unique pk) is the hash/range key
+                #       pair. this is great if we have one ETL for one set of
+                #       suffixes in a prefix. if we want to run many ETLs on
+                #       different prefixes in the same prefix, this will fail
+                #       to work when we try to add items to the table as we'd
+                #       have more than one item with the (bucket,prefix) key. we
+                #       could change this to work on a triple of
+                #       (bucket,prefix,suffix) instead. might end up with a bit
+                #       more (duped) data in the db, but should solve the issue
+                #       stated above
                 {
                     "name": "bucket_name",
                     "type": "S",
                 },
-                # NOTE: we do not need to define any part of the "schema" here
-                #       that isn't needed in an index. and the only indexy
-                #       thing here is the hash key.
+                {
+                    "name": "prefix",
+                    "type": "S",
+                },
             ],
             opts=ResourceOptions(parent=self),
             tags={
@@ -111,6 +133,7 @@ class DatalakeHouse(DescribedComponentResource):
                         trib_config,
                         self.catalog.catalog_database,
                         auto_assets_bucket,
+                        self.tributary_atrr_ddb,
                         opts=ResourceOptions(parent=self),
                         desc_name=f"{self.desc_name} {trib_name} tributary",
                     )
@@ -174,6 +197,7 @@ class Tributary(DescribedComponentResource):
         cfg: dict,
         db: aws.glue.CatalogDatabase,
         auto_assets_bucket: aws.s3.BucketV2,
+        tributary_attrs_ddb: aws.dynamodb.Table,
         *args,
         **kwargs,
     ):
@@ -193,14 +217,50 @@ class Tributary(DescribedComponentResource):
 
         # now setup any configured ETL jobs for the tributary
         etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", [])
+
         lambda_perms = []
         lambda_funct_args = []
         for etl_cfg in etl_cfgs:
-            lperm, largs = self.configure_etl(etl_cfg, auto_assets_bucket)
+            lperm, largs, job = self.configure_etl(etl_cfg, auto_assets_bucket)
             if lperm:
                 lambda_perms.append(lperm)
             if largs:
                 lambda_funct_args.extend(largs)
+
+            # put the ETL job configuration into the tributary attributes table
+            # for the raw bucket
+            # TODO: in the case of the genomics tributary, this table item
+            #       *always* reports the item is different, even doing a `pulumi
+            #       preview` immendiately following a `pulumi up`. Need to
+            #       figure out why...
+            aws.dynamodb.TableItem(
+                f"{self.name}-{etl_cfg['name']}-ddbitem",
+                table_name=tributary_attrs_ddb.name,
+                hash_key=tributary_attrs_ddb.hash_key,
+                range_key=tributary_attrs_ddb.range_key.apply(
+                    lambda rk: f"{rk}"
+                ),
+                item=Output.json_dumps(
+                    {
+                        "bucket_name": {
+                            "S": self.buckets[Tributary.RAW].bucket.id,
+                        },
+                        "prefix": {"S": etl_cfg["prefix"]},
+                        "etl_job": {"S": job.job.id},
+                        "suffixes": {
+                            # NOTE: originally tried to use "L" (list) instead
+                            #       of "SS" (string set) here, and it lead to
+                            #       an error on preview as the "L" seemed to be
+                            #       interpreted as a string. As this should be
+                            #       a set of unique file extensions to process,
+                            #       a set should be fine here
+                            # "SS": [s for s in etl_cfg["suffixes"] or [""]]
+                            "SS": etl_cfg.get("suffixes", [""])
+                        },
+                    }
+                ),
+                opts=ResourceOptions(parent=self),
+            )
 
         # Add a bucket notification to trigger our ETL functions automatically
         # if they were configured.
@@ -319,4 +379,4 @@ class Tributary(DescribedComponentResource):
                 )
             )
 
-        return etl_lambda_permission, etl_lambda_function_args
+        return etl_lambda_permission, etl_lambda_function_args, etl_job
