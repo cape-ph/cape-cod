@@ -88,18 +88,18 @@ def get_etl_attrs(
     return ret
 
 
-def send_etl_message(queue_url: str, obj_info: dict):
+def send_etl_message(queue_url: str, qmsg: dict):
     """Send the object info as a json message to the specified queue.
 
     Args:
         queue_url: The URL of the queue to send the message to.
-        obj_info: A dict containing info about the new S3 object that needs to
-                  be processed by ETL.
+        qmsg: A dict containing info about the new S3 object and ETL job that
+              needs to be processed by ETL.
 
     Raises:
         ClientError: On any error in sending the message.
     """
-    body = json.dumps(obj_info)
+    body = json.dumps(qmsg)
     try:
         sqs_client.send_message(
             QueueUrl=queue_url,
@@ -192,7 +192,11 @@ def index_handler(event, context):
                 # if the file passes criteria, add message to queue_name
                 if suffix in etl_attrs["suffixes"]:
                     # we care about this object. go ahead and queue a message
-                    send_etl_message(queue_url, oi)
+                    qmsg = {}
+                    qmsg.update(oi)
+                    qmsg.setdefault("etl_job", etl_attrs.get("etl_job"))
+
+                    send_etl_message(queue_url, qmsg)
                     processed_oi.append(oi)
                 else:
                     ignored_oi.append(oi)
