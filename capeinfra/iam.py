@@ -177,7 +177,7 @@ def get_etl_job_s3_policy(
 def get_sqs_raw_notifier_policy(
     queue_name: str, etl_attr_ddb_table_name: str
 ) -> str:
-    """Get a role policy statement for reading from sqs and dynamodb.
+    """Get a role policy statement for reading dynamodb and writing sqs.
 
     This policy allows for actions on an sqs queue, a dynamodb table and
     logging necessary for raw data handlers to place metadata about a new S3
@@ -225,6 +225,67 @@ def get_sqs_raw_notifier_policy(
                     "Resource": [
                         f"arn:aws:dynamodb:*:*:table/{etl_attr_ddb_table_name}",
                     ],
+                },
+            ],
+        },
+    )
+
+
+def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
+    """Get a role policy statement for reading from sqs and starting glue jobs.
+
+    This policy allows for actions on an sqs queue, configured glue jobs and
+    logging necessary for SQS trigger functions to read metadata from an SQS
+    queue and to start ETL glue jobs with the metadata.
+
+    Args:
+        queue_name: the name of the queue to grant access to.
+        job_names: a list of ETL job names that this policy will allow execution
+                   of.
+
+    Returns:
+        The policy statement as a dictionary json encoded string.
+    """
+
+    # separate variable to make linter happy
+    jobstr = (
+        f"[{','.join([f'arn:aws:glue:*:*:job/{job}' for job in job_names])}]"
+    )
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:PutLogEvents",
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "sqs:GetQueueUrl",
+                        "sqs:GetQueueAttributes",
+                        # for requeue
+                        "sqs:SendMessage",
+                        "sqs:ReceiveMessage",
+                        "sqs:DeleteMessage",
+                    ],
+                    "Resource": [
+                        f"arn:aws:sqs:*:*:{queue_name}",
+                    ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "glue:StartJobRun",
+                        "glue:GetJobRun",
+                    ],
+                    "Resource": jobstr,
                 },
             ],
         },
