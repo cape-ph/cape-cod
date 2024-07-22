@@ -3,7 +3,11 @@
 import pulumi_aws as aws
 from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions
 
-from capeinfra.iam import get_inline_role, get_sqs_raw_notifier_policy
+from capeinfra.iam import (
+    get_inline_role,
+    get_sqs_lambda_glue_trigger_policy,
+    get_sqs_raw_notifier_policy,
+)
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 
@@ -236,6 +240,7 @@ class Tributary(DescribedComponentResource):
 
         lambda_perms = []
         lambda_funct_args = []
+        jobs = []
         for etl_cfg in etl_cfgs:
             # TODO: probs only going to need the job here with queue
             #       implementation
@@ -244,6 +249,8 @@ class Tributary(DescribedComponentResource):
                 lambda_perms.append(lperm)
             if largs:
                 lambda_funct_args.extend(largs)
+            if job:
+                jobs.append(job)
 
             # put the ETL job configuration into the tributary attributes table
             # for the raw bucket
@@ -273,17 +280,82 @@ class Tributary(DescribedComponentResource):
             )
 
         # TODO:
-        #   - setup queue and any perms needed for it
-        #   - get raw bucket notification going to the queue
         #   - setup handler for pulling off queue and doing etl
         #   - ensure requeuing is working as needed
         #   - cleanup current etl stuff to make table items but not configure
         #     the handler function
 
+        ## Lambda SQS Target
+
         # get a role for the raw bucket trigger
-        self.trigger_role = get_inline_role(
-            f"{self.name}-trgrole",
-            f"{self.desc_name} raw data bucket trigger role",
+        self.sqs_trigger_role = get_inline_role(
+            f"{self.name}-sqstrgrole",
+            f"{self.desc_name} raw data SQS trigger role",
+            "lmbd",
+            "lambda.amazonaws.com",
+            Output.all(
+                qname=self.raw_data_queue.name,
+                job_names=[j.name for j in jobs],
+            ).apply(
+                lambda args: get_sqs_lambda_glue_trigger_policy(
+                    args["qname"], args["job_names"]
+                )
+            ),
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Create our Lambda function that triggers the given glue job
+        self.qmsg_handler = aws.lambda_.Function(
+            f"{self.name}-sqslmbdtrgfnct",
+            role=self.sqs_trigger_role.arn,
+            code=AssetArchive(
+                {
+                    "index.py": FileAsset(
+                        "./assets/lambda/sqs_etl_job_trigger_lambda.py"
+                    )
+                }
+            ),
+            runtime="python3.11",
+            # in this case, the zip file for the lambda deployment is
+            # being created by this code. and the zip file will be
+            # called index. so the handler must be start with `index`
+            # and the actual function in the script must be named
+            # the same as the value here
+            handler="index.index_handler",
+            environment={
+                "variables": {
+                    "QUEUE_NAME": self.raw_data_queue.name,
+                }
+            },
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": f"{self.desc_name} sqs message lambda trigger function"
+            },
+        )
+
+        aws.lambda_.EventSourceMapping(
+            f"{self.name}-sqslmbdatrgr",
+            event_source_arn=self.raw_data_queue.arn,
+            function_name=self.qmsg_handler.arn,
+        )
+
+        # Give our function permission to invoke
+        # qmsg_handler_permission = aws.lambda_.Permission(
+        #     f"{self.name}-sqs-allow-lmbd",
+        #     action="lambda:InvokeFunction",
+        #     function=qmsg_handler.arn,
+        #     principal="sqs.amazonaws.com",
+        #     source_arn=self.buckets[Tributary.RAW].bucket.arn,
+        #     opts=ResourceOptions(parent=self),
+        # )
+
+        ## Bucket notification stuff below
+
+        # get a role for the raw bucket trigger
+        self.raw_bucket_trigger_role = get_inline_role(
+            f"{self.name}-s3trgrole",
+            f"{self.desc_name} raw data S3 bucket trigger role",
             "lmbd",
             "lambda.amazonaws.com",
             Output.all(
@@ -301,7 +373,7 @@ class Tributary(DescribedComponentResource):
         # Create our Lambda function that triggers the given glue job
         new_object_handler = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
-            role=self.trigger_role.arn,
+            role=self.raw_bucket_trigger_role.arn,
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
@@ -330,7 +402,7 @@ class Tributary(DescribedComponentResource):
 
         # Give our function permission to invoke
         new_obj_handler_permission = aws.lambda_.Permission(
-            f"{self.name}-allow-lmbd",
+            f"{self.name}-rawS3-allow-lmbd",
             action="lambda:InvokeFunction",
             function=new_object_handler.arn,
             principal="s3.amazonaws.com",
