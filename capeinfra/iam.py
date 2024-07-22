@@ -174,6 +174,63 @@ def get_etl_job_s3_policy(
     )
 
 
+def get_sqs_raw_notifier_policy(
+    queue_name: str, etl_attr_ddb_table_name: str
+) -> str:
+    """Get a role policy statement for reading from sqs and dynamodb.
+
+    This policy allows for actions on an sqs queue, a dynamodb table and
+    logging necessary for raw data handlers to place metadata about a new S3
+    object into a specific SQS queue and to read some of the metadata from a
+    dynamodb table.
+
+    Args:
+        queue_name: the name of the queue to grant access to.
+        etl_attr_ddb_table_name: The name of the DynamoDB table storing the ETL
+                                 attributes.
+
+    Returns:
+        The policy statement as a dictionary json encoded string.
+    """
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:PutLogEvents",
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "sqs:GetQueueUrl",
+                        "sqs:SendMessage",
+                    ],
+                    "Resource": [
+                        f"arn:aws:sqs:*:*:{queue_name}",
+                    ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:DescribeTable",
+                        "dynamodb:GetItem",
+                    ],
+                    "Resource": [
+                        f"arn:aws:dynamodb:*:*:table/{etl_attr_ddb_table_name}",
+                    ],
+                },
+            ],
+        },
+    )
+
+
 # TODO: feels like we could do roles/poilicies better. most of ours are inline
 #       (as opposed to managed), and many are the same minus a specific bucket
 #       name or something like that. need to figure out how to improve.
