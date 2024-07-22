@@ -88,10 +88,12 @@ def get_etl_attrs(
     return ret
 
 
-def send_etl_message(queue_url: str, qmsg: dict):
+def send_etl_message(queue_name: str, queue_url: str, qmsg: dict):
     """Send the object info as a json message to the specified queue.
 
     Args:
+        queue_name: The name of the queue to send the message to. This is needed
+                    to make a message group id for thie fifo queue.
         queue_url: The URL of the queue to send the message to.
         qmsg: A dict containing info about the new S3 object and ETL job that
               needs to be processed by ETL.
@@ -104,6 +106,7 @@ def send_etl_message(queue_url: str, qmsg: dict):
         sqs_client.send_message(
             QueueUrl=queue_url,
             MessageBody=body,
+            MessageGroupId=f"{queue_name}-raw-data-msg",
         )
     except ClientError as err:
         logger.exception(
@@ -127,7 +130,7 @@ def index_handler(event, context):
     """
 
     queue_name = os.getenv("QUEUE_NAME")
-    etl_attrs_ddb_name = os.getenv("TRIB_ATTRS_DDB")
+    etl_attrs_ddb_name = os.getenv("ETL_ATTRS_DDB_TABLE")
 
     # obligatory data validation
     if queue_name is None:
@@ -158,7 +161,7 @@ def index_handler(event, context):
         for rec in event["Records"]
     ]
 
-    # get a reference to the tribuitary attributes table
+    # get a reference to the etl attributes table
     ddb_table = get_etl_attrs_table(etl_attrs_ddb_name)
 
     try:
@@ -167,7 +170,10 @@ def index_handler(event, context):
         ignored_oi = []
         processed_oi = []
 
-        queue_url = sqs_client.get_queue_by_name(QueueName=queue_name)
+        # TODO: any other error checking here? we should get an exception if
+        #       the response isn't valid...
+        response = sqs_client.get_queue_url(QueueName=queue_name)
+        queue_url = response["QueueUrl"]
 
         for oi in object_info:
             # deconstruct the key (s3 name, prefix, suffix)
@@ -196,7 +202,7 @@ def index_handler(event, context):
                     qmsg.update(oi)
                     qmsg.setdefault("etl_job", etl_attrs.get("etl_job"))
 
-                    send_etl_message(queue_url, qmsg)
+                    send_etl_message(queue_name, queue_url, qmsg)
                     processed_oi.append(oi)
                 else:
                     ignored_oi.append(oi)
