@@ -1,10 +1,9 @@
 """Contains data lake related declaratiohs."""
 
-import json
-
 import pulumi_aws as aws
-from pulumi import Config, Input, Output, ResourceOptions
+from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions
 
+from capeinfra.iam import get_inline_role, get_sqs_raw_notifier_policy
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 
@@ -77,7 +76,9 @@ class DatalakeHouse(DescribedComponentResource):
             tags={"desc_name": f"{self.desc_name} athena workgroup"},
         )
 
-        self.tributary_atrr_ddb = aws.dynamodb.Table(
+        # setup a DynamoDB table to hold the prefix/suffix/etl job attributes
+        # for all tributaries
+        self.etl_attr_ddb_table = aws.dynamodb.Table(
             f"{self.name}-tribattrs-ddb",
             name=f"{self.name}-TributaryAttributes",
             # NOTE: this table will be accessed as needed to do ETL jobs.
@@ -133,7 +134,7 @@ class DatalakeHouse(DescribedComponentResource):
                         trib_config,
                         self.catalog.catalog_database,
                         auto_assets_bucket,
-                        self.tributary_atrr_ddb,
+                        self.etl_attr_ddb_table,
                         opts=ResourceOptions(parent=self),
                         desc_name=f"{self.desc_name} {trib_name} tributary",
                     )
@@ -197,7 +198,7 @@ class Tributary(DescribedComponentResource):
         cfg: dict,
         db: aws.glue.CatalogDatabase,
         auto_assets_bucket: aws.s3.BucketV2,
-        tributary_attrs_ddb: aws.dynamodb.Table,
+        etl_attrs_ddb_table: aws.dynamodb.Table,
         *args,
         **kwargs,
     ):
@@ -223,9 +224,21 @@ class Tributary(DescribedComponentResource):
         #       that all in one place instead of scattered everywhere...
         etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", []) or []
 
+        self.raw_data_queue = aws.sqs.Queue(
+            # TODO: do we need to add server side encryption or any delay in
+            #       delivery?
+            f"{self.name}-rawq",
+            name=f"{self.name}-rawq.fifo",
+            content_based_deduplication=True,
+            fifo_queue=True,
+            tags={"desc_name": f"{self.desc_name} raw data notification queue"},
+        )
+
         lambda_perms = []
         lambda_funct_args = []
         for etl_cfg in etl_cfgs:
+            # TODO: probs only going to need the job here with queue
+            #       implementation
             lperm, largs, job = self.configure_etl(etl_cfg, auto_assets_bucket)
             if lperm:
                 lambda_perms.append(lperm)
@@ -236,9 +249,9 @@ class Tributary(DescribedComponentResource):
             # for the raw bucket
             aws.dynamodb.TableItem(
                 f"{self.name}-{etl_cfg['name']}-ddbitem",
-                table_name=tributary_attrs_ddb.name,
-                hash_key=tributary_attrs_ddb.hash_key,
-                range_key=tributary_attrs_ddb.range_key.apply(
+                table_name=etl_attrs_ddb_table.name,
+                hash_key=etl_attrs_ddb_table.hash_key,
+                range_key=etl_attrs_ddb_table.range_key.apply(
                     lambda rk: f"{rk}"
                 ),
                 item=Output.json_dumps(
@@ -259,17 +272,97 @@ class Tributary(DescribedComponentResource):
                 opts=ResourceOptions(parent=self),
             )
 
+        # TODO:
+        #   - setup queue and any perms needed for it
+        #   - get raw bucket notification going to the queue
+        #   - setup handler for pulling off queue and doing etl
+        #   - ensure requeuing is working as needed
+        #   - cleanup current etl stuff to make table items but not configure
+        #     the handler function
+
+        # get a role for the raw bucket trigger
+        self.trigger_role = get_inline_role(
+            f"{self.name}-trgrole",
+            f"{self.desc_name} raw data bucket trigger role",
+            "lmbd",
+            "lambda.amazonaws.com",
+            Output.all(
+                qname=self.raw_data_queue.name,
+                etl_attr_ddb_table_name=etl_attrs_ddb_table.name,
+            ).apply(
+                lambda args: get_sqs_raw_notifier_policy(
+                    args["qname"], args["etl_attr_ddb_table_name"]
+                )
+            ),
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Create our Lambda function that triggers the given glue job
+        new_object_handler = aws.lambda_.Function(
+            f"{self.name}-lmbdtrgfnct",
+            role=self.trigger_role.arn,
+            code=AssetArchive(
+                {
+                    "index.py": FileAsset(
+                        "./assets/lambda/new_s3obj_queue_notifier_lambda.py"
+                    )
+                }
+            ),
+            runtime="python3.11",
+            # in this case, the zip file for the lambda deployment is
+            # being created by this code. and the zip file will be
+            # called index. so the handler must be start with `index`
+            # and the actual function in the script must be named
+            # the same as the value here
+            handler="index.index_handler",
+            environment={
+                "variables": {
+                    "QUEUE_NAME": self.raw_data_queue.name,
+                    "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.name,
+                }
+            },
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": f"{self.desc_name} raw data lambda trigger function"
+            },
+        )
+
+        # Give our function permission to invoke
+        new_obj_handler_permission = aws.lambda_.Permission(
+            f"{self.name}-allow-lmbd",
+            action="lambda:InvokeFunction",
+            function=new_object_handler.arn,
+            principal="s3.amazonaws.com",
+            source_arn=self.buckets[Tributary.RAW].bucket.arn,
+            opts=ResourceOptions(parent=self),
+        )
+
+        aws.s3.BucketNotification(
+            f"{self.name}-raw-s3ntfn",
+            bucket=self.buckets[Tributary.RAW].bucket.id,
+            lambda_functions=[
+                aws.s3.BucketNotificationLambdaFunctionArgs(
+                    events=["s3:ObjectCreated:*"],
+                    lambda_function_arn=new_object_handler.arn,
+                )
+            ],
+            opts=ResourceOptions(
+                depends_on=[new_obj_handler_permission], parent=self
+            ),
+        )
+
         # Add a bucket notification to trigger our ETL functions automatically
         # if they were configured.
         # NOTE: only checking the existence of function args here as if there
         #       are no function args, there's no need for a notification.
-        if lambda_funct_args:
-            aws.s3.BucketNotification(
-                f"{self.name}-raw-s3ntfn",
-                bucket=self.buckets[Tributary.RAW].bucket.id,
-                lambda_functions=lambda_funct_args,
-                opts=ResourceOptions(depends_on=lambda_perms, parent=self),
-            )
+        # if lambda_funct_args:
+        #     aws.s3.BucketNotification(
+        #         f"{self.name}-raw-s3ntfn",
+        #         bucket=self.buckets[Tributary.RAW].bucket.id,
+        #         lambda_functions=lambda_funct_args,
+        #         opts=ResourceOptions(depends_on=lambda_perms, parent=self),
+        #     )
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -357,23 +450,24 @@ class Tributary(DescribedComponentResource):
             desc_name=(f"{self.desc_name} raw to clean ETL job"),
         )
 
-        etl_lambda_function, etl_lambda_permission = (
-            etl_job.add_trigger_function()
-        )
+        # etl_lambda_function, etl_lambda_permission = (
+        #     etl_job.add_trigger_function()
+        # )
 
         # if we have suffixes defined, we'll make a different set of args for
         # each. if we have no suffixes defined, we'll make one set of args, but
         # the suffix will be left pblank (meaning all suffixes will trigger)
-        suffixes = [s for s in cfg["suffixes"] or [""]]
-        etl_lambda_function_args = []
-        for s in suffixes:
-            etl_lambda_function_args.append(
-                aws.s3.BucketNotificationLambdaFunctionArgs(
-                    events=["s3:ObjectCreated:*"],
-                    lambda_function_arn=etl_lambda_function.arn,
-                    filter_prefix=cfg["prefix"],
-                    filter_suffix=s,
-                )
-            )
-
-        return etl_lambda_permission, etl_lambda_function_args, etl_job
+        # suffixes = [s for s in cfg["suffixes"] or [""]]
+        # etl_lambda_function_args = []
+        # for s in suffixes:
+        #     etl_lambda_function_args.append(
+        #         aws.s3.BucketNotificationLambdaFunctionArgs(
+        #             events=["s3:ObjectCreated:*"],
+        #             lambda_function_arn=etl_lambda_function.arn,
+        #             filter_prefix=cfg["prefix"],
+        #             filter_suffix=s,
+        #         )
+        #     )
+        #
+        # return etl_lambda_permission, etl_lambda_function_args, etl_job
+        return None, None, etl_job
