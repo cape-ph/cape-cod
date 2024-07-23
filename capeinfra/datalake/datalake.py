@@ -295,7 +295,7 @@ class Tributary(DescribedComponentResource):
             "lambda.amazonaws.com",
             Output.all(
                 qname=self.raw_data_queue.name,
-                job_names=[j.name for j in jobs],
+                job_names=[j.job.name for j in jobs],
             ).apply(
                 lambda args: get_sqs_lambda_glue_trigger_policy(
                     args["qname"], args["job_names"]
@@ -338,6 +338,7 @@ class Tributary(DescribedComponentResource):
             f"{self.name}-sqslmbdatrgr",
             event_source_arn=self.raw_data_queue.arn,
             function_name=self.qmsg_handler.arn,
+            function_response_types=["ReportBatchItemFailures"],
         )
 
         # Give our function permission to invoke
