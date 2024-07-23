@@ -247,11 +247,6 @@ def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
         The policy statement as a dictionary json encoded string.
     """
 
-    # separate variable to make linter happy
-    jobstr = (
-        f"[{','.join([f'arn:aws:glue:*:*:job/{job}' for job in job_names])}]"
-    )
-
     return json.dumps(
         {
             "Version": "2012-10-17",
@@ -285,7 +280,9 @@ def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
                         "glue:StartJobRun",
                         "glue:GetJobRun",
                     ],
-                    "Resource": jobstr,
+                    "Resource": [
+                        f"arn:aws:glue:*:*:job/{job}" for job in job_names
+                    ],
                 },
             ],
         },
