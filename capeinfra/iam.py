@@ -263,10 +263,9 @@ def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
                 {
                     "Effect": "Allow",
                     "Action": [
-                        "sqs:GetQueueUrl",
+                        # This is the bare minimum required for an SQS notified
+                        # lambda to do its job.
                         "sqs:GetQueueAttributes",
-                        # for requeue
-                        "sqs:SendMessage",
                         "sqs:ReceiveMessage",
                         "sqs:DeleteMessage",
                     ],
