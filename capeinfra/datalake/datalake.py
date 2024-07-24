@@ -34,6 +34,21 @@ class DatalakeHouse(DescribedComponentResource):
         config = Config("cape-cod")
         datalake_config = config.require_object("datalakehouse")
 
+        # setup the data catalog and query engine to explore it
+        self.configure_data_catalog()
+
+        # setup the tributary ETL attributes database and all tributaries for
+        # the lakehouse
+        self.configure_tributaries(
+            datalake_config.get("tributaries"), auto_assets_bucket
+        )
+
+        # We also need to register all the expected outputs for this component
+        # resource that will get returned by default.
+        self.register_outputs({"datalakehouse_name": self.name})
+
+    def configure_data_catalog(self):
+        """Sets up the CAPE data catalog and the query engine for exploring it."""
         catalog_name = f"{self.name}-catalog"
 
         # create an object storage location for the metadata catalog to live in
@@ -80,11 +95,24 @@ class DatalakeHouse(DescribedComponentResource):
             tags={"desc_name": f"{self.desc_name} athena workgroup"},
         )
 
+    def configure_tributaries(
+        self,
+        tributaries_config: dict | None,
+        auto_assets_bucket: aws.s3.BucketV2,
+    ):
+        """Sets up an ETL attributes database and the configured Tributaries.
+
+        Args:
+            tributaries_config: The configuration dict for CAPE tributaries.
+            auto_assets_bucket: The BucketV2 object for the automation assets
+                                object storage.
+        """
         # setup a DynamoDB table to hold the prefix/suffix/etl job attributes
-        # for all tributaries
+        # for all tributaries. Each tributary will add its own configured ETL
+        # attributes information to this table.
         self.etl_attr_ddb_table = aws.dynamodb.Table(
-            f"{self.name}-tribattrs-ddb",
-            name=f"{self.name}-TributaryAttributes",
+            f"{self.name}-etlattrs-ddb",
+            name=f"{self.name}-ETLAttributes",
             # NOTE: this table will be accessed as needed to do ETL jobs.
             #       it'll be pretty hard (at least till this is use for a
             #       while) to come up with read/write metrics to set this table
@@ -97,16 +125,7 @@ class DatalakeHouse(DescribedComponentResource):
             attributes=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
-                # TODO: right now the index (unique pk) is the hash/range key
-                #       pair. this is great if we have one ETL for one set of
-                #       suffixes in a prefix. if we want to run many ETLs on
-                #       different prefixes in the same prefix, this will fail
-                #       to work when we try to add items to the table as we'd
-                #       have more than one item with the (bucket,prefix) key. we
-                #       could change this to work on a triple of
-                #       (bucket,prefix,suffix) instead. might end up with a bit
-                #       more (duped) data in the db, but should solve the issue
-                #       stated above
+                # TODO: github issue #49
                 {
                     "name": "bucket_name",
                     "type": "S",
@@ -119,17 +138,16 @@ class DatalakeHouse(DescribedComponentResource):
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (
-                    f"{self.desc_name} Tributary attributes DynamoDB Table"
+                    f"{self.desc_name} ETL attributes DynamoDB Table"
                 ),
             },
         )
 
         # create the parts of the datalake from the tributary configuration
         # (e.g. hai, genomics, etc)
-        tributary_config = datalake_config.get("tributaries")
         self.tributaries = []
-        if tributary_config:
-            for trib_config in tributary_config:
+        if tributaries_config:
+            for trib_config in tributaries_config:
 
                 trib_name = trib_config.get("name")
                 self.tributaries.append(
@@ -143,10 +161,6 @@ class DatalakeHouse(DescribedComponentResource):
                         desc_name=f"{self.desc_name} {trib_name} tributary",
                     )
                 )
-
-        # We also need to register all the expected outputs for this component
-        # resource that will get returned by default.
-        self.register_outputs({"datalakehouse_name": self.name})
 
 
 class CatalogDatabase(DescribedComponentResource):
@@ -228,6 +242,8 @@ class Tributary(DescribedComponentResource):
         #       that all in one place instead of scattered everywhere...
         etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", []) or []
 
+        # this queue is where all notifications of new objects added to the raw
+        # bucket will go
         self.raw_data_queue = aws.sqs.Queue(
             # TODO: do we need to add server side encryption or any delay in
             #       delivery?
@@ -238,24 +254,117 @@ class Tributary(DescribedComponentResource):
             tags={"desc_name": f"{self.desc_name} raw data notification queue"},
         )
 
-        lambda_perms = []
-        lambda_funct_args = []
+        # setup all configured ETL jobs and add items to the DDB table for each.
+        jobs = self.configure_etl(
+            etl_cfgs, auto_assets_bucket, etl_attrs_ddb_table
+        )
+
+        # Lambda SQS Target setup
+        self.configure_sqs_lambda_target(jobs)
+
+        # Bucket notification setup
+        self.configure_raw_bucket_notifications(etl_attrs_ddb_table)
+
+        # We also need to register all the expected outputs for this component
+        # resource that will get returned by default.
+        self.register_outputs({"tributary_name": self.name})
+
+    def configure_bucket(self, bucket_type: str, bucket_cfg: dict):
+        """Creates/configures a raw or clean bucket based on config values.
+
+        If a crawler is configured for the bucket, this will be added as well.
+
+        Args:
+            bucket_type: The type ('raw'/'clean') of the bucket being created.
+            bucket_cfg: The config dict for te bucket, as specified in the
+                        pulumi stack config.
+        """
+        bucket_name = (
+            bucket_cfg.get("name") or f"{self.name}-{bucket_type}-vbkt"
+        )
+        self.buckets[bucket_type] = VersionedBucket(
+            bucket_name,
+            desc_name=f"{self.desc_name} {bucket_type}",
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.configure_crawler(
+            bucket_name,
+            self.buckets[bucket_type].bucket,
+            bucket_type,
+            bucket_cfg.get("crawler", {}),
+        )
+
+    def configure_crawler(
+        self,
+        vbname: str,
+        bucket: aws.s3.BucketV2,
+        bucket_type: str,
+        crawler_cfg: dict,
+    ):
+        """Creates/configures a crawler for a bucket based on config values.
+
+        Args:
+            vbname: The VersionedBucket name for the crawler to crawl.
+            bucket: The bucket to be crawled.
+            bucket_type: The type (e.g. raw, clean) of the bucket being crawled.
+            crawler_cfg: The config dict for the crawler as specified in the
+                         pulumi stack config.
+        """
+        if crawler_cfg:
+            DataCrawler(
+                f"{vbname}-crwl",
+                bucket,
+                self.catalog,
+                classifiers=crawler_cfg.get("classifiers", []),
+                schedule=crawler_cfg.get("schedule"),
+                excludes=crawler_cfg.get("exclude"),
+                opts=ResourceOptions(parent=self),
+                desc_name=f"{self.desc_name} {bucket_type} data crawler",
+            )
+
+    def configure_etl(
+        self,
+        etl_cfgs: list,
+        auto_assets_bucket: aws.s3.BucketV2,
+        etl_attrs_ddb_table: aws.dynamodb.Table,
+    ):
+        """Configure all ETL jobs for the tributary.
+
+        Args:
+            etl_cfgs: The list of ETL configuration dicts from the pulumi config.
+            auto_assets_bucket: The BucketV2 instance that contains the
+                                automation assets.
+            etl_attrs_ddb_table: A reference to the NOSQL table holding the ETL
+                                 attributes.
+        Returns:
+            A list of configured EtlJobs.
+        """
+
         jobs = []
-        for etl_cfg in etl_cfgs:
-            # TODO: probs only going to need the job here with queue
-            #       implementation
-            lperm, largs, job = self.configure_etl(etl_cfg, auto_assets_bucket)
-            if lperm:
-                lambda_perms.append(lperm)
-            if largs:
-                lambda_funct_args.extend(largs)
-            if job:
-                jobs.append(job)
+        for cfg in etl_cfgs:
+            job = EtlJob(
+                f"{self.name}-ETL-{cfg['name']}",
+                self.buckets[Tributary.RAW].bucket,
+                self.buckets[Tributary.CLEAN].bucket,
+                auto_assets_bucket,
+                cfg["script"],
+                default_args={
+                    "--additional-python-modules": ",".join(cfg["pymodules"]),
+                    "--CLEAN_BUCKET_NAME": self.buckets[
+                        Tributary.CLEAN
+                    ].bucket.bucket,
+                },
+                opts=ResourceOptions(parent=self),
+                desc_name=(f"{self.desc_name} raw to clean ETL job"),
+            )
+
+            jobs.append(job)
 
             # put the ETL job configuration into the tributary attributes table
             # for the raw bucket
             aws.dynamodb.TableItem(
-                f"{self.name}-{etl_cfg['name']}-ddbitem",
+                f"{self.name}-{cfg['name']}-ddbitem",
                 table_name=etl_attrs_ddb_table.name,
                 hash_key=etl_attrs_ddb_table.hash_key,
                 range_key=etl_attrs_ddb_table.range_key.apply(
@@ -266,12 +375,11 @@ class Tributary(DescribedComponentResource):
                         "bucket_name": {
                             "S": self.buckets[Tributary.RAW].bucket.id,
                         },
-                        "prefix": {"S": etl_cfg["prefix"]},
+                        "prefix": {"S": cfg["prefix"]},
                         "etl_job": {"S": job.job.id},
                         "suffixes": {
                             "L": [
-                                {"S": suf}
-                                for suf in etl_cfg.get("suffixes", [""])
+                                {"S": suf} for suf in cfg.get("suffixes", [""])
                             ]
                         },
                     }
@@ -279,14 +387,14 @@ class Tributary(DescribedComponentResource):
                 opts=ResourceOptions(parent=self),
             )
 
-        # TODO:
-        #   - setup handler for pulling off queue and doing etl
-        #   - ensure requeuing is working as needed
-        #   - cleanup current etl stuff to make table items but not configure
-        #     the handler function
+        return jobs
 
-        ## Lambda SQS Target
+    def configure_sqs_lambda_target(self, jobs: list):
+        """Configures the Lmabda that will run on new SQS messages.
 
+        Args:
+            jobs: A list of configured EtlJobs that will be used by this Lambda.
+        """
         # get a role for the raw bucket trigger
         self.sqs_trigger_role = get_inline_role(
             f"{self.name}-sqstrgrole",
@@ -341,18 +449,16 @@ class Tributary(DescribedComponentResource):
             function_response_types=["ReportBatchItemFailures"],
         )
 
-        # Give our function permission to invoke
-        # qmsg_handler_permission = aws.lambda_.Permission(
-        #     f"{self.name}-sqs-allow-lmbd",
-        #     action="lambda:InvokeFunction",
-        #     function=qmsg_handler.arn,
-        #     principal="sqs.amazonaws.com",
-        #     source_arn=self.buckets[Tributary.RAW].bucket.arn,
-        #     opts=ResourceOptions(parent=self),
-        # )
+    def configure_raw_bucket_notifications(
+        self, etl_attrs_ddb_table: aws.dynamodb.Table
+    ):
+        """Configures notifications on the raw data bucket to invoke a function.
 
-        ## Bucket notification stuff below
-
+        Args:
+            etl_attrs_ddb_table: The NOSQL table containing the ETL attributes
+                                 for the data lake. The function being setup
+                                 here will need to read from this table.
+        """
         # get a role for the raw bucket trigger
         self.raw_bucket_trigger_role = get_inline_role(
             f"{self.name}-s3trgrole",
@@ -424,123 +530,3 @@ class Tributary(DescribedComponentResource):
                 depends_on=[new_obj_handler_permission], parent=self
             ),
         )
-
-        # Add a bucket notification to trigger our ETL functions automatically
-        # if they were configured.
-        # NOTE: only checking the existence of function args here as if there
-        #       are no function args, there's no need for a notification.
-        # if lambda_funct_args:
-        #     aws.s3.BucketNotification(
-        #         f"{self.name}-raw-s3ntfn",
-        #         bucket=self.buckets[Tributary.RAW].bucket.id,
-        #         lambda_functions=lambda_funct_args,
-        #         opts=ResourceOptions(depends_on=lambda_perms, parent=self),
-        #     )
-
-        # We also need to register all the expected outputs for this component
-        # resource that will get returned by default.
-        self.register_outputs({"tributary_name": self.name})
-
-    def configure_bucket(self, bucket_type: str, bucket_cfg: dict):
-        """Creates/configures a raw or clean bucket based on config values.
-
-        If a crawler is configured for the bucket, this will be added as well.
-
-        Args:
-            bucket_type: The type ('raw'/'clean') of the bucket being created.
-            bucket_cfg: The config dict for te bucket, as specified in the
-                        pulumi stack config.
-        """
-        bucket_name = (
-            bucket_cfg.get("name") or f"{self.name}-{bucket_type}-vbkt"
-        )
-        self.buckets[bucket_type] = VersionedBucket(
-            bucket_name,
-            desc_name=f"{self.desc_name} {bucket_type}",
-            opts=ResourceOptions(parent=self),
-        )
-
-        self.configure_crawler(
-            bucket_name,
-            self.buckets[bucket_type].bucket,
-            bucket_type,
-            bucket_cfg.get("crawler", {}),
-        )
-
-    def configure_crawler(
-        self,
-        vbname: str,
-        bucket: aws.s3.BucketV2,
-        bucket_type: str,
-        crawler_cfg: dict,
-    ):
-        """Creates/configures a crawler for a bucket based on config values.
-
-        Args:
-            vbname: The VersionedBucket name for the crawler to crawl.
-            bucket: The bucket to be crawled.
-            bucket_type: The type (e.g. raw, clean) of the bucket being crawled.
-            crawler_cfg: The config dict for the crawler as specified in the
-                         pulumi stack config.
-        """
-        if crawler_cfg:
-            DataCrawler(
-                f"{vbname}-crwl",
-                bucket,
-                self.catalog,
-                classifiers=crawler_cfg.get("classifiers", []),
-                schedule=crawler_cfg.get("schedule"),
-                excludes=crawler_cfg.get("exclude"),
-                opts=ResourceOptions(parent=self),
-                desc_name=f"{self.desc_name} {bucket_type} data crawler",
-            )
-
-    def configure_etl(self, cfg, auto_assets_bucket: aws.s3.BucketV2):
-        """Configure an ETL job.
-
-        Args:
-            cfg: The ETL configuration from the pulumi config.
-            auto_assets_bucket: The BucketV2 instance that contains the
-                                automation assets.
-        Returns:
-            A tuple of the lambda permission resource and lambda function args
-            for the etl trigger lambda function that calls this job.
-        """
-
-        etl_job = EtlJob(
-            f"{self.name}-ETL-{cfg['name']}",
-            self.buckets[Tributary.RAW].bucket,
-            self.buckets[Tributary.CLEAN].bucket,
-            auto_assets_bucket,
-            cfg["script"],
-            default_args={
-                "--additional-python-modules": ",".join(cfg["pymodules"]),
-                "--CLEAN_BUCKET_NAME": self.buckets[
-                    Tributary.CLEAN
-                ].bucket.bucket,
-            },
-            opts=ResourceOptions(parent=self),
-            desc_name=(f"{self.desc_name} raw to clean ETL job"),
-        )
-
-        # etl_lambda_function, etl_lambda_permission = (
-        #     etl_job.add_trigger_function()
-        # )
-
-        # if we have suffixes defined, we'll make a different set of args for
-        # each. if we have no suffixes defined, we'll make one set of args, but
-        # the suffix will be left pblank (meaning all suffixes will trigger)
-        # suffixes = [s for s in cfg["suffixes"] or [""]]
-        # etl_lambda_function_args = []
-        # for s in suffixes:
-        #     etl_lambda_function_args.append(
-        #         aws.s3.BucketNotificationLambdaFunctionArgs(
-        #             events=["s3:ObjectCreated:*"],
-        #             lambda_function_arn=etl_lambda_function.arn,
-        #             filter_prefix=cfg["prefix"],
-        #             filter_suffix=s,
-        #         )
-        #     )
-        #
-        # return etl_lambda_permission, etl_lambda_function_args, etl_job
-        return None, None, etl_job
