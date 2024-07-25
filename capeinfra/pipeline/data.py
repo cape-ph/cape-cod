@@ -36,7 +36,7 @@ class DataCrawler(DescribedComponentResource):
     """A crawler for object storage."""
 
     # default schedule for our crawlers will be every hour
-    DEFAULT_SCHEDULE = "* 0/1 * * ? *"
+    DEFAULT_SCHEDULE = "0 * * * ? *"
 
     def __init__(
         self,
