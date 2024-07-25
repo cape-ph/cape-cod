@@ -16,7 +16,18 @@ sqs_client = boto3.client("sqs")
 ddb_resource = boto3.resource("dynamodb", region_name="us-east-2")
 
 
-def get_etl_attrs_table(table_name: str) -> boto3.resource:
+def decode_error(err: ClientError):
+    code, message = "Unknown", "Unknown"
+    if "Error" in err.response:
+        error = err.response["Error"]
+        if "Code" in error:
+            code = error["Code"]
+        if "Message" in error:
+            message = error["Message"]
+    return code, message
+
+
+def get_etl_attrs_table(table_name: str):
     """Get a DynamoDB table by name.
 
     Args:
@@ -32,17 +43,19 @@ def get_etl_attrs_table(table_name: str) -> boto3.resource:
         table = ddb_resource.Table(table_name)
         table.load()
     except ClientError as err:
-        if err.response["Error"]["Code"] == "ResourceNotFoundException":
+        code, message = decode_error(err)
+
+        if code == "ResourceNotFoundException":
             msg = (
                 f"CAPE ETL attributes DynamoDB table ({table_name}) could not"
-                f"be found: {err.response['Error']['Code']} "
-                f"{err.response['Error']['Message']}",
+                f"be found: {code} "
+                f"{message}",
             )
         else:
             msg = (
                 f"Error trying to access CAPE ETL attributes DynamoDB table "
-                f"({table_name}): {err.response['Error']['Code']} "
-                f"{err.response['Error']['Message']}",
+                f"({table_name}): {code} "
+                f"{message}",
             )
 
         logger.error(msg)
@@ -51,9 +64,7 @@ def get_etl_attrs_table(table_name: str) -> boto3.resource:
     return table
 
 
-def get_etl_attrs(
-    table: boto3.resource, bucket_name: str, prefix: str
-) -> dict | None:
+def get_etl_attrs(table, bucket_name: str, prefix: str) -> dict | None:
     """Get the ETL attributes from the DynamoDB table.
 
     Args:
@@ -77,12 +88,14 @@ def get_etl_attrs(
         ret = response["Item"]
 
     except ClientError as err:
+        code, message = decode_error(err)
+
         # in this case we really just need to ignore the object, but we'll log
         # for the time being
         logger.error(
             f"Couldn't get ETL attributes for bucket '{bucket_name}' and "
-            f"prefix '{prefix}'. {err.response['Error']['Code']} "
-            f"{err.response['Error']['Message']}"
+            f"prefix '{prefix}'. {code} "
+            f"{message}"
         )
 
     return ret
@@ -93,7 +106,7 @@ def send_etl_message(queue_name: str, queue_url: str, qmsg: dict):
 
     Args:
         queue_name: The name of the queue to send the message to. This is needed
-                    to make a message group id for thie fifo queue.
+                    to make a message group id for the fifo queue.
         queue_url: The URL of the queue to send the message to.
         qmsg: A dict containing info about the new S3 object and ETL job that
               needs to be processed by ETL.
@@ -109,10 +122,12 @@ def send_etl_message(queue_name: str, queue_url: str, qmsg: dict):
             MessageGroupId=f"{queue_name}-raw-data-msg",
         )
     except ClientError as err:
+        code, message = decode_error(err)
+
         logger.exception(
             f"Could not place message with body ({body}) on queue at URL "
-            f"({queue_url}). {err.response['Error']['Code']} "
-            f"{err.response['Error']['Message']}"
+            f"({queue_url}). {code} "
+            f"{message}"
         )
         raise err
 
@@ -240,10 +255,12 @@ def index_handler(event, context):
             "body": body,
         }
     except ClientError as err:
+        code, message = decode_error(err)
+
         msg = (
             f"Error during processing of new object notification for queuing. "
-            f"{err.response['Error']['Code']} "
-            f"{err.response['Error']['Message']}"
+            f"{code} "
+            f"{message}"
         )
         logger.exception(msg)
 
