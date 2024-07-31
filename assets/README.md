@@ -19,3 +19,4 @@ need to be manually updated here.
 
 -   `etl/etl_gphl_cre_alert.py` - from [etl-gphl-cre-alert](https://github.com/cape-ph/etl-gphl-cre-alert)
 -   `etl/etl_tnl_alert.py` - from [etl-tnl-alert](https://github.com/cape-ph/etl-tnl-alert)
+-   `etl/etl_gphl_sequencing.py` - from [etl-gphl-sequencing-alert](https://github.com/cape-ph/etl-gphl-sequencing-alert)
