@@ -38,6 +38,17 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
+        subnet_name = f"{name}-compute-subnet"
+        self.vm_subnet = aws.ec2.Subnet(
+            subnet_name,
+            cidr_block="10.0.1.0/24",
+            vpc_id=self.vpc.id,
+            tags={
+                "Name": subnet_name,
+                "desc_name": f"{self.desc_name} analysis computing VM subnet",
+            },
+        )
+
         # Nothing to register at this time, but call to signal to pulumi that
         # we're done
         self.register_outputs({f"{name}-vpc-id": self.vpc.id})
