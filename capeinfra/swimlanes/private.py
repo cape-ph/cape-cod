@@ -16,43 +16,6 @@ class PrivateSwimlane(ScopedSwimlane):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
 
-        vpc_name = f"{name}-vpc"
-
-        self.vpc = aws.ec2.Vpc(
-            vpc_name,
-            args=aws.ec2.VpcArgs(
-                cidr_block=self.get_config_dict().get(
-                    "cidr-block", self.default_cfg["cidr-block"]
-                ),
-                enable_dns_hostnames=True,
-                enable_dns_support=True,
-                # NOTE: to set the name of a VPC resource (the name that's
-                #       visible within AWS), you have to add a tag with the key
-                #       `Name`. this is the only resource encountered to date
-                #       that acts that way. yay consistency :smh:
-                tags={
-                    "Name": vpc_name,
-                    "desc_name": f"{self.desc_name} VPC",
-                },
-            ),
-            opts=ResourceOptions(parent=self),
-        )
-
-        subnet_name = f"{name}-compute-subnet"
-        self.vm_subnet = aws.ec2.Subnet(
-            subnet_name,
-            cidr_block="10.0.1.0/24",
-            vpc_id=self.vpc.id,
-            tags={
-                "Name": subnet_name,
-                "desc_name": f"{self.desc_name} analysis computing VM subnet",
-            },
-        )
-
-        # Nothing to register at this time, but call to signal to pulumi that
-        # we're done
-        self.register_outputs({f"{name}-vpc-id": self.vpc.id})
-
     @property
     def type_name(self) -> str:
         """Implementation of abstract property `type_name`.
@@ -75,6 +38,9 @@ class PrivateSwimlane(ScopedSwimlane):
     def default_cfg(self) -> dict:
         """Implementation of abstract property `default_cfg`.
 
+        The default config has one public subnet only in the 10.0.0.0-255
+        address space. There are no private subnets.
+
         Returns:
             The default config dict for this swimlane.
         """
@@ -82,4 +48,8 @@ class PrivateSwimlane(ScopedSwimlane):
             # by default (if not overridden in config) this will get ip space
             # 10.0.0.0-255
             "cidr-block": "10.0.0.0/24",
+            "public-subnet": {
+                "cidr-block": "10.0.0.0/24",
+            },
+            "private-subnets": [],
         }
