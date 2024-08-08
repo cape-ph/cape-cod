@@ -23,6 +23,7 @@ class ScopedSwimlane(DescribedComponentResource):
         self._cfg_dict = None
         self._inet_gw = None
         self.basename = basename
+        self.private_subnets = {}
         self.create_vpc()
         self.create_public_subnet()
         self.create_private_subnets()
@@ -209,3 +210,5 @@ class ScopedSwimlane(DescribedComponentResource):
                     subnet_id=subnet.id,
                     route_table_id=subnet_nat_rt.id,
                 )
+
+            self.private_subnets[config_sn_name] = subnet
