@@ -1,0 +1,40 @@
+openapi: 3.0.0
+info:
+    title: CAPE data analysis pipeline API
+    description: CAPE API for data analysis pipeline operations.
+    version: 0.0.1
+# TODO: servers, schemes, security, more endpoints, oh my!
+paths:
+    /analysispipeline:
+        post:
+            summary: Submit an analysis pipeline job.
+            description: Submit an analysis pipeline job for scheduling.
+            requestBody:
+                description: Submit an analysis pipeline job for scheduling
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/DAP"
+                required: true
+
+            responses:
+                "200":
+                    description: Analysis pipeline run submitted for scheduling.
+                "400":
+                    description: Invalid request.
+components:
+    schemas:
+        DAP:
+            type: object
+            properties:
+                inputPath:
+                    type: string
+                    description:
+                        Path to the input for the data analysis pipeline
+                    example: s3://blah/blah/blah
+                outputPath:
+                    type: string
+                    description:
+                        Path to where final output of the data analysis pipeline
+                        will be written
+                    example: s3://blar/blar/blar
