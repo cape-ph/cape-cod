@@ -298,7 +298,7 @@ def get_inline_role(
     desc_name: str,
     srvc_prfx: str,
     assume_role_srvc: str,
-    role_policy: Output,
+    role_policy: Output | None = None,
     srvc_policy_attach: str | None = None,
     opts: ResourceOptions | None = None,
 ) -> aws.iam.Role:
@@ -337,12 +337,13 @@ def get_inline_role(
             opts=opts,
         )
 
-    # and now add the policy rules we were given to the role
-    aws.iam.RolePolicy(
-        f"{name}-{srvc_prfx}roleplcy",
-        role=inline_role.id,
-        policy=role_policy,
-        opts=opts,
-    )
+    # and now add the policy rules we were given to the role if configured
+    if role_policy:
+        aws.iam.RolePolicy(
+            f"{name}-{srvc_prfx}roleplcy",
+            role=inline_role.id,
+            policy=role_policy,
+            opts=opts,
+        )
 
     return inline_role
