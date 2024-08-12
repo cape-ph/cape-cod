@@ -187,7 +187,7 @@ class PrivateSwimlane(ScopedSwimlane):
             #       openapi spec file, but it doesn't work as-is (language server
             #       claims the dict[str, AssetArchive] is not compatible with
             #       triggers). Didn't want to waste time figuring it out before
-            #       we have a full blown API, so this is left as an excercise
+            #       we have a full blown API, so this is left as an exercise
             #       for the reader later.
             opts=ResourceOptions(
                 parent=self,
