@@ -13,7 +13,7 @@ def index_handler(event, context):
 
     # TODO this should be removed before any real deployment (dev is ok)
     print(
-        f"Analysis Pipline API (POST new pipeline run) received event: "
+        f"Analysis Pipeline API (POST new pipeline run) received event: "
         f"{json.dumps(event, indent=2)} with context {context}"
     )
 

@@ -64,7 +64,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # TODO: as this will be an api, there will be a number of functions
         #       most likely. we may want to consider making an api class that
         #       does some setup in a general manner and holds onto a mapping
-        #       or list of functions eventually. this will alomost certainly
+        #       or list of functions eventually. this will almost certainly
         #       not be our only api and a reusable pattern would be nice.
 
         # TODO: we can probably have one lambda role for the whole API (or even
@@ -184,11 +184,11 @@ class PrivateSwimlane(ScopedSwimlane):
             #       an example here:
             #       https://www.pulumi.com/ai/answers/cc2eJai4VYGqawtkx44VXD/creating-aws-api-gateway-rest-api-with-python
             #       that uses an asset archive, which would be great with  our
-            #       openapi spec file, but it doesn't work as-is (lanuage server
-            #       claims the dict[str, AssetArchive] is not compatable with
+            #       openapi spec file, but it doesn't work as-is (language server
+            #       claims the dict[str, AssetArchive] is not compatible with
             #       triggers). Didn't want to waste time figuring it out before
-            #       we have a full blown API, so this is left as an excecise for
-            #       the reader later.
+            #       we have a full blown API, so this is left as an excercise
+            #       for the reader later.
             opts=ResourceOptions(
                 parent=self,
                 # NOTE: not specying these led to the deployment being
@@ -201,7 +201,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # NOTE: we could make this implicitly by just setting stage_name on the
         #       deployment resource, but there are warnings in the pulumi docs
         #       about weedy things that lead to deletion and addition of stages
-        #       on redeployments if done this way, which utlimately leads to a
+        #       on redeployments if done this way, which ultimately leads to a
         #       service interruption.
         # TODO: we need to pull the stage name from somewhere (e.g. the
         #       pulumi config) as the stage name is really tied to the type
