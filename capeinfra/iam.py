@@ -338,7 +338,7 @@ def get_inline_role(
         )
 
     # and now add the policy rules we were given to the role if configured
-    if role_policy:
+    if role_policy is not None:
         aws.iam.RolePolicy(
             f"{name}-{srvc_prfx}roleplcy",
             role=inline_role.id,
