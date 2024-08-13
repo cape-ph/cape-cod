@@ -1,0 +1,93 @@
+"""Abstractions for batch pipelines."""
+
+import pulumi_aws as aws
+from pulumi import Output, ResourceOptions
+
+from ..iam import (
+    get_inline_role,
+)
+from ..pulumi import DescribedComponentResource
+
+
+class BatchCompute(DescribedComponentResource):
+    """A batch compute environment."""
+
+    def __init__(
+        self,
+        name: str,
+        *args,
+        **kwargs,
+    ):
+        """Constructor.
+
+        Args:
+            name: The name for the resource.
+        Returns:
+        """
+        # This maintains parental relationships within the pulumi stack
+        super().__init__(
+            "capeinfra:datalake:BatchCompute", name, *args, **kwargs
+        )
+
+        self.name = f"{name}"
+
+        # get a role for the crawler
+        self.service_role = get_inline_role(
+            f"{self.name}-srvc",
+            f"{self.desc_name} AWS batch service role",
+            "",
+            "batch.amazonaws.com",
+            srvc_policy_attach="arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole",
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.instance_role = get_inline_role(
+            f"{self.name}-instnc",
+            f"{self.desc_name} AWS batch instance role",
+            "",
+            "batch.amazonaws.com",
+            # TODO: add policy
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.security_group = aws.ec2.SecurityGroup(
+            f"{self.name}-scrtygrp",
+            egress=[  # TODO: fine tune security group
+                {
+                    "from_port": 0,
+                    "to_port": 0,
+                    "protocol": "-1",
+                    "cidr_blocks": ["0.0.0.0/0"],
+                }
+            ],
+        )
+
+        self.placement_group = aws.ec2.PlacementGroup(
+            f"{self.name}-plcmntgrp",
+            strategy=aws.ec2.PlacementStrategy.CLUSTER,
+        )
+
+        # self.key_pair = aws.ec2.KeyPair(f"{self.name}-kypr")
+
+        self.compute_environment = aws.batch.ComputeEnvironment(
+            f"{self.name}-btch",
+            service_role=self.service_role.arn,
+            type="MANAGED",
+            compute_resources=aws.batch.ComputeEnvironmentComputeResourcesArgs(
+                type="EC2",
+                instance_role=self.instance_role.arn,
+                # ec2_key_pair=self.key_pair.key_name, # TODO: add EC2 key pair
+                image_id="",  # TODO: add AMI ID
+                max_vcpus=16,
+                min_vcpus=0,
+                placement_group=self.placement_group.name,
+                security_group_ids=[self.security_group.id],
+                subnets=[],  # TODO: add subnets
+            ),
+        )
+
+        # We also need to register all the expected outputs for this component
+        # resource that will get returned by default.
+        self.register_outputs(
+            {"compute_environment": self.compute_environment.id}
+        )
