@@ -1,0 +1,69 @@
+# DO NOT USE THIS FILE AS IS. IT WILL NOT WORK YET
+#
+# TODO:
+# This file is the start of the data analysis pipeline api spec. It was meant to
+# be a toy implementation to test the creation of a single endpoint api for
+# queuing up a new data analsysis pipeline run. during the implementation, it
+# became clear that we would need values in here (e.g. the actual names of
+# lambda functions as they are deployed including the random hashes and other
+# things) not known till deploy time. Seems we need to look at how others may
+# have solved this, but first thing to mind is templating our openapi spec and
+# then render it with real values when we deploy. in any event, this needs to be
+# done in a new github issue (#61)
+openapi: 3.0.0
+info:
+    title: CAPE data analysis pipeline API
+    description: CAPE API for data analysis pipeline operations.
+    version: 0.0.1
+# TODO: servers, schemes, security, more endpoints, oh my!
+paths:
+    /analysispipeline:
+        post:
+            summary: Submit an analysis pipeline job.
+            description: Submit an analysis pipeline job for scheduling.
+            requestBody:
+                description: Submit an analysis pipeline job for scheduling
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/DAP"
+                required: true
+
+            responses:
+                "200":
+                    description: Analysis pipeline run submitted for scheduling.
+                "400":
+                    description: Invalid request.
+            x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:LambdaFunctionName/invocations
+                passthroughBehavior: "when_no_match"
+                contentHandling: "CONVERT_TO_TEXT"
+                responses:
+                    default:
+                        statusCode: "200"
+components:
+    schemas:
+        DAP:
+            type: object
+            properties:
+                pipelineName:
+                    type: string
+                    description: Name of the analysis pipeline to run
+                    #example: generic bactopia pipeline
+                pipelineVersion:
+                    type: string
+                    description: Version of the analysis pipeline to run
+                    #example: 0.0.1
+                inputPath:
+                    type: string
+                    description:
+                        Path to the input for the data analysis pipeline
+                    #example: s3://blah/blah/blah
+                outputPath:
+                    type: string
+                    description:
+                        Path to where final output of the data analysis pipeline
+                        will be written
+                    #example: s3://blar/blar/blar
