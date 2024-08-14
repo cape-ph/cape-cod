@@ -125,7 +125,7 @@ class DatalakeHouse(DescribedComponentResource):
             attributes=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
-                # TODO: github issue #49
+                # TODO: ISSUE #49
                 {
                     "name": "bucket_name",
                     "type": "S",
@@ -237,16 +237,13 @@ class Tributary(DescribedComponentResource):
         # now setup any configured ETL jobs for the tributary
         # NOTE: in the case the etl key is specified but empty, the final
         #       `or []` gives us an empty list
-        # TODO: there's a good amount of defensive coding around things that
-        #       could go wrong in the config file. we should do something to put
-        #       that all in one place instead of scattered everywhere...
+        # TODO: ISSUE #69
         etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", []) or []
 
         # this queue is where all notifications of new objects added to the raw
         # bucket will go
         self.raw_data_queue = aws.sqs.Queue(
-            # TODO: do we need to add server side encryption or any delay in
-            #       delivery?
+            # TODO: ISSUE #68
             f"{self.name}-rawq",
             name=f"{self.name}-rawq.fifo",
             content_based_deduplication=True,

@@ -14,11 +14,7 @@ from ..pulumi import DescribedComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
-# TODO: fairly brittle. we need a way for the pulumi config to specify a string
-#       and have it result in using a specific custom classifier. AWS adds some
-#       extra characters to the name for uniqueness, so we can't just specify
-#       the same name we put in the constructor for the classifier. so we need
-#       a mapping of some sort.
+# TODO: ISSUE #8
 CUSTOM_CLASSIFIERS = {
     CAPE_CSV_STANDARD_CLASSIFIER: aws.glue.Classifier(
         CAPE_CSV_STANDARD_CLASSIFIER,
@@ -41,13 +37,12 @@ class DataCrawler(DescribedComponentResource):
     def __init__(
         self,
         name: str,
-        # TODO: should consider handling prefixes in each bucket
+        # TODO: ISSUE #71
         buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
         db: aws.glue.CatalogDatabase,
         *args,
         classifiers=None,
         schedule: str | None = None,
-        # TODO: should consider handling different exclusions for each bucket
         excludes: list | None = None,
         **kwargs,
     ):
@@ -274,9 +269,7 @@ class EtlJob(DescribedComponentResource):
             ),
             default_arguments=default_args,
             execution_property=aws.glue.JobExecutionPropertyArgs(
-                # TODO: this number is just pulled out of thin air to allow
-                #       more than one to run at a time. we should figure out
-                #       what a good number really is.
+                # TODO: ISSUE #70
                 max_concurrent_runs=5,
             ),
             opts=ResourceOptions(parent=self),

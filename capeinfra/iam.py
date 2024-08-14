@@ -8,6 +8,8 @@ import json
 import pulumi_aws as aws
 from pulumi import Output, ResourceOptions
 
+# TODO: ISSUE #72
+
 
 def get_service_assume_role(srvc: str) -> str:
     """Get a role policy statement for assuming a given AWS service.
@@ -288,9 +290,6 @@ def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
     )
 
 
-# TODO: feels like we could do roles/poilicies better. most of ours are inline
-#       (as opposed to managed), and many are the same minus a specific bucket
-#       name or something like that. need to figure out how to improve.
 # NOTE: done as a function for now because this pattern is in a number of
 #       places (lambda trigger functions, data crawlers, glue jobs, etc)
 def get_inline_role(
