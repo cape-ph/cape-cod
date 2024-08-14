@@ -1,8 +1,5 @@
 """Contains abstractions of object storage for various providers."""
 
-# TODO: figure out the best way to lay this out to allow easily switch between
-#       aws, gcp, and azure (we're only implementing aws at this time though)
-
 import pulumi_aws as aws
 from pulumi import Archive, Asset, ResourceOptions
 
