@@ -346,3 +346,22 @@ def get_inline_role(
         )
 
     return inline_role
+
+
+def get_instance_profile(
+    name: str,
+    role: aws.iam.Role,
+) -> aws.iam.InstanceProfile:
+    """Get an instance profile for the given role
+
+    Args:
+        role: The role in which to generate an instance profile for
+
+    Returns:
+        The instance profile
+    """
+    return aws.iam.InstanceProfile(
+        f"{name}-instnc-prfl",
+        role=role.name,
+        opts=ResourceOptions(parent=role),
+    )

@@ -5,9 +5,7 @@ from typing import Sequence
 import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 
-from ..iam import (
-    get_inline_role,
-)
+from ..iam import get_inline_role, get_instance_profile
 from ..pulumi import DescribedComponentResource
 
 
@@ -62,11 +60,9 @@ class BatchCompute(DescribedComponentResource):
             policy_arn="arn:aws:iam::aws:policy/AmazonS3FullAccess",
             opts=ResourceOptions(parent=self),
         )
-        # TODO: move to iam.py
-        self.instance_role_profile = aws.iam.InstanceProfile(
-            f"{self.name}-instnc-prfl",
-            role=self.instance_role.name,
-            opts=ResourceOptions(parent=self.instance_role),
+        self.instance_role_profile = get_instance_profile(
+            f"{name}-instnc-rl",
+            self.instance_role,
         )
 
         self.security_group = aws.ec2.SecurityGroup(
