@@ -1,7 +1,9 @@
 """Abstractions for batch pipelines."""
 
+from typing import Sequence
+
 import pulumi_aws as aws
-from pulumi import Output, ResourceOptions
+from pulumi import Input, ResourceOptions
 
 from ..iam import (
     get_inline_role,
@@ -14,7 +16,9 @@ class BatchCompute(DescribedComponentResource):
 
     def __init__(
         self,
-        name: str,
+        name: Input[str],
+        image_id: Input[str],
+        subnets: Sequence[Input[str]],
         *args,
         **kwargs,
     ):
@@ -77,12 +81,12 @@ class BatchCompute(DescribedComponentResource):
                 type="EC2",
                 instance_role=self.instance_role.arn,
                 # ec2_key_pair=self.key_pair.key_name, # TODO: add EC2 key pair
-                image_id="",  # TODO: add AMI ID
+                image_id=image_id,
                 max_vcpus=16,
                 min_vcpus=0,
                 placement_group=self.placement_group.name,
                 security_group_ids=[self.security_group.id],
-                subnets=[],  # TODO: add subnets
+                subnets=subnets,
             ),
         )
 

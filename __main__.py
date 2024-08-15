@@ -4,7 +4,6 @@ import pulumi
 
 from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.meta.capemeta import CapeMeta
-from capeinfra.pipeline.batch import BatchCompute
 from capeinfra.swimlanes.private import PrivateSwimlane
 
 # get the stack name once since it's a function and we'll use this a bunch to
@@ -32,5 +31,3 @@ datalake_house = DatalakeHouse(
     cape_meta.automation_assets_bucket.bucket,
     desc_name=f"{CAPE_STACK_NS} private swimlane",
 )
-
-compute_environment = BatchCompute(f"{stack_ns}-btch-compute")
