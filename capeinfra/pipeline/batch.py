@@ -51,6 +51,15 @@ class BatchCompute(DescribedComponentResource):
             "",
             "batch.amazonaws.com",
             # TODO: add policy
+            srvc_policy_attach="arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+            opts=ResourceOptions(parent=self),
+        )
+        # TODO: remove when adding real policy above, this simply gives full s3
+        # access
+        aws.iam.RolePolicyAttachment(
+            f"{name}-instnc-s3svcroleatch",
+            role=self.instance_role.name,
+            policy_arn="arn:aws:iam::aws:policy/AmazonS3FullAccess",
             opts=ResourceOptions(parent=self),
         )
 
