@@ -6,7 +6,7 @@ Helpfully, the big three cloud providers all use this term.
 import json
 
 import pulumi_aws as aws
-from pulumi import Output, ResourceOptions
+from pulumi import Input, ResourceOptions
 
 # TODO: ISSUE #72
 
@@ -297,7 +297,7 @@ def get_inline_role(
     desc_name: str,
     srvc_prfx: str,
     assume_role_srvc: str,
-    role_policy: Output | None = None,
+    role_policy: Input[str] | None = None,
     srvc_policy_attach: str | None = None,
     opts: ResourceOptions | None = None,
 ) -> aws.iam.Role:
