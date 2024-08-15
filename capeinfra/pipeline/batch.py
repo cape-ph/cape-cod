@@ -62,6 +62,12 @@ class BatchCompute(DescribedComponentResource):
             policy_arn="arn:aws:iam::aws:policy/AmazonS3FullAccess",
             opts=ResourceOptions(parent=self),
         )
+        # TODO: move to iam.py
+        self.instance_role_profile = aws.iam.InstanceProfile(
+            f"{self.name}-instnc-prfl",
+            role=self.instance_role.name,
+            opts=ResourceOptions(parent=self.instance_role),
+        )
 
         self.security_group = aws.ec2.SecurityGroup(
             f"{self.name}-scrtygrp",
@@ -90,14 +96,16 @@ class BatchCompute(DescribedComponentResource):
             type="MANAGED",
             compute_resources=aws.batch.ComputeEnvironmentComputeResourcesArgs(
                 type="EC2",
-                instance_role=self.instance_role.arn,
+                instance_role=self.instance_role_profile.arn,
                 # ec2_key_pair=self.key_pair.key_name, # TODO: add EC2 key pair
                 image_id=image_id,
-                max_vcpus=16,
-                min_vcpus=0,
                 placement_group=self.placement_group.name,
                 security_group_ids=[self.security_group.id],
                 subnets=subnets,
+                # TODO: make below configurable
+                instance_types=["c4.large"],
+                max_vcpus=16,
+                min_vcpus=0,
             ),
             opts=ResourceOptions(parent=self),
         )
