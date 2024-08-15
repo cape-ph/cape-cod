@@ -31,6 +31,15 @@ config:
                   # if True, the private subnet's outgoing traffic will be
                   # routed to the NAT gateway for egress to the internet
                   egress-to-nat: True
+            compute:
+                environments:
+                    - name: analysis
+                      # an AMI ID to use for each EC2 instance
+                      image: ami-05b2a3fcf0e46a742
+                      # a list of subnets that ec2 instances in the compute
+                      # environments live on
+                      subnets:
+                          - compute
 
     cape-cod:datalakehouse:
         tributaries:

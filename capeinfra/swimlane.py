@@ -5,6 +5,7 @@ from abc import abstractmethod
 import pulumi_aws as aws
 from pulumi import Config, ResourceOptions
 
+from capeinfra.pipeline.batch import BatchCompute
 from capeinfra.util.naming import disemvowel
 
 from .pulumi import DescribedComponentResource
@@ -23,10 +24,12 @@ class ScopedSwimlane(DescribedComponentResource):
         self._cfg_dict = None
         self._inet_gw = None
         self.basename = basename
-        self.private_subnets = {}
+        self.private_subnets = dict[str, aws.ec2.Subnet]()
+        self.compute_environments = dict[str, BatchCompute]()
         self.create_vpc()
         self.create_public_subnet()
         self.create_private_subnets()
+        self.create_compute_environments()
         self.register_outputs({f"{self.basename}-vpc-id": self.vpc.id})
 
     @property
@@ -212,3 +215,26 @@ class ScopedSwimlane(DescribedComponentResource):
                 )
 
             self.private_subnets[config_sn_name] = subnet
+
+    def create_compute_environments(self):
+        """Default implementation of compute environment creation for a swimlane.
+
+        The default implementation sets up the subnets as configured and routes
+        all outgoing traffic to the NAT gateway in the public subnet if
+        configured.
+        """
+        for env in (
+            self.get_config_dict()
+            .get("compute", self.default_cfg["compute"])
+            .get("environments", [])
+        ):
+            name = env.get("name")
+            compute_environment = BatchCompute(
+                name,
+                env.get("image"),
+                [
+                    self.private_subnets.get(subnet).id
+                    for subnet in env.get("subnets")
+                ],
+            )
+            self.compute_environments[name] = compute_environment
