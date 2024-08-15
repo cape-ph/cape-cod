@@ -73,11 +73,13 @@ class BatchCompute(DescribedComponentResource):
                     "cidr_blocks": ["0.0.0.0/0"],
                 }
             ],
+            opts=ResourceOptions(parent=self),
         )
 
         self.placement_group = aws.ec2.PlacementGroup(
             f"{self.name}-plcmntgrp",
             strategy=aws.ec2.PlacementStrategy.CLUSTER,
+            opts=ResourceOptions(parent=self),
         )
 
         # self.key_pair = aws.ec2.KeyPair(f"{self.name}-kypr")
@@ -97,6 +99,7 @@ class BatchCompute(DescribedComponentResource):
                 security_group_ids=[self.security_group.id],
                 subnets=subnets,
             ),
+            opts=ResourceOptions(parent=self),
         )
 
         # We also need to register all the expected outputs for this component
