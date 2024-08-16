@@ -40,6 +40,15 @@ config:
                       # environments live on
                       subnets:
                           - compute
+                      resources:
+                          # a list of instance types to be able to request
+                          instance_types: ["c4.large"]
+                          # the maximum number of vCPUs to have in the environment
+                          max_vcpus: 16
+                          # (optional) the desired number of vCPUs to have in the environment
+                          # desired_vcpus: 8
+                          # (optional) the minimum number of vCPUs to have in the environment
+                          # min_vcpus: 8
 
     cape-cod:datalakehouse:
         tributaries:

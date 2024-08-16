@@ -1,12 +1,45 @@
 """Abstractions for batch pipelines."""
 
-from typing import Sequence
+from typing import NotRequired, Sequence, TypedDict
 
 import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 
 from ..iam import get_inline_role, get_instance_profile
 from ..pulumi import DescribedComponentResource
+
+
+# NOTE: Is there a better way to define and maintain validated data structures
+# in python that reesolve to a dictionary and have required/optional fields?
+class BatchComputeResources(TypedDict):
+    """A class for defining resources for instances in an AWS Batch compute environment
+
+    Attributes:
+        instance_types: A list of AWS EC2 instance types to request
+        max_vcpus: The maximum number of vCPUs in an environment
+        desired_vcpus: The desired number of vCPUs in an environment (Optional)
+        min_vcpus: The minimum number of vCPUs in an environment (Optional)
+    """
+
+    instance_types: Sequence[str]
+    max_vcpus: int
+    desired_vcpus: NotRequired[int]
+    min_vcpus: NotRequired[int]
+
+    @classmethod
+    def create(
+        cls,
+        instance_types: Sequence[str] = ["c4.large"],
+        max_vcpus: int = 16,
+        desired_vcpus: int | None = None,
+        min_vcpus: int | None = None,
+    ):
+        params = {"instance_types": instance_types, "max_vcpus": max_vcpus}
+        if desired_vcpus is not None:
+            params["desired_vcpus"] = desired_vcpus
+        if min_vcpus is not None:
+            params["min_vcpus"] = min_vcpus
+        return cls(**params)
 
 
 class BatchCompute(DescribedComponentResource):
@@ -17,6 +50,7 @@ class BatchCompute(DescribedComponentResource):
         name: Input[str],
         image_id: Input[str],
         subnets: Sequence[Input[str]],
+        resources: BatchComputeResources,
         *args,
         **kwargs,
     ):
@@ -67,7 +101,10 @@ class BatchCompute(DescribedComponentResource):
 
         self.security_group = aws.ec2.SecurityGroup(
             f"{self.name}-scrtygrp",
-            egress=[  # TODO: fine tune security group
+            # TODO: fine tune security group
+            # Currently does not allow any inbound requests into an instance
+            # Allows all outbound requests unbounded
+            egress=[
                 {
                     "from_port": 0,
                     "to_port": 0,
@@ -93,15 +130,16 @@ class BatchCompute(DescribedComponentResource):
             compute_resources=aws.batch.ComputeEnvironmentComputeResourcesArgs(
                 type="EC2",
                 instance_role=self.instance_role_profile.arn,
-                # ec2_key_pair=self.key_pair.key_name, # TODO: add EC2 key pair
+                # TODO: add EC2 key pair
+                # I don't think this is necessarily required if we don't plan on
+                # SSHing into the machines (plus inbound requests should
+                # probably be blocked anyway)
+                # ec2_key_pair=self.key_pair.key_name,
                 image_id=image_id,
                 placement_group=self.placement_group.name,
                 security_group_ids=[self.security_group.id],
                 subnets=subnets,
-                # TODO: make below configurable
-                instance_types=["c4.large"],
-                max_vcpus=16,
-                min_vcpus=0,
+                **resources,
             ),
             opts=ResourceOptions(parent=self),
         )
