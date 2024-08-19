@@ -5,7 +5,7 @@ from abc import abstractmethod
 import pulumi_aws as aws
 from pulumi import Config, ResourceOptions
 
-from capeinfra.pipeline.batch import BatchCompute, new_compute_resources
+from capeinfra.pipeline.batch import BatchCompute, new_batch_compute_resources
 from capeinfra.util.naming import disemvowel
 
 from .pulumi import DescribedComponentResource
@@ -240,5 +240,7 @@ class ScopedSwimlane(DescribedComponentResource):
                 name,
                 image_id=env.get("image"),
                 subnets=subnets,
-                resources=new_compute_resources(**env.get("resources", {})),
+                resources=new_batch_compute_resources(
+                    **env.get("resources", {})
+                ),
             )

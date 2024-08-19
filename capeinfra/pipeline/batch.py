@@ -27,7 +27,7 @@ class BatchComputeResources(TypedDict):
     min_vcpus: NotRequired[int]
 
 
-def new_compute_resources(
+def new_batch_compute_resources(
     instance_types: Sequence[str] = ["c4.large"],
     max_vcpus: int = 16,
     desired_vcpus: int | None = None,
