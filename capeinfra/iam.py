@@ -6,7 +6,7 @@ Helpfully, the big three cloud providers all use this term.
 import json
 
 import pulumi_aws as aws
-from pulumi import Output, ResourceOptions
+from pulumi import Input, ResourceOptions
 
 # TODO: ISSUE #72
 
@@ -297,7 +297,7 @@ def get_inline_role(
     desc_name: str,
     srvc_prfx: str,
     assume_role_srvc: str,
-    role_policy: Output | None = None,
+    role_policy: Input[str] | None = None,
     srvc_policy_attach: str | None = None,
     opts: ResourceOptions | None = None,
 ) -> aws.iam.Role:
@@ -346,3 +346,22 @@ def get_inline_role(
         )
 
     return inline_role
+
+
+def get_instance_profile(
+    name: str,
+    role: aws.iam.Role,
+) -> aws.iam.InstanceProfile:
+    """Get an instance profile for the given role
+
+    Args:
+        role: The role in which to generate an instance profile for
+
+    Returns:
+        The instance profile
+    """
+    return aws.iam.InstanceProfile(
+        f"{name}-instnc-prfl",
+        role=role.name,
+        opts=ResourceOptions(parent=role),
+    )
