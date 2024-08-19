@@ -5,7 +5,7 @@ from abc import abstractmethod
 import pulumi_aws as aws
 from pulumi import Config, ResourceOptions
 
-from capeinfra.pipeline.batch import BatchCompute, BatchComputeResources
+from capeinfra.pipeline.batch import BatchCompute, new_compute_resources
 from capeinfra.util.naming import disemvowel
 
 from .pulumi import DescribedComponentResource
@@ -229,15 +229,16 @@ class ScopedSwimlane(DescribedComponentResource):
             .get("environments", [])
         ):
             name = env.get("name")
-            compute_environment = BatchCompute(
+            subnets = []
+            for subnet_name in env.get("subnets"):
+                subnet = self.private_subnets.get(subnet_name)
+                assert (
+                    subnet is not None
+                ), f"Unknown subnet in compute environment {name}: {subnet_name}"
+                subnets.append(subnet.id)
+            self.compute_environments[name] = BatchCompute(
                 name,
                 image_id=env.get("image"),
-                subnets=[
-                    self.private_subnets.get(subnet).id
-                    for subnet in env.get("subnets")
-                ],
-                resources=BatchComputeResources.create(
-                    **env.get("resources", {})
-                ),
+                subnets=subnets,
+                resources=new_compute_resources(**env.get("resources", {})),
             )
-            self.compute_environments[name] = compute_environment

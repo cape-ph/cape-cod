@@ -26,20 +26,19 @@ class BatchComputeResources(TypedDict):
     desired_vcpus: NotRequired[int]
     min_vcpus: NotRequired[int]
 
-    @classmethod
-    def create(
-        cls,
-        instance_types: Sequence[str] = ["c4.large"],
-        max_vcpus: int = 16,
-        desired_vcpus: int | None = None,
-        min_vcpus: int | None = None,
-    ):
-        params = {"instance_types": instance_types, "max_vcpus": max_vcpus}
-        if desired_vcpus is not None:
-            params["desired_vcpus"] = desired_vcpus
-        if min_vcpus is not None:
-            params["min_vcpus"] = min_vcpus
-        return cls(**params)
+
+def new_compute_resources(
+    instance_types: Sequence[str] = ["c4.large"],
+    max_vcpus: int = 16,
+    desired_vcpus: int | None = None,
+    min_vcpus: int | None = None,
+):
+    params = {"instance_types": instance_types, "max_vcpus": max_vcpus}
+    if desired_vcpus is not None:
+        params["desired_vcpus"] = desired_vcpus
+    if min_vcpus is not None:
+        params["min_vcpus"] = min_vcpus
+    return BatchComputeResources(**params)
 
 
 class BatchCompute(DescribedComponentResource):
