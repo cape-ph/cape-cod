@@ -154,7 +154,7 @@ class BatchCompute(DescribedComponentResource):
         # )
 
         self.job_queue = aws.batch.JobQueue(
-            f"{self.name}-job-q",
+            f"{self.name}-jobq",
             state="ENABLED",
             priority=5,
             # scheduling_policy_arn=self.scheduling_policy.arn, # TODO: add policy
