@@ -274,7 +274,7 @@ class PrivateSwimlane(ScopedSwimlane):
                                 "M": {
                                     "accessKey": {"S": "<YOUR S3 ACCESS KEY>"},
                                     "secretKey": {"S": "<YOUR S3 SECRET KEY>"},
-                                    "region": {"S": "us-east-1"},
+                                    "region": {"S": "us-east-2"},
                                     "client": {
                                         "M": {
                                             "maxConnections": {"N": 20},
@@ -289,9 +289,7 @@ class PrivateSwimlane(ScopedSwimlane):
                                     },
                                     "batch": {
                                         "M": {
-                                            "cliPath": {
-                                                "S": "/home/ec2-user/miniconda/bin/aws"
-                                            },
+                                            "cliPath": {"S": "/usr/bin/aws"},
                                             "maxTransferAttempts": {"N": 3},
                                             "delayBetweenAttempts": {
                                                 "S": "5 sec"
