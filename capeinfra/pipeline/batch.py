@@ -143,8 +143,35 @@ class BatchCompute(DescribedComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
+        # TODO: figure out a good fair share policy, for now allow a job to
+        # request as much as they want (ISSUE #78)
+        # self.scheduling_policy = aws.batch.SchedulingPolicy(
+        #     f"{self.name}-schdl-plcy",
+        #     fair_share_policy={
+        #         ...
+        #     },
+        #     opts=ResourceOptions(parent=self.compute_environment),
+        # )
+
+        self.job_queue = aws.batch.JobQueue(
+            f"{self.name}-job-q",
+            state="ENABLED",
+            priority=5,
+            # scheduling_policy_arn=self.scheduling_policy.arn, # TODO: add policy
+            compute_environment_orders=[
+                {
+                    "order": 1,
+                    "compute_environment": self.compute_environment.arn,
+                }
+            ],
+            opts=ResourceOptions(parent=self.compute_environment),
+        )
+
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs(
-            {"compute_environment": self.compute_environment.id}
+            {
+                "compute_environment": self.compute_environment.id,
+                "job_queue": self.job_queue,
+            }
         )
