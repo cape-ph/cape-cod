@@ -10,7 +10,7 @@ from ..pulumi import DescribedComponentResource
 
 
 # NOTE: Is there a better way to define and maintain validated data structures
-# in python that reesolve to a dictionary and have required/optional fields?
+# in python that resolve to a dictionary and have required/optional fields?
 class BatchComputeResources(TypedDict):
     """A class for defining resources for instances in an AWS Batch compute environment
 
@@ -33,6 +33,17 @@ def new_batch_compute_resources(
     desired_vcpus: int | None = None,
     min_vcpus: int | None = None,
 ):
+    """Create a new BatchComputeResources dictionary with set defaults
+
+    Args:
+        instance_types: A list of AWS EC2 instance types to request
+        max_vcpus: The maximum number of vCPUs in an environment
+        desired_vcpus: The desired number of vCPUs in an environment (Optional)
+        min_vcpus: The minimum number of vCPUs in an environment (Optional)
+
+    Returns:
+        A `BatchComputeResources` typed dictionary
+    """
     params = {"instance_types": instance_types, "max_vcpus": max_vcpus}
     if desired_vcpus is not None:
         params["desired_vcpus"] = desired_vcpus
