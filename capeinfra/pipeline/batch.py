@@ -81,12 +81,12 @@ class BatchCompute(DescribedComponentResource):
             f"{self.desc_name} AWS batch instance role",
             "",
             "batch.amazonaws.com",
-            # TODO: add policy
+            # TODO: add policy (ISSUE #73)
             srvc_policy_attach="arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
             opts=ResourceOptions(parent=self),
         )
         # TODO: remove when adding real policy above, this simply gives full s3
-        # access
+        # access (ISSUE #73)
         aws.iam.RolePolicyAttachment(
             f"{name}-instnc-s3svcroleatch",
             role=self.instance_role.name,
@@ -100,7 +100,7 @@ class BatchCompute(DescribedComponentResource):
 
         self.security_group = aws.ec2.SecurityGroup(
             f"{self.name}-scrtygrp",
-            # TODO: fine tune security group
+            # TODO: fine tune security group (ISSUE #77)
             # Currently does not allow any inbound requests into an instance
             # Allows all outbound requests unbounded
             egress=[
@@ -129,7 +129,7 @@ class BatchCompute(DescribedComponentResource):
             compute_resources=aws.batch.ComputeEnvironmentComputeResourcesArgs(
                 type="EC2",
                 instance_role=self.instance_role_profile.arn,
-                # TODO: add EC2 key pair
+                # TODO: add EC2 key pair (ISSUE #77)
                 # I don't think this is necessarily required if we don't plan on
                 # SSHing into the machines (plus inbound requests should
                 # probably be blocked anyway)
