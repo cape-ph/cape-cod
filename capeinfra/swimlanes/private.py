@@ -6,7 +6,7 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
-from ..iam import get_inline_role
+from ..iam import get_dap_api_policy, get_inline_role
 from ..swimlane import ScopedSwimlane
 from ..util.naming import disemvowel
 
@@ -17,6 +17,21 @@ class PrivateSwimlane(ScopedSwimlane):
     def __init__(self, name, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
+
+        # this queue is where all data analysis pipeline submission messages
+        # will go
+        self.dap_submit_queue = aws.sqs.Queue(
+            # TODO: ISSUE #68
+            f"{self.basename}-dapq",
+            name=f"{self.basename}-dapq.fifo",
+            content_based_deduplication=True,
+            fifo_queue=True,
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} data analysis pipeline submission queue"
+                )
+            },
+        )
 
         self.create_dap_api()
         self.create_analysis_pipeline_registry()
@@ -62,15 +77,14 @@ class PrivateSwimlane(ScopedSwimlane):
     def create_dap_api(self):
         """Create the data analysis pipeline API for the private swimlane."""
 
-        # TODO: ISSUE #62
-
         self.api_lambda_role = get_inline_role(
             f"{self.basename}-dapapi-lmbd-role",
             f"{self.desc_name} data analysis pipeline lambda role",
             "lmbd",
             "lambda.amazonaws.com",
-            # TODO: ISSUE #64
-            None,
+            self.dap_submit_queue.name.apply(
+                lambda name: get_dap_api_policy(f"{name}")
+            ),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
@@ -87,6 +101,11 @@ class PrivateSwimlane(ScopedSwimlane):
                     )
                 }
             ),
+            environment={
+                "variables": {
+                    "DAP_QUEUE_NAME": self.dap_submit_queue.name,
+                }
+            },
             opts=ResourceOptions(parent=self),
         )
 
