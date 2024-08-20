@@ -296,8 +296,8 @@ class PrivateSwimlane(ScopedSwimlane):
                                     "region": {"S": "us-east-2"},
                                     "client": {
                                         "M": {
-                                            "maxConnections": {"N": 20},
-                                            "connectionTimeout": {"N": 10000},
+                                            "maxConnections": {"N": "20"},
+                                            "connectionTimeout": {"N": "10000"},
                                             "uploadStorageClass": {
                                                 "S": "INTELLIGENT_TIERING"
                                             },
@@ -309,7 +309,7 @@ class PrivateSwimlane(ScopedSwimlane):
                                     "batch": {
                                         "M": {
                                             "cliPath": {"S": "/usr/bin/aws"},
-                                            "maxTransferAttempts": {"N": 3},
+                                            "maxTransferAttempts": {"N": "3"},
                                             "delayBetweenAttempts": {
                                                 "S": "5 sec"
                                             },
