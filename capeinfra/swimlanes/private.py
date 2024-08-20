@@ -72,6 +72,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 "cidr-block": "10.0.0.0/24",
             },
             "private-subnets": [],
+            "compute": {},
         }
 
     def create_dap_api(self):

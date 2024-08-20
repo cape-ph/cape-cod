@@ -5,6 +5,7 @@ from abc import abstractmethod
 import pulumi_aws as aws
 from pulumi import Config, ResourceOptions
 
+from capeinfra.pipeline.batch import BatchCompute, new_batch_compute_resources
 from capeinfra.util.naming import disemvowel
 
 from .pulumi import DescribedComponentResource
@@ -23,10 +24,12 @@ class ScopedSwimlane(DescribedComponentResource):
         self._cfg_dict = None
         self._inet_gw = None
         self.basename = basename
-        self.private_subnets = {}
+        self.private_subnets = dict[str, aws.ec2.Subnet]()
+        self.compute_environments = dict[str, BatchCompute]()
         self.create_vpc()
         self.create_public_subnet()
         self.create_private_subnets()
+        self.create_compute_environments()
         self.register_outputs({f"{self.basename}-vpc-id": self.vpc.id})
 
     @property
@@ -212,3 +215,32 @@ class ScopedSwimlane(DescribedComponentResource):
                 )
 
             self.private_subnets[config_sn_name] = subnet
+
+    def create_compute_environments(self):
+        """Default implementation of compute environment creation for a swimlane.
+
+        The default implementation sets up the subnets as configured and routes
+        all outgoing traffic to the NAT gateway in the public subnet if
+        configured.
+        """
+        for env in (
+            self.get_config_dict()
+            .get("compute", self.default_cfg["compute"])
+            .get("environments", [])
+        ):
+            name = env.get("name")
+            subnets = []
+            for subnet_name in env.get("subnets"):
+                subnet = self.private_subnets.get(subnet_name)
+                assert (
+                    subnet is not None
+                ), f"Unknown subnet in compute environment {name}: {subnet_name}"
+                subnets.append(subnet.id)
+            self.compute_environments[name] = BatchCompute(
+                name,
+                image_id=env.get("image"),
+                subnets=subnets,
+                resources=new_batch_compute_resources(
+                    **env.get("resources", {})
+                ),
+            )
