@@ -108,6 +108,11 @@ def index_handler(event, context):
         #       actual pipeline.
         pipeline_name = body["pipelineName"]
         pipeline_version = body["pipelineVersion"]
+        # TODO: these paths (if we keep using them) may be url encoded when we
+        #       actually get to more real stuff. not sure and could depend how 
+        #       we wire it up to UI. since this is a passthrough to a queue to
+        #       be processed later, we may want to do the decode (if needed)
+        #       there...
         input_path = body["inputPath"]
         output_path = body["outputPath"]
 
