@@ -410,3 +410,61 @@ def get_instance_profile(
         role=role.name,
         opts=ResourceOptions(parent=role),
     )
+
+def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name:str) -> str:
+    """Get a role policy statement for reading dynamodb and sqs.
+
+    This policy allows for actions on an sqs queue, a dynamodb table and
+    logging necessary for data handlers to read data analysis pipeline 
+    submission messages from SQS as well as read the data analysis pipeline 
+    registry dynamodb table.
+
+    Args:
+        queue_name: The name of the queue to grant read access to.
+        table_name: The name of the DynamoDB table storing the DAP
+                    registry.
+
+    Returns:
+        The policy statement as a dictionary json encoded string.
+    """
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:PutLogEvents",
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        # This is the bare minimum required for an SQS notified
+                        # lambda to do its job.
+                        "sqs:GetQueueAttributes",
+                        "sqs:ReceiveMessage",
+                        "sqs:DeleteMessage",
+                    ],
+                    "Resource": [
+                        f"arn:aws:sqs:*:*:{queue_name}",
+                    ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:DescribeTable",
+                        "dynamodb:GetItem",
+                    ],
+                    "Resource": [
+                        f"arn:aws:dynamodb:*:*:table/{table_name}",
+                    ],
+                },
+            ],
+        },
+    )
+
