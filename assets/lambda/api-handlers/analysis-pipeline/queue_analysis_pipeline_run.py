@@ -117,9 +117,9 @@ def index_handler(event, context):
         output_path = body["outputPath"]
 
         msg = (
-            f"Data analsysis pipeline {pipeline_name} (version "
-            f"{pipeline_version} will be scheduled using input path "
-            f"[{input_path}] and output path [{output_path}]"
+            f"Data analysis pipeline {pipeline_name} (version "
+            f"{pipeline_version}) will be sent to the sumission queue with "
+            f"input path [{input_path}] and output path [{output_path}]"
         )
 
         logger.info(msg)
