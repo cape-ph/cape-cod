@@ -6,7 +6,7 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
-from ..iam import get_dap_api_policy, get_inline_role
+from ..iam import get_dap_api_policy, get_inline_role,get_sqs_lambda_dap_submit_policy
 from ..swimlane import ScopedSwimlane
 from ..util.naming import disemvowel
 
@@ -18,23 +18,10 @@ class PrivateSwimlane(ScopedSwimlane):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
 
-        # this queue is where all data analysis pipeline submission messages
-        # will go
-        self.dap_submit_queue = aws.sqs.Queue(
-            # TODO: ISSUE #68
-            f"{self.basename}-dapq",
-            name=f"{self.basename}-dapq.fifo",
-            content_based_deduplication=True,
-            fifo_queue=True,
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} data analysis pipeline submission queue"
-                )
-            },
-        )
 
-        self.create_dap_api()
         self.create_analysis_pipeline_registry()
+        self.create_dap_submission_queue()
+        self.create_dap_api()
 
     @property
     def type_name(self) -> str:
@@ -323,4 +310,83 @@ class PrivateSwimlane(ScopedSwimlane):
                 }
             ),
             opts=ResourceOptions(parent=self),
+        )
+    
+    def create_dap_submission_queue(self):
+        """Creates and configures the SQS queue where DAP submissions will go.
+
+        Configuration of this queue also involves configuring the Lambda that is
+        triggered on messages being added to the queue.
+        """
+        # this queue is where all data analysis pipeline submission messages
+        # will go
+        self.dap_submit_queue = aws.sqs.Queue(
+            # TODO: ISSUE #68
+            f"{self.basename}-dapq",
+            name=f"{self.basename}-dapq.fifo",
+            content_based_deduplication=True,
+            fifo_queue=True,
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} data analysis pipeline submission queue"
+                )
+            },
+        )
+
+        # get a role for the raw bucket trigger
+        self.dap_submit_sqs_trigger_role = get_inline_role(
+            f"{self.basename}-dapq-sqstrgrole",
+            f"{self.desc_name} DAP submission SQS trigger role",
+            "lmbd",
+            "lambda.amazonaws.com",
+            Output.all(
+                qname=self.dap_submit_queue.name,
+                table_name=self.analysis_pipeline_registry_ddb_table.name,
+            ).apply(
+                lambda args: get_sqs_lambda_dap_submit_policy(
+                    args["qname"], args["table_name"]
+                )
+            ),
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Create our Lambda function that triggers the given glue job
+        self.dap_submit_qmsg_handler = aws.lambda_.Function(
+            f"{self.basename}-dapq-sqslmbdtrgfnct",
+            role=self.dap_submit_sqs_trigger_role.arn,
+            code=AssetArchive(
+                {
+                    "index.py": FileAsset(
+                        "./assets/lambda/sqs_dap_submit_lambda.py"
+                    )
+                }
+            ),
+            runtime="python3.11",
+            # in this case, the zip file for the lambda deployment is
+            # being created by this code. and the zip file will be
+            # called index. so the handler must be start with `index`
+            # and the actual function in the script must be named
+            # the same as the value here
+            handler="index.index_handler",
+            environment={
+                "variables": {
+                    "DAP_REG_DDB_TABLE":
+                    self.analysis_pipeline_registry_ddb_table.name,
+                }
+            },
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} DAP submission sqs message lambda trigger "
+                    "function"
+                )
+            },
+        )
+
+        aws.lambda_.EventSourceMapping(
+            f"{self.basename}-dapq-sqslmbdatrgr",
+            event_source_arn=self.dap_submit_queue.arn,
+            function_name=self.dap_submit_qmsg_handler.arn,
+            function_response_types=["ReportBatchItemFailures"],
         )
