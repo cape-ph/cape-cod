@@ -148,7 +148,6 @@ class DatalakeHouse(DescribedComponentResource):
         self.tributaries = []
         if tributaries_config:
             for trib_config in tributaries_config:
-
                 trib_name = trib_config.get("name")
                 self.tributaries.append(
                     Tributary(
@@ -352,6 +351,7 @@ class Tributary(DescribedComponentResource):
                         Tributary.CLEAN
                     ].bucket.bucket,
                 },
+                max_concurrent_runs=cfg.get("max_concurrent_runs", 5),
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} raw to clean ETL job"),
             )

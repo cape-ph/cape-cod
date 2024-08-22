@@ -37,13 +37,13 @@ class DataCrawler(DescribedComponentResource):
     def __init__(
         self,
         name: str,
-        # TODO: ISSUE #71
         buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
         db: aws.glue.CatalogDatabase,
         *args,
         classifiers=None,
         schedule: str | None = None,
         excludes: list | None = None,
+        prefix: str | None = None,
         **kwargs,
     ):
         """Constructor.
@@ -52,6 +52,8 @@ class DataCrawler(DescribedComponentResource):
             name: The name for the resource.
             buckets: One or more buckets (a list of them if more than one) that
                      the crawler will crawl.
+            prefix: A prefix string within a bucket to crawl which limits the
+                    content that will be indexed by the crawler.
             db: The catalog database where the crawler will write metadata.
             classifiers: A list of custom classifiers for the crawler, if any.
             schedule: a cron formatted schedule string for the crawler's
@@ -109,7 +111,9 @@ class DataCrawler(DescribedComponentResource):
             database_name=db.name,
             s3_targets=[
                 aws.glue.CrawlerS3TargetArgs(
-                    path=bucket.bucket.apply(lambda b: f"s3://{b}/"),
+                    path=bucket.bucket.apply(
+                        lambda b: f"s3://{b}/{prefix+'/' if prefix else ''}"
+                    ),
                     exclusions=self.excludes,
                 )
                 for bucket in buckets
@@ -212,6 +216,7 @@ class EtlJob(DescribedComponentResource):
         script_path: str,
         *args,
         default_args: dict | None = None,
+        max_concurrent_runs: int | None = 5,
         **kwargs,
     ):
         """Constructor.
@@ -227,6 +232,7 @@ class EtlJob(DescribedComponentResource):
             script_path: The path in `script_bucket` to the ETL script for this
                         job.
             default_args: default arguments for this ETL job if any.
+            max_concurrent_runs: Number of concurrent runs of the job (Default: 5)
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -269,8 +275,7 @@ class EtlJob(DescribedComponentResource):
             ),
             default_arguments=default_args,
             execution_property=aws.glue.JobExecutionPropertyArgs(
-                # TODO: ISSUE #70
-                max_concurrent_runs=5,
+                max_concurrent_runs=max_concurrent_runs,
             ),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue ETL Job"},
