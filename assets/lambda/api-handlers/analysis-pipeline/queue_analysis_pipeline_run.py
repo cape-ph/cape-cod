@@ -12,12 +12,7 @@ logger = logging.getLogger(__name__)
 sqs_client = boto3.client("sqs")
 
 
-# TODO: this function appears with the same name in the
-#       new_s3obj_queue_notifier_lambda.py module as well. And we will likely
-#       have a similar function in any lambda that is tasked with handling a
-#       ClientError. We should move this to a common place (which is a
-#       little complicated as we would need to ensure the common module is
-#       deployed to different lambda environments)
+# TODO: ISSUE #86
 def decode_error(err: ClientError):
     """Decode a ClientError from AWS.
 
@@ -37,12 +32,7 @@ def decode_error(err: ClientError):
     return code, message
 
 
-# TODO: this function appears with a different name in the
-#       new_s3obj_queue_notifier_lambda.py module as well. And we will likely
-#       have a similar function in any lambda that is tasked with sending a
-#       message to a queue. We should move this to a common place (which is a
-#       little complicated as we would need to ensure the common module is
-#       deployed to different lambda environments)
+# TODO: ISSUE #86
 def send_submit_dap_message(queue_name: str, queue_url: str, qmsg: dict):
     """Send the new DAP sumission as a json message to the specified queue.
 
@@ -103,16 +93,9 @@ def index_handler(event, context):
     try:
         body = json.loads(event["body"])
 
-        # TODO: we need to figure out the actual set of params we'll need from
-        #       this endpoint. this will depend on what's needed to run the
-        #       actual pipeline.
+        # TODO: ISSUE #84
         pipeline_name = body["pipelineName"]
         pipeline_version = body["pipelineVersion"]
-        # TODO: these paths (if we keep using them) may be url encoded when we
-        #       actually get to more real stuff. not sure and could depend how 
-        #       we wire it up to UI. since this is a passthrough to a queue to
-        #       be processed later, we may want to do the decode (if needed)
-        #       there...
         input_path = body["inputPath"]
         output_path = body["outputPath"]
 
