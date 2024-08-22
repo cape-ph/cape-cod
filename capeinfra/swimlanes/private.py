@@ -252,6 +252,7 @@ class PrivateSwimlane(ScopedSwimlane):
         #       the ability to add these records at runtime so users can extend
         #       when they need to. right now we're only adding the bactopia
         #       tutorial as a pipeline
+        # TODO: ISSUE #84
         bactopia_version = "3.0.1"
         aws.dynamodb.TableItem(
             f"{self.basename}-bactp-ttrl-ddbitem",
