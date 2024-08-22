@@ -6,25 +6,25 @@ queue considerations for different parts of the system.
 
 Some areas in which queues are used to solve specific problems:
 
-- Handling raw object upload prior to running ETL jobs
-  - We have an indeterminant number of folks uploading an indeterminant number
-    of objects at any time, but have a finite number of ETL jobs we can run at
-    any time. So a queuing system makes sense so as to not lose any object
-    transforms.
-  - Object storage (at least in AWS S3) can only have one handler for any given
-    event (e.g. ObjectCreated). While this handler can do any number of things,
-    there can be only one. A topic based queuing system allows for many
-    handlers.
-- Submitting jobs to analytics pipelines.
+-   Handling raw object upload prior to running ETL jobs
+    -   We have an indeterminant number of folks uploading an indeterminant
+        number of objects at any time, but have a finite number of ETL jobs we
+        can run at any time. So a queuing system makes sense so as to not lose
+        any object transforms.
+    -   Object storage (at least in AWS S3) can only have one handler for any
+        given event (e.g. ObjectCreated). While this handler can do any number
+        of things, there can be only one. A topic based queuing system allows
+        for many handlers.
+-   Submitting jobs to analytics pipelines.
 
-  - Similarly to adding new raw objects to the system, any nyumber of users can
-    submit any number of analytics pipeline jobs to the system at any time. So
-    again, a queuing system makes sense here.
+    -   Similarly to adding new raw objects to the system, any nyumber of users
+        can submit any number of analytics pipeline jobs to the system at any
+        time. So again, a queuing system makes sense here.
 
-- Minimizing the run time of notification handlers when they are triggered
-  without insufficient resources available to process. In these cases the
-  handler may need to `sleep` or otherwise spin until a resource is available,
-  costing money to wait.
+-   Minimizing the run time of notification handlers when they are triggered
+    without insufficient resources available to process. In these cases the
+    handler may need to `sleep` or otherwise spin until a resource is available,
+    costing money to wait.
 
 AWS provides a few different queuing options for different circumstances. For
 the most part we will be looking at `Simple Queue Service (SQS)` and
@@ -35,15 +35,15 @@ queuing system for AWS events.
 
 Some items to keep in mind in the following sections:
 
-- Putting messages in a queue can trigger a handler action. This action has a
-  maximum number of concurrent instances of itself that can run. We'll refer to
-  that as `max_qhandler` below.
-- In the case of ETL (`glue jobs` in `AWS`), there is also a maximum number of
-  concurrent instances of the ETL job. We'll refer to that as `max_etl` below.
-  These jobs have some startup, run and shutdown times associated with them.
-- We do not consider limiting the size of the queue in this README. At the time
-  of writing, we need to handle all messages, so limiting the queue size is not
-  helpful.
+-   Putting messages in a queue can trigger a handler action. This action has a
+    maximum number of concurrent instances of itself that can run. We'll refer
+    to that as `max_qhandler` below.
+-   In the case of ETL (`glue jobs` in `AWS`), there is also a maximum number of
+    concurrent instances of the ETL job. We'll refer to that as `max_etl` below.
+    These jobs have some startup, run and shutdown times associated with them.
+-   We do not consider limiting the size of the queue in this README. At the
+    time of writing, we need to handle all messages, so limiting the queue size
+    is not helpful.
 
 ## Message Consumption Models
 
