@@ -212,6 +212,7 @@ class EtlJob(DescribedComponentResource):
         script_path: str,
         *args,
         default_args: dict | None = None,
+        max_concurrent_runs: int | None = 5,
         **kwargs,
     ):
         """Constructor.
@@ -227,6 +228,7 @@ class EtlJob(DescribedComponentResource):
             script_path: The path in `script_bucket` to the ETL script for this
                         job.
             default_args: default arguments for this ETL job if any.
+            max_concurrent_runs: Number of concurrent runs of the job (Default: 5)
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -269,8 +271,7 @@ class EtlJob(DescribedComponentResource):
             ),
             default_arguments=default_args,
             execution_property=aws.glue.JobExecutionPropertyArgs(
-                # TODO: ISSUE #70
-                max_concurrent_runs=5,
+                max_concurrent_runs=max_concurrent_runs,
             ),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue ETL Job"},

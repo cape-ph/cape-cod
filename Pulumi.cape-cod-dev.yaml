@@ -102,3 +102,4 @@ config:
                                 - fastq
                             pymodules:
                                 - pyfastx==2.1.0
+                            max_concurrent_runs: 5 # optional, 5 is the default
