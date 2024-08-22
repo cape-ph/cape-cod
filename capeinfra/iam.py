@@ -233,6 +233,51 @@ def get_sqs_raw_notifier_policy(
     )
 
 
+# TODO: may or may not be able to get a single policy for a whole api
+#       reasonably. depends how much we do in the api. as it is currently a
+#       single endpoint, one policy is fine
+def get_dap_api_policy(queue_name: str):
+    """Get a role policy statement for the DAP API including writing sqs.
+
+    This policy allows for actions on an sqs queue currently. When a new data
+    analysis pipeline job is submitted, we write the submission data to the
+    queue for later processing. As things progress, this may expand.
+
+    Args:
+        queue_name: the name of the queue to grant access to.
+
+    Returns:
+        The policy statement as a dictionary json encoded string.
+    """
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:PutLogEvents",
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "sqs:GetQueueUrl",
+                        "sqs:SendMessage",
+                    ],
+                    "Resource": [
+                        f"arn:aws:sqs:*:*:{queue_name}",
+                    ],
+                },
+            ],
+        },
+    )
+
+
 def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
     """Get a role policy statement for reading from sqs and starting glue jobs.
 
@@ -364,4 +409,62 @@ def get_instance_profile(
         f"{name}-instnc-prfl",
         role=role.name,
         opts=ResourceOptions(parent=role),
+    )
+
+
+def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
+    """Get a role policy statement for reading dynamodb and sqs.
+
+    This policy allows for actions on an sqs queue, a dynamodb table and
+    logging necessary for data handlers to read data analysis pipeline
+    submission messages from SQS as well as read the data analysis pipeline
+    registry dynamodb table.
+
+    Args:
+        queue_name: The name of the queue to grant read access to.
+        table_name: The name of the DynamoDB table storing the DAP
+                    registry.
+
+    Returns:
+        The policy statement as a dictionary json encoded string.
+    """
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:PutLogEvents",
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        # This is the bare minimum required for an SQS notified
+                        # lambda to do its job.
+                        "sqs:GetQueueAttributes",
+                        "sqs:ReceiveMessage",
+                        "sqs:DeleteMessage",
+                    ],
+                    "Resource": [
+                        f"arn:aws:sqs:*:*:{queue_name}",
+                    ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:DescribeTable",
+                        "dynamodb:GetItem",
+                    ],
+                    "Resource": [
+                        f"arn:aws:dynamodb:*:*:table/{table_name}",
+                    ],
+                },
+            ],
+        },
     )

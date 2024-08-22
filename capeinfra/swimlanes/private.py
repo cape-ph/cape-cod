@@ -4,9 +4,13 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, ResourceOptions
+from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
-from ..iam import get_inline_role
+from ..iam import (
+    get_dap_api_policy,
+    get_inline_role,
+    get_sqs_lambda_dap_submit_policy,
+)
 from ..swimlane import ScopedSwimlane
 from ..util.naming import disemvowel
 
@@ -18,6 +22,8 @@ class PrivateSwimlane(ScopedSwimlane):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
 
+        self.create_analysis_pipeline_registry()
+        self.create_dap_submission_queue()
         self.create_dap_api()
 
     @property
@@ -62,15 +68,14 @@ class PrivateSwimlane(ScopedSwimlane):
     def create_dap_api(self):
         """Create the data analysis pipeline API for the private swimlane."""
 
-        # TODO: ISSUE #62
-
         self.api_lambda_role = get_inline_role(
             f"{self.basename}-dapapi-lmbd-role",
             f"{self.desc_name} data analysis pipeline lambda role",
             "lmbd",
             "lambda.amazonaws.com",
-            # TODO: ISSUE #64
-            None,
+            self.dap_submit_queue.name.apply(
+                lambda name: get_dap_api_policy(f"{name}")
+            ),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
@@ -87,6 +92,11 @@ class PrivateSwimlane(ScopedSwimlane):
                     )
                 }
             ),
+            environment={
+                "variables": {
+                    "DAP_QUEUE_NAME": self.dap_submit_queue.name,
+                }
+            },
             opts=ResourceOptions(parent=self),
         )
 
@@ -184,4 +194,202 @@ class PrivateSwimlane(ScopedSwimlane):
             rest_api=self.dap_rest_api.id,
             # TODO: ISSUE #67
             opts=ResourceOptions(parent=self),
+        )
+
+    def create_analysis_pipeline_registry(
+        self,
+    ):
+        """Sets up an analysis pipeline registry database.
+
+        Args:
+        """
+        # setup a DynamoDB table to hold a mapping of pipeline names (user
+        # facing names) to various config info for the running of the analysis
+        # pipelines. E.g. a nextflow pipeline may have a default nextflow config
+        # in the value object of its entry whereas a snakemake pipeline may have
+        # a default snakemake config.
+        # NOTE: DynamoDB stuff lives outside a VPC and is managed by AWS. This
+        #       is in the private swimlane as it fits there logically. we may
+        #       want to consider moving all AWS managed items into CapeMeta
+        #       eventually.
+        # NOTE: we can set up our Dynamo connections to go through a VPC
+        #       endpoint instead of the way we're currently doing (using the
+        #       fact that we have a NAT and egress requests to go through the
+        #       boto3 dynamo client, which makes the requests go through the
+        #       public internet). This is arguably more secure and performant as
+        #       it's a direct connection to Dynamo from our clients.
+        self.analysis_pipeline_registry_ddb_table = aws.dynamodb.Table(
+            f"{self.basename}-anlysppln-rgstry-ddb",
+            name=f"{self.basename}-AnalysisPipelineRegistry",
+            # NOTE: this table will be accessed as needed to do submit analysis
+            #       pipeline jobs. it'll be pretty hard (at least till this is
+            #       in use for a while) to come up with read/write metrics to
+            #       set this table up as PROVISIONED with those values. We'd
+            #       probably be much cheaper to go that route if we have a
+            #       really solid idea of how many reads/writes this table needs
+            billing_mode="PAY_PER_REQUEST",
+            hash_key="pipeline_name",
+            range_key="version",
+            attributes=[
+                # NOTE: we do not need to define any part of the "schema" here
+                #       that isn't needed in an index.
+                {
+                    "name": "pipeline_name",
+                    "type": "S",
+                },
+                {
+                    "name": "version",
+                    "type": "S",
+                },
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} Analysis Pipeline Registry DynamoDB Table"
+                ),
+            },
+        )
+
+        # TODO: we're hard coding this table for now. longer term we really
+        #       probably want an initial canned setup (for initial deploy) and
+        #       the ability to add these records at runtime so users can extend
+        #       when they need to. right now we're only adding the bactopia
+        #       tutorial as a pipeline
+        # TODO: ISSUE #84
+        bactopia_version = "3.0.1"
+        aws.dynamodb.TableItem(
+            f"{self.basename}-bactp-ttrl-ddbitem",
+            table_name=self.analysis_pipeline_registry_ddb_table.name,
+            hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
+            range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
+                lambda rk: f"{rk}"
+            ),
+            item=Output.json_dumps(
+                {
+                    "pipeline_name": {
+                        "S": (
+                            f"bactopia {bactopia_version} tutorial analysis"
+                            "pipeline"
+                        ),
+                    },
+                    "version": {"S": f"{bactopia_version}"},
+                    "pipeline_type": {"S": "nextflow"},
+                    # TODO: long term it is not tenable for us to have all the
+                    #       config stuff for all the pipeline frameworks
+                    #       specified in this manner. we should consider keeping
+                    #       the default config in common files or something
+                    #       like that and then point to the file in this table
+                    "nextflow_config": {
+                        "M": {
+                            "aws": {
+                                "M": {
+                                    "accessKey": {"S": "<YOUR S3 ACCESS KEY>"},
+                                    "secretKey": {"S": "<YOUR S3 SECRET KEY>"},
+                                    "region": {"S": "us-east-2"},
+                                    "client": {
+                                        "M": {
+                                            "maxConnections": {"N": "20"},
+                                            "connectionTimeout": {"N": "10000"},
+                                            "uploadStorageClass": {
+                                                "S": "INTELLIGENT_TIERING"
+                                            },
+                                            "storageEncryption": {
+                                                "S": "AES256"
+                                            },
+                                        }
+                                    },
+                                    "batch": {
+                                        "M": {
+                                            "cliPath": {"S": "/usr/bin/aws"},
+                                            "maxTransferAttempts": {"N": "3"},
+                                            "delayBetweenAttempts": {
+                                                "S": "5 sec"
+                                            },
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    },
+                }
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+    def create_dap_submission_queue(self):
+        """Creates and configures the SQS queue where DAP submissions will go.
+
+        Configuration of this queue also involves configuring the Lambda that is
+        triggered on messages being added to the queue.
+        """
+        # this queue is where all data analysis pipeline submission messages
+        # will go
+        self.dap_submit_queue = aws.sqs.Queue(
+            # TODO: ISSUE #68
+            f"{self.basename}-dapq",
+            name=f"{self.basename}-dapq.fifo",
+            content_based_deduplication=True,
+            fifo_queue=True,
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} data analysis pipeline submission queue"
+                )
+            },
+        )
+
+        # get a role for the raw bucket trigger
+        self.dap_submit_sqs_trigger_role = get_inline_role(
+            f"{self.basename}-dapq-sqstrgrole",
+            f"{self.desc_name} DAP submission SQS trigger role",
+            "lmbd",
+            "lambda.amazonaws.com",
+            Output.all(
+                qname=self.dap_submit_queue.name,
+                table_name=self.analysis_pipeline_registry_ddb_table.name,
+            ).apply(
+                lambda args: get_sqs_lambda_dap_submit_policy(
+                    args["qname"], args["table_name"]
+                )
+            ),
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Create our Lambda function that triggers the given glue job
+        self.dap_submit_qmsg_handler = aws.lambda_.Function(
+            f"{self.basename}-dapq-sqslmbdtrgfnct",
+            role=self.dap_submit_sqs_trigger_role.arn,
+            code=AssetArchive(
+                {
+                    "index.py": FileAsset(
+                        "./assets/lambda/sqs_dap_submit_lambda.py"
+                    )
+                }
+            ),
+            runtime="python3.11",
+            # in this case, the zip file for the lambda deployment is
+            # being created by this code. and the zip file will be
+            # called index. so the handler must be start with `index`
+            # and the actual function in the script must be named
+            # the same as the value here
+            handler="index.index_handler",
+            environment={
+                "variables": {
+                    "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
+                }
+            },
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} DAP submission sqs message lambda trigger "
+                    "function"
+                )
+            },
+        )
+
+        aws.lambda_.EventSourceMapping(
+            f"{self.basename}-dapq-sqslmbdatrgr",
+            event_source_arn=self.dap_submit_queue.arn,
+            function_name=self.dap_submit_qmsg_handler.arn,
+            function_response_types=["ReportBatchItemFailures"],
         )
