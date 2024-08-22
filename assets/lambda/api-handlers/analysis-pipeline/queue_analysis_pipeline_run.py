@@ -20,7 +20,7 @@ def decode_error(err: ClientError):
         err: The ClientError being decoded.
 
     Returns:
-        A tuple containg the error code and the error message provided by AWS.
+        A tuple containing the error code and the error message provided by AWS.
     """
     code, message = "Unknown", "Unknown"
     if "Error" in err.response:
@@ -110,7 +110,7 @@ def index_handler(event, context):
         response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
 
-        # NOTE: we just blindly put the message in the queue. all fitlering of
+        # NOTE: we just blindly put the message in the queue. all filtering of
         #       invalid values (e.g. a pipeline name that doesn't exist) will
         #       happen in the processing of the message from the queue in a
         #       different lambda.

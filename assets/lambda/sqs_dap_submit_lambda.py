@@ -1,11 +1,12 @@
 """Lambda function for kicking off DAPs triggered from an SQS queue."""
-import os
+
 import json
 import logging
+import os
 
 import boto3
-
 from botocore.exceptions import ClientError
+
 logger = logging.getLogger(__name__)
 # TODO: ISSUE #84
 
@@ -21,7 +22,7 @@ def decode_error(err: ClientError):
         err: The ClientError being decoded.
 
     Returns:
-        A tuple containg the error code and the error message provided by AWS.
+        A tuple containing the error code and the error message provided by AWS.
     """
     code, message = "Unknown", "Unknown"
     if "Error" in err.response:
@@ -31,6 +32,7 @@ def decode_error(err: ClientError):
         if "Message" in error:
             message = error["Message"]
     return code, message
+
 
 # TODO: ISSUE #86
 def get_dap_registry_table(table_name: str):
@@ -67,8 +69,11 @@ def get_dap_registry_table(table_name: str):
 
     return table
 
+
 # TODO: ISSUE #86
-def get_dap_registry_entry(table, pipeline_name: str, pipeline_version: str|None) -> dict | None:
+def get_dap_registry_entry(
+    table, pipeline_name: str, pipeline_version: str | None
+) -> dict | None:
     """Get the DAP registry entry for the given pipeline name from DynamoDB.
 
     Args:
@@ -92,9 +97,7 @@ def get_dap_registry_entry(table, pipeline_name: str, pipeline_version: str|None
         if pipeline_version is not None:
             k.update({"version": pipeline_version})
 
-        response = table.get_item(
-            Key=k
-        )
+        response = table.get_item(Key=k)
 
         ret = response["Item"]
 
@@ -107,6 +110,7 @@ def get_dap_registry_entry(table, pipeline_name: str, pipeline_version: str|None
         )
 
     return ret
+
 
 def index_handler(event, context):
     """Handler for the messages in the data analysis pipeline submit queue.
@@ -135,7 +139,7 @@ def index_handler(event, context):
     for rec in event["Records"]:
         # grab items from the incoming event needed later
         qmsg = json.loads(rec["body"])
-        
+
         try:
             # TODO: ISSUE #84
             pipeline_name = qmsg["pipeline_name"]
@@ -145,7 +149,7 @@ def index_handler(event, context):
 
             # attempt to get the registry entry from dynamodb. if we can't find
             # an entry, we'll log the error but not add to the batch failures
-            # (if we can't find the entry, no amount of re-queing will help).
+            # (if we can't find the entry, no amount of re-queuing will help).
 
             dap_reg_entry = get_dap_registry_entry(
                 ddb_table, pipeline_name, pipeline_version
@@ -154,10 +158,10 @@ def index_handler(event, context):
             if dap_reg_entry is None:
                 logger.error(
                     f"Cannot find DAP registry entry for data analysis "
-                    f"pipeline {pipeline_name} (version {pipeline_version}." 
+                    f"pipeline {pipeline_name} (version {pipeline_version}."
                     "Cannot submit pipeline to the head node."
                 )
-                
+
                 # add an entry to the invalid jobs list so we can add a count of
                 # invalid jobs to the response
                 invalid_dap_jobs.append((pipeline_name, pipeline_version))
@@ -173,9 +177,9 @@ def index_handler(event, context):
                     "and will be sent to the appropriate head node."
                 )
 
-                # TODO: ISSUE #84 - when we submit the job to the (correct) head 
-                #       node, hopefully there is some confirmation from the node 
-                #       (with a run id or something) that we can store in 
+                # TODO: ISSUE #84 - when we submit the job to the (correct) head
+                #       node, hopefully there is some confirmation from the node
+                #       (with a run id or something) that we can store in
                 #       successful_dap_jobs for our return 200 message. until
                 #       then we'll store a tuple of pipeline name/version just
                 #       so we can get a count
@@ -216,7 +220,7 @@ def index_handler(event, context):
         f"analysis pipeline jobs to the head node. "
         f"{len(invalid_dap_jobs)} were ignored."
     )
-    
+
     # see if we only had invalids submitted and modify the response if so
     if not successful_dap_jobs and invalid_dap_jobs:
         code = 400

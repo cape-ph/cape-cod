@@ -6,7 +6,11 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
-from ..iam import get_dap_api_policy, get_inline_role,get_sqs_lambda_dap_submit_policy
+from ..iam import (
+    get_dap_api_policy,
+    get_inline_role,
+    get_sqs_lambda_dap_submit_policy,
+)
 from ..swimlane import ScopedSwimlane
 from ..util.naming import disemvowel
 
@@ -17,7 +21,6 @@ class PrivateSwimlane(ScopedSwimlane):
     def __init__(self, name, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
-
 
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
@@ -312,7 +315,7 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
             opts=ResourceOptions(parent=self),
         )
-    
+
     def create_dap_submission_queue(self):
         """Creates and configures the SQS queue where DAP submissions will go.
 
@@ -372,8 +375,7 @@ class PrivateSwimlane(ScopedSwimlane):
             handler="index.index_handler",
             environment={
                 "variables": {
-                    "DAP_REG_DDB_TABLE":
-                    self.analysis_pipeline_registry_ddb_table.name,
+                    "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
                 }
             },
             opts=ResourceOptions(parent=self),

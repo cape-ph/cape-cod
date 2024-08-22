@@ -411,12 +411,13 @@ def get_instance_profile(
         opts=ResourceOptions(parent=role),
     )
 
-def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name:str) -> str:
+
+def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
     """Get a role policy statement for reading dynamodb and sqs.
 
     This policy allows for actions on an sqs queue, a dynamodb table and
-    logging necessary for data handlers to read data analysis pipeline 
-    submission messages from SQS as well as read the data analysis pipeline 
+    logging necessary for data handlers to read data analysis pipeline
+    submission messages from SQS as well as read the data analysis pipeline
     registry dynamodb table.
 
     Args:
@@ -467,4 +468,3 @@ def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name:str) -> str:
             ],
         },
     )
-
