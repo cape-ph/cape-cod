@@ -10,21 +10,21 @@ a work in progress.
 
 The CAPE infrastructure currently consists of:
 
-- A system-wide object store for reusable ETL scripts and Lambda functions (this
-  is currently used to prime the system and may not always be around).
-- A data lake for any number of configurable domains (called `Tributaries`)
-  which have their own raw and clean object storage and feed the lake over all
-  via shared data catalog.
-- More to come
+-   A system-wide object store for reusable ETL scripts and Lambda functions
+    (this is currently used to prime the system and may not always be around).
+-   A data lake for any number of configurable domains (called `Tributaries`)
+    which have their own raw and clean object storage and feed the lake over all
+    via shared data catalog.
+-   More to come
 
 ## 🦠 Requirements
 
-- [Python 3.10+](https://www.python.org/)
-- [Pulumi](https://www.pulumi.com/)
-- [AWS CLI](https://aws.amazon.com/cli/)
-- An AWS account with the ability to create most resources. We're actively
-  adding more as we go and just having the ability to create what we currently
-  use may not be the full list in the long term.
+-   [Python 3.10+](https://www.python.org/)
+-   [Pulumi](https://www.pulumi.com/)
+-   [AWS CLI](https://aws.amazon.com/cli/)
+-   An AWS account with the ability to create most resources. We're actively
+    adding more as we go and just having the ability to create what we currently
+    use may not be the full list in the long term.
 
 ## 🧫 Setup
 
@@ -220,7 +220,7 @@ each item.
 
 ## 📐 Additional Documentation
 
-- [Writeup of some queuing considerations](./extra-doc/README.queuing.md)
+-   [Writeup of some queuing considerations](./extra-doc/README.queuing.md)
 
 ## 🗒️ Links
 
@@ -233,6 +233,6 @@ first.
 <!--Reference links follow...-->
 
 [awscron]:
-  https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
+    https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
 [awscrawlerpaths]:
-  https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
+    https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
