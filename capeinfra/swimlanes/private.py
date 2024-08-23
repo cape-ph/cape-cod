@@ -36,6 +36,13 @@ class PrivateSwimlane(ScopedSwimlane):
                 "cidr-block": "10.0.0.0/24",
             },
             "private-subnets": [],
+            "api": {
+                "dap": {
+                    "meta": {
+                        "stage-name": "dev",
+                    },
+                },
+            },
             "compute": {},
         }
 
@@ -172,11 +179,16 @@ class PrivateSwimlane(ScopedSwimlane):
             # TODO: ISSUE #65
             opts=ResourceOptions(
                 parent=self,
-                # NOTE: not specying these led to the deployment being
+                # NOTE: not specifying these led to the deployment being
                 #       constructed before things it depends on
                 depends_on=[post_new_dap_method, post_new_dap_integration],
             ),
         )
+
+        # NOTE: our stage name is in the config file, and if it is not defined
+        #       we rally want the deployment to fail. so we'll let the KeyError
+        #       happen and not try to do anything about it
+        stage_name = self.config.get("api", "dap", "meta", "stage-name")
 
         # make a stage for the deployment manually.
         # NOTE: we could make this implicitly by just setting stage_name on the
@@ -184,8 +196,6 @@ class PrivateSwimlane(ScopedSwimlane):
         #       about weedy things that lead to deletion and addition of stages
         #       on redeployments if done this way, which ultimately leads to a
         #       service interruption.
-        # TODO: ISSUE #66
-        stage_name = "dev"
         self.dap_api_deployment_stage = aws.apigateway.Stage(
             f"{self.basename}-dapapi-dplymntstg",
             stage_name=stage_name,
