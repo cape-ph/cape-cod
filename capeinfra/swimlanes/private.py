@@ -4,7 +4,7 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
+from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions
 
 from ..iam import (
     get_dap_api_policy,
@@ -21,6 +21,9 @@ class PrivateSwimlane(ScopedSwimlane):
     def __init__(self, name, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
+
+        aws_config = Config("aws")
+        self.aws_region = aws_config.require("region")
 
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
@@ -376,6 +379,7 @@ class PrivateSwimlane(ScopedSwimlane):
             environment={
                 "variables": {
                     "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
+                    "AWS_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
