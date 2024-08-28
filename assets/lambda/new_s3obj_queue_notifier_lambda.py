@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 sqs_client = boto3.client("sqs")
 
 # TODO: need to be able to parameterize the region for our whole cape setup...
-ddb_resource = boto3.resource("dynamodb", region_name="us-east-2")
+ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION"))
 
 
 def decode_error(err: ClientError):
