@@ -34,6 +34,9 @@ class DatalakeHouse(DescribedComponentResource):
         config = Config("cape-cod")
         datalake_config = config.require_object("datalakehouse")
 
+        aws_config = Config("aws")
+        self.aws_region = aws_config.require("region")
+
         # setup the data catalog and query engine to explore it
         self.configure_data_catalog()
 
@@ -156,6 +159,7 @@ class DatalakeHouse(DescribedComponentResource):
                         self.catalog.catalog_database,
                         auto_assets_bucket,
                         self.etl_attr_ddb_table,
+                        self.aws_region,
                         opts=ResourceOptions(parent=self),
                         desc_name=f"{self.desc_name} {trib_name} tributary",
                     )
@@ -216,6 +220,7 @@ class Tributary(DescribedComponentResource):
         db: aws.glue.CatalogDatabase,
         auto_assets_bucket: aws.s3.BucketV2,
         etl_attrs_ddb_table: aws.dynamodb.Table,
+        aws_region: str,
         *args,
         **kwargs,
     ):
@@ -224,6 +229,7 @@ class Tributary(DescribedComponentResource):
 
         self.name = f"{name}"
         self.catalog = db
+        self.aws_region = aws_region
 
         # configure the raw/clean buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
@@ -431,6 +437,7 @@ class Tributary(DescribedComponentResource):
             environment={
                 "variables": {
                     "QUEUE_NAME": self.raw_data_queue.name,
+                    "AWS_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
