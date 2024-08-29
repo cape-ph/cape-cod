@@ -437,7 +437,6 @@ class Tributary(DescribedComponentResource):
             environment={
                 "variables": {
                     "QUEUE_NAME": self.raw_data_queue.name,
-                    "DDB_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
@@ -503,6 +502,7 @@ class Tributary(DescribedComponentResource):
                 "variables": {
                     "QUEUE_NAME": self.raw_data_queue.name,
                     "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.name,
+                    "DDB_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
