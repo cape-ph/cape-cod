@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 sqs_client = boto3.client("sqs")
 
-ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION"))
+ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("DDB_REGION"))
 
 
 def decode_error(err: ClientError):
