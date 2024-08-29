@@ -94,6 +94,7 @@ except ValueError as err:
 try:
     # get two tables from the pdf
     tables = read_pdf(f, multiple_tables=True, pages=2)
+    assert isinstance(tables, list)
     mlst_st = tables[0]
     genes = tables[1]
 except (IndexError, KeyError) as err:
