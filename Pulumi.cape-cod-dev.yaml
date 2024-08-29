@@ -13,6 +13,9 @@ config:
                 - name: etl-fastx
                   key: glue/etl/etl_fasta_fastq.py
                   srcpth: ./assets/etl/etl_fasta_fastq.py
+                - name: etl-gphl-sequencing
+                  key: glue/etl/etl_gphl_sequencing_alert.py
+                  srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
     cape-cod:swimlanes:
         private:
             # TODO: This is huge. way bigger than we need. For growth but also
@@ -81,6 +84,14 @@ config:
                                 - docx
                             pymodules:
                                 - python-docx==1.1.2
+                          - name: gphl-sequencing
+                            script: glue/etl/etl_gphl_sequencing_alert.py
+                            prefix: gphl-sequencing
+                            suffixes:
+                                - pdf
+                            pymodules:
+                                - tabula-py==2.9.3
+                                - pypdf==4.3.1
             - name: genomics
               buckets:
                   raw:
