@@ -22,6 +22,37 @@ config:
             # cause we don't really know what address space we need yet. Adjust
             # as needed
             cidr-block: 10.0.0.0/16
+            public-subnet:
+                # public subnet is special and there will be one (for now) per
+                # swimlane (vpc), the main purpose is currently for a NAT to
+                # live in to allow egress to the internet for the instances in
+                # private subnets
+                cidr-block: 10.0.1.0/24
+            private-subnets:
+                - name: compute
+                  cidr-block: 10.0.2.0/24
+                  # if True, the private subnet's outgoing traffic will be
+                  # routed to the NAT gateway for egress to the internet
+                  egress-to-nat: True
+            compute:
+                environments:
+                    - name: analysis
+                      # an AMI ID to use for each EC2 instance
+                      image: ami-05b2a3fcf0e46a742
+                      # a list of subnets that ec2 instances in the compute
+                      # environments live on
+                      subnets:
+                          - compute
+                      resources:
+                          # a list of instance types to be able to request
+                          instance_types: ["c4.large"]
+                          # the maximum number of vCPUs to have in the environment
+                          max_vcpus: 16
+                          # (optional) the desired number of vCPUs to have in the environment
+                          # desired_vcpus: 8
+                          # (optional) the minimum number of vCPUs to have in the environment
+                          # min_vcpus: 8
+
     cape-cod:datalakehouse:
         tributaries:
             - name: hai
@@ -82,3 +113,4 @@ config:
                                 - fastq
                             pymodules:
                                 - pyfastx==2.1.0
+                            max_concurrent_runs: 5 # optional, 5 is the default

@@ -1,1 +1,8 @@
 proseWrap: always
+tabWidth: 4
+useTabs: false
+
+overrides:
+    - files: "*.md"
+      options:
+          parser: "markdown"

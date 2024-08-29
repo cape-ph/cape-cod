@@ -1,0 +1,16 @@
+{
+    "recommendations": [
+        "esbenp.prettier-vscode", // General purpose formatter
+
+        // Python
+        "ms-python.python", // language server
+        "ms-python.isort", // import sorting
+        "ms-python.black-formatter", // Black formatter
+
+        // YAML
+        "redhat.vscode-yaml", // language server
+
+        // TOML
+        "tamasfe.even-better-toml", // editor support
+    ]
+}

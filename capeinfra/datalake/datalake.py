@@ -34,6 +34,9 @@ class DatalakeHouse(DescribedComponentResource):
         config = Config("cape-cod")
         datalake_config = config.require_object("datalakehouse")
 
+        aws_config = Config("aws")
+        self.aws_region = aws_config.require("region")
+
         # setup the data catalog and query engine to explore it
         self.configure_data_catalog()
 
@@ -125,7 +128,7 @@ class DatalakeHouse(DescribedComponentResource):
             attributes=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
-                # TODO: github issue #49
+                # TODO: ISSUE #49
                 {
                     "name": "bucket_name",
                     "type": "S",
@@ -148,7 +151,6 @@ class DatalakeHouse(DescribedComponentResource):
         self.tributaries = []
         if tributaries_config:
             for trib_config in tributaries_config:
-
                 trib_name = trib_config.get("name")
                 self.tributaries.append(
                     Tributary(
@@ -157,6 +159,7 @@ class DatalakeHouse(DescribedComponentResource):
                         self.catalog.catalog_database,
                         auto_assets_bucket,
                         self.etl_attr_ddb_table,
+                        self.aws_region,
                         opts=ResourceOptions(parent=self),
                         desc_name=f"{self.desc_name} {trib_name} tributary",
                     )
@@ -217,6 +220,7 @@ class Tributary(DescribedComponentResource):
         db: aws.glue.CatalogDatabase,
         auto_assets_bucket: aws.s3.BucketV2,
         etl_attrs_ddb_table: aws.dynamodb.Table,
+        aws_region: str,
         *args,
         **kwargs,
     ):
@@ -225,6 +229,7 @@ class Tributary(DescribedComponentResource):
 
         self.name = f"{name}"
         self.catalog = db
+        self.aws_region = aws_region
 
         # configure the raw/clean buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
@@ -237,16 +242,13 @@ class Tributary(DescribedComponentResource):
         # now setup any configured ETL jobs for the tributary
         # NOTE: in the case the etl key is specified but empty, the final
         #       `or []` gives us an empty list
-        # TODO: there's a good amount of defensive coding around things that
-        #       could go wrong in the config file. we should do something to put
-        #       that all in one place instead of scattered everywhere...
+        # TODO: ISSUE #69
         etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", []) or []
 
         # this queue is where all notifications of new objects added to the raw
         # bucket will go
         self.raw_data_queue = aws.sqs.Queue(
-            # TODO: do we need to add server side encryption or any delay in
-            #       delivery?
+            # TODO: ISSUE #68
             f"{self.name}-rawq",
             name=f"{self.name}-rawq.fifo",
             content_based_deduplication=True,
@@ -355,6 +357,7 @@ class Tributary(DescribedComponentResource):
                         Tributary.CLEAN
                     ].bucket.bucket,
                 },
+                max_concurrent_runs=cfg.get("max_concurrent_runs", 5),
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} raw to clean ETL job"),
             )
@@ -499,6 +502,7 @@ class Tributary(DescribedComponentResource):
                 "variables": {
                     "QUEUE_NAME": self.raw_data_queue.name,
                     "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.name,
+                    "DDB_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
