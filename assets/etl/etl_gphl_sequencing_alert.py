@@ -79,13 +79,13 @@ try:
     reader = PdfReader(f)
     page = reader.pages[0]
     date_reported = page.extract_text().split("\n")[3].strip()
-    datetime.strptime(date_reported,'%m/%d/%Y')
+    datetime.strptime(date_reported, "%m/%d/%Y")
 except ValueError as err:
     err_message = (
-            f"ERROR - Could not properly read sequencing report date. "
-            f"ETL will continue."
-            f"{err}"
-        )
+        f"ERROR - Could not properly read sequencing report date. "
+        f"ETL will continue."
+        f"{err}"
+    )
 
     logger.error(err_message)
 
@@ -98,10 +98,10 @@ try:
     genes = tables[1]
 except (IndexError, KeyError) as err:
     err_message = (
-            f"ERROR - Could not properly read sequencing PDF tables. "
-            f"ETL Cannot continue."
-            f"{err}"
-        )
+        f"ERROR - Could not properly read sequencing PDF tables. "
+        f"ETL Cannot continue."
+        f"{err}"
+    )
 
     logger.error(err_message)
 
