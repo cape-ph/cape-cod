@@ -30,7 +30,11 @@ config:
                   cidr-block: 10.0.2.0/24
                   # if True, the private subnet's outgoing traffic will be
                   # routed to the NAT gateway for egress to the internet
-                  egress-to-nat: True
+                  routes:
+                      - "public"
+                - name: vpn
+                  cidr-block: 10.0.3.0/24
+                  routes:
             compute:
                 environments:
                     - name: analysis
