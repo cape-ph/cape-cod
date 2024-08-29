@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 # TODO: ISSUE #84
 
-ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION"))
+ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("DDB_REGION"))
 
 
 # TODO: ISSUE #86
