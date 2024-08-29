@@ -379,7 +379,7 @@ class PrivateSwimlane(ScopedSwimlane):
             environment={
                 "variables": {
                     "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
-                    "AWS_REGION": self.aws_region,
+                    "DDB_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
