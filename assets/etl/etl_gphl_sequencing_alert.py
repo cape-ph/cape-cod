@@ -1,7 +1,8 @@
-"""ETL script for raw Epi/HAI sequencing alert pdf."""
+"""ETL script for raw Epi/HAI sequencing report pdf."""
 
 import io
 import sys
+from datetime import datetime
 
 import boto3 as boto3
 from awsglue.context import GlueContext
@@ -73,20 +74,46 @@ logger.info(f"Obtained object {alert_obj_key} from bucket {raw_bucket_name}.")
 # to a file like object to make the pdf libraries happy
 f = io.BytesIO(response.get("Body").read())
 
-# get the report date from the 4th line of the pdf
-reader = PdfReader(f)
-page = reader.pages[0]
-date_reported = page.extract_text().split("\n")[3]
+try:
+    # get the report date from the 4th line of the pdf
+    reader = PdfReader(f)
+    page = reader.pages[0]
+    date_reported = page.extract_text().split("\n")[3].strip()
+    datetime.strptime(date_reported,'%m/%d/%Y')
+except ValueError as err:
+    err_message = (
+            f"ERROR - Could not properly read sequencing report date. "
+            f"ETL will continue."
+            f"{err}"
+        )
 
-# get two tables from the pdf
-tables = read_pdf(f, multiple_tables=True, pages=2)
-assert isinstance(tables, list)
-mlst_st = tables[0]
-genes = tables[1].set_index("Unnamed: 0").T
+    logger.error(err_message)
+
+    date_reported = ""
+
+try:
+    # get two tables from the pdf
+    tables = read_pdf(f, multiple_tables=True, pages=2)
+    mlst_st = tables[0]
+    genes = tables[1]
+except (IndexError, KeyError) as err:
+    err_message = (
+            f"ERROR - Could not properly read sequencing PDF tables. "
+            f"ETL Cannot continue."
+            f"{err}"
+        )
+
+    logger.error(err_message)
+
+    # NOTE: need to properly handle exception stuff here, and we probably
+    #       want this going somewhere very visible (e.g. SNS topic or a
+    #       perpetual log as someone will need to be made aware)
+    raise Exception(err_message)
 
 # filter the columns we need and join the tables together
 interim = mlst_st[["Accession_ID", "WGS_ID", "MLST_ST"]]
-genes_interim = genes.filter(regex="(NDM|KPC|IMP|OXA|VIM|CMY)", axis=1)
+genes_inter = genes.set_index("Unnamed: 0").T
+genes_interim = genes_inter.filter(regex="(NDM|KPC|IMP|OXA|VIM|CMY)", axis=1)
 interim = interim.join(genes_interim, on="WGS_ID")
 interim["Date Reported"] = date_reported
 
