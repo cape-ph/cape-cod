@@ -437,7 +437,7 @@ class Tributary(DescribedComponentResource):
             environment={
                 "variables": {
                     "QUEUE_NAME": self.raw_data_queue.name,
-                    "AWS_REGION": self.aws_region,
+                    "DDB_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
