@@ -1,15 +1,15 @@
-"""ETL script for raw Epi/HAI CRE alert docx."""
+"""ETL script for raw Epi/HAI sequencing report pdf."""
 
 import io
 import sys
+from datetime import datetime
 
 import boto3 as boto3
-import dateutil.parser as dparser
-import pandas as pd
 from awsglue.context import GlueContext
 from awsglue.utils import getResolvedOptions
-from docx import Document
+from pypdf import PdfReader
 from pyspark.sql import SparkSession
+from tabula.io import read_pdf
 
 # for our purposes here, the spark and glue context are only (currently) needed
 # to get the logger.
@@ -42,12 +42,12 @@ clean_bucket_name = parameters["CLEAN_BUCKET_NAME"]
 # NOTE: for now we'll take the alert object key and change out the file
 #       extension for the clean data (leaving all namespacing and such). this
 #       will probably need to change
-clean_obj_key = alert_obj_key.replace(".docx", ".csv")
+clean_obj_key = alert_obj_key.replace(".pdf", ".csv")
 
 # NOTE: May need some creds here
 s3_client = boto3.client("s3")
 
-# try to get the docx object from S3 and handle any error that would keep us
+# try to get the pdf object from S3 and handle any error that would keep us
 # from continuing.
 response = s3_client.get_object(Bucket=raw_bucket_name, Key=alert_obj_key)
 
@@ -71,55 +71,52 @@ logger.info(f"Obtained object {alert_obj_key} from bucket {raw_bucket_name}.")
 # handle the document itself...
 
 # the response should contain a StreamingBody object that needs to be converted
-# to a file like object to make the docx library happy
+# to a file like object to make the pdf libraries happy
 f = io.BytesIO(response.get("Body").read())
-document = Document(f)
 
-# NOTE: this document is assumed to contain a single table that needs to be
-#       processed and nothing else. The file consists of:
-#       - a 2 column header row that contains a column (0 index) with the alert
-#         report date, which we need (rest of this row can be ignored)
-#       - another header row that contains all the column names for the table
-#       - rows of data
-table = document.tables[0]
-data = [[cell.text for cell in row.cells] for row in table.rows]
-data = pd.DataFrame(data)
+try:
+    # get the report date from the 4th line of the pdf
+    reader = PdfReader(f)
+    page = reader.pages[0]
+    date_reported = page.extract_text().split("\n")[3].strip()
+    datetime.strptime(date_reported, "%m/%d/%Y")
+except ValueError as err:
+    err_message = (
+        f"ERROR - Could not properly read sequencing report date. "
+        f"ETL will continue."
+        f"{err}"
+    )
 
-# grab the alert report date
-date_received = pd.to_datetime(dparser.parse(data.iloc[0, 0], fuzzy=True))
-# get the column list
-data.columns = data.loc[1]
-# drop the rows we no longer need (date and columns)
-data.drop([0, 1], inplace=True)
-data.reset_index(drop=True, inplace=True)
+    logger.error(err_message)
 
-# now perform the ETL on the data rows
-# NOTE: Questions about the data:
-#           - Do we need to split this name to better enable queries later?
-#           - will the name only ever be composed of first and last (i.e. no
-#             middle name handling)?
-#           - do we not want the lab id to carry over into clean data? same
-#             with organism id (and anything else that doesn't carry over
-#             currently). there's very little penalty (storage cost) for it
-#             carrying over, and if it's not part of the AR log, we just don't
-#             include it in the AR query, but we still have it if we end up
-#             needing it for anything else
-interim = pd.DataFrame()
-interim["Mechanism (*Submitters Report)"] = data[
-    "Anti-Microbial Resistance RT-PCR"
-]
-interim["Organism"] = data["Organism ID"]
-interim["Date Received"] = date_received
-interim["Date Reported"] = date_received
-interim["Patient Name"] = data["Patient Name"]
-interim["DOB"] = pd.to_datetime(data["DOB"], errors="coerce")
-interim["Source"] = data["Source"].str.capitalize()
-interim["Date of Collection"] = pd.to_datetime(
-    data["Date of Collection"], errors="coerce"
-)
-interim["Testing Lab"] = "GPHL"
-interim["Facility of Origin"] = data["Received from"]
-interim["State_Lab_ID"] = data["Lab ID"]
+    date_reported = ""
+
+try:
+    # get two tables from the pdf
+    tables = read_pdf(f, multiple_tables=True, pages=2)
+    assert isinstance(tables, list)
+    mlst_st = tables[0]
+    genes = tables[1]
+except (IndexError, KeyError) as err:
+    err_message = (
+        f"ERROR - Could not properly read sequencing PDF tables. "
+        f"ETL Cannot continue."
+        f"{err}"
+    )
+
+    logger.error(err_message)
+
+    # NOTE: need to properly handle exception stuff here, and we probably
+    #       want this going somewhere very visible (e.g. SNS topic or a
+    #       perpetual log as someone will need to be made aware)
+    raise Exception(err_message)
+
+# filter the columns we need and join the tables together
+interim = mlst_st[["Accession_ID", "WGS_ID", "MLST_ST"]]
+genes_inter = genes.set_index("Unnamed: 0").T
+genes_interim = genes_inter.filter(regex="(NDM|KPC|IMP|OXA|VIM|CMY)", axis=1)
+interim = interim.join(genes_interim, on="WGS_ID")
+interim["Date Reported"] = date_reported
 
 # write out the transformed data
 with io.StringIO() as csv_buff:
