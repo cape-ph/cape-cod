@@ -119,6 +119,7 @@ interim["Date of Collection"] = pd.to_datetime(
 )
 interim["Testing Lab"] = "GPHL"
 interim["Facility of Origin"] = data["Received from"]
+interim["State_Lab_ID"] = data["Lab ID"]
 
 # write out the transformed data
 with io.StringIO() as csv_buff:
