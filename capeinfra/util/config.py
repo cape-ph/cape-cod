@@ -1,7 +1,6 @@
 """Module of configuration related utilities."""
 
 from collections.abc import Mapping
-from copy import deepcopy
 from typing import Any
 
 from pulumi import Config
@@ -29,7 +28,7 @@ class CapeConfig(dict):
     def __init__(
         self,
         config: dict | str,
-        config_name: str = "cape-cod",
+        config_name: str | None = "cape-cod",
         default: dict | None = None,
     ):
         """Constructor.
@@ -48,7 +47,7 @@ class CapeConfig(dict):
                        is not returned.
         """
         if isinstance(config, str):
-            config = Config(config_name).require_object(config)
+            config = Config(config_name or "cape-cod").require_object(config)
             if not isinstance(config, Mapping):
                 raise TypeError(
                     f"Pulumi config value for {config_name}:{config} is not an object"
@@ -77,6 +76,8 @@ class CapeConfig(dict):
                 curr = default
                 break
             curr = curr[key]
+        if curr is None:
+            curr = default
         return CapeConfig(curr) if isinstance(curr, Mapping) else curr
 
     def update(self, delta: dict):
