@@ -9,10 +9,10 @@ from capeinfra.pipeline.batch import BatchCompute, new_batch_compute_resources
 from capeinfra.util.config import CapeConfig
 from capeinfra.util.naming import disemvowel
 
-from .pulumi import DescribedComponentResource
+from .pulumi import CapeComponentResource
 
 
-class ScopedSwimlane(DescribedComponentResource):
+class ScopedSwimlane(CapeComponentResource):
     """Base class for all scoped swimlanes.
 
     A scoped swimlane is the logical grouping of public, protected or private
@@ -21,8 +21,13 @@ class ScopedSwimlane(DescribedComponentResource):
 
     def __init__(self, basename, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(self.type_name, basename, *args, **kwargs)
-        self._config = CapeConfig("swimlanes", default=self.default_cfg)
+        super().__init__(
+            self.type_name,
+            basename,
+            *args,
+            config=CapeConfig("swimlanes").get(self.scope, default={}),
+            **kwargs,
+        )
         self._inet_gw = None
         self.basename = basename
         self.private_subnets = dict[str, aws.ec2.Subnet]()
@@ -43,12 +48,6 @@ class ScopedSwimlane(DescribedComponentResource):
     @abstractmethod
     def scope(self) -> str:
         """Abstract property to get the scope (public, protected, private)."""
-        pass
-
-    @property
-    @abstractmethod
-    def default_cfg(self) -> dict:
-        """Abstract property to get the type_name (pulumi namespacing)."""
         pass
 
     @property
@@ -82,11 +81,6 @@ class ScopedSwimlane(DescribedComponentResource):
             )
 
         return self._inet_gw
-
-    @property
-    def config(self):
-        """Return the config object for the swimlane."""
-        return self._config
 
     def create_vpc(self):
         """Create the VPC for the swimlane."""

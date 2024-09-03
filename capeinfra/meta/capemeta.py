@@ -2,28 +2,28 @@
 
 from pulumi import FileAsset, ResourceOptions
 
-from capeinfra.util.config import CapeConfig
-
 from ..objectstorage import VersionedBucket
-from ..pulumi import DescribedComponentResource
+from ..pulumi import CapeComponentResource
 
 
-class CapeMeta(DescribedComponentResource):
+class CapeMeta(CapeComponentResource):
     """Contains resources needed by all parts of the infra."""
 
     def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:meta:capemeta:CapeMeta", name, **kwargs)
+        super().__init__(
+            "capeinfra:meta:capemeta:CapeMeta",
+            name,
+            config="meta",
+            **kwargs,
+        )
         self.automation_assets_bucket = VersionedBucket(
             f"{name}-assets-vbkt",
             desc_name=f"{self.desc_name} automation assets",
             opts=ResourceOptions(parent=self),
         )
 
-        # Setup for the glue script assets
-        meta_config = CapeConfig("meta")
-
-        for etl_def in meta_config.get("glue", "etl", default=[]):
+        for etl_def in self.config.get("glue", "etl", default=[]):
             self.automation_assets_bucket.add_object(
                 etl_def["name"],
                 key=etl_def["key"],

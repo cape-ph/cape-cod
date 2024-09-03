@@ -10,7 +10,7 @@ from ..iam import (
     get_start_crawler_policy,
     get_start_etl_job_policy,
 )
-from ..pulumi import DescribedComponentResource
+from ..pulumi import CapeComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
@@ -28,7 +28,7 @@ CUSTOM_CLASSIFIERS = {
 }
 
 
-class DataCrawler(DescribedComponentResource):
+class DataCrawler(CapeComponentResource):
     """A crawler for object storage."""
 
     # default schedule for our crawlers will be every hour
@@ -204,7 +204,7 @@ class DataCrawler(DescribedComponentResource):
             )
 
 
-class EtlJob(DescribedComponentResource):
+class EtlJob(CapeComponentResource):
     """An extract/transform/load job."""
 
     def __init__(

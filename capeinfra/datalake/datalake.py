@@ -12,10 +12,10 @@ from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.util.config import CapeConfig
 
-from ..pulumi import DescribedComponentResource
+from ..pulumi import CapeComponentResource
 
 
-class DatalakeHouse(DescribedComponentResource):
+class DatalakeHouse(CapeComponentResource):
     """Top level object in the CAPE infrastructure for datalake storage."""
 
     def __init__(
@@ -27,12 +27,14 @@ class DatalakeHouse(DescribedComponentResource):
     ):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
-            "capeinfra:datalake:DatalakeHouse", name, *args, **kwargs
+            "capeinfra:datalake:DatalakeHouse",
+            name,
+            *args,
+            config="datalakehouse",
+            **kwargs,
         )
 
         self.name = f"{name}"
-
-        datalake_config = CapeConfig("datalakehouse")
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
@@ -42,9 +44,7 @@ class DatalakeHouse(DescribedComponentResource):
 
         # setup the tributary ETL attributes database and all tributaries for
         # the lakehouse
-        self.configure_tributaries(
-            datalake_config.get("tributaries"), auto_assets_bucket
-        )
+        self.configure_tributaries(auto_assets_bucket)
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -100,13 +100,11 @@ class DatalakeHouse(DescribedComponentResource):
 
     def configure_tributaries(
         self,
-        tributaries_config: dict | None,
         auto_assets_bucket: aws.s3.BucketV2,
     ):
         """Sets up an ETL attributes database and the configured Tributaries.
 
         Args:
-            tributaries_config: The configuration dict for CAPE tributaries.
             auto_assets_bucket: The BucketV2 object for the automation assets
                                 object storage.
         """
@@ -149,24 +147,23 @@ class DatalakeHouse(DescribedComponentResource):
         # create the parts of the datalake from the tributary configuration
         # (e.g. hai, genomics, etc)
         self.tributaries = []
-        if tributaries_config:
-            for trib_config in tributaries_config:
-                trib_name = trib_config.get("name")
-                self.tributaries.append(
-                    Tributary(
-                        f"{self.name}-T-{trib_name}",
-                        trib_config,
-                        self.catalog.catalog_database,
-                        auto_assets_bucket,
-                        self.etl_attr_ddb_table,
-                        self.aws_region,
-                        opts=ResourceOptions(parent=self),
-                        desc_name=f"{self.desc_name} {trib_name} tributary",
-                    )
+        for trib_config in self.config.get("tributaries", default=[]):
+            trib_name = trib_config.get("name")
+            self.tributaries.append(
+                Tributary(
+                    f"{self.name}-T-{trib_name}",
+                    self.catalog.catalog_database,
+                    auto_assets_bucket,
+                    self.etl_attr_ddb_table,
+                    self.aws_region,
+                    config=trib_config,
+                    opts=ResourceOptions(parent=self),
+                    desc_name=f"{self.desc_name} {trib_name} tributary",
                 )
+            )
 
 
-class CatalogDatabase(DescribedComponentResource):
+class CatalogDatabase(CapeComponentResource):
     """The metadata catalog for the datalake house."""
 
     def __init__(
@@ -197,7 +194,7 @@ class CatalogDatabase(DescribedComponentResource):
         )
 
 
-class Tributary(DescribedComponentResource):
+class Tributary(CapeComponentResource):
     """Represents a single domain in the data lake.
 
     A tributary in the CAPE datalake sense is an encapsulation of:
@@ -216,7 +213,6 @@ class Tributary(DescribedComponentResource):
     def __init__(
         self,
         name: str,
-        cfg: dict,
         db: aws.glue.CatalogDatabase,
         auto_assets_bucket: aws.s3.BucketV2,
         etl_attrs_ddb_table: aws.dynamodb.Table,
@@ -234,16 +230,8 @@ class Tributary(DescribedComponentResource):
         # configure the raw/clean buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
         self.buckets = {}
-        buckets_cfg = cfg.get("buckets", {})
         for bucket_type in [Tributary.RAW, Tributary.CLEAN]:
-            bucket_cfg = buckets_cfg.get(bucket_type, {})
-            self.configure_bucket(bucket_type, bucket_cfg)
-
-        # now setup any configured ETL jobs for the tributary
-        # NOTE: in the case the etl key is specified but empty, the final
-        #       `or []` gives us an empty list
-        # TODO: ISSUE #69
-        etl_cfgs = cfg.get("pipelines", {}).get("data", {}).get("etl", []) or []
+            self.configure_bucket(bucket_type)
 
         # this queue is where all notifications of new objects added to the raw
         # bucket will go
@@ -257,9 +245,7 @@ class Tributary(DescribedComponentResource):
         )
 
         # setup all configured ETL jobs and add items to the DDB table for each.
-        jobs = self.configure_etl(
-            etl_cfgs, auto_assets_bucket, etl_attrs_ddb_table
-        )
+        jobs = self.configure_etl(auto_assets_bucket, etl_attrs_ddb_table)
 
         # Lambda SQS Target setup
         self.configure_sqs_lambda_target(jobs)
@@ -271,7 +257,7 @@ class Tributary(DescribedComponentResource):
         # resource that will get returned by default.
         self.register_outputs({"tributary_name": self.name})
 
-    def configure_bucket(self, bucket_type: str, bucket_cfg: dict):
+    def configure_bucket(self, bucket_type: str):
         """Creates/configures a raw or clean bucket based on config values.
 
         If a crawler is configured for the bucket, this will be added as well.
@@ -281,9 +267,11 @@ class Tributary(DescribedComponentResource):
             bucket_cfg: The config dict for te bucket, as specified in the
                         pulumi stack config.
         """
-        bucket_name = (
-            bucket_cfg.get("name") or f"{self.name}-{bucket_type}-vbkt"
+        bucket_config = self.config.get("buckets", bucket_type)
+        bucket_name = bucket_config.get(
+            "name", default=f"{self.name}-{bucket_type}-vbkt"
         )
+        print(f"Bucket: {bucket_name}")
         self.buckets[bucket_type] = VersionedBucket(
             bucket_name,
             desc_name=f"{self.desc_name} {bucket_type}",
@@ -294,7 +282,7 @@ class Tributary(DescribedComponentResource):
             bucket_name,
             self.buckets[bucket_type].bucket,
             bucket_type,
-            bucket_cfg.get("crawler", {}),
+            bucket_config.get("crawler", default={}),
         )
 
     def configure_crawler(
@@ -302,7 +290,7 @@ class Tributary(DescribedComponentResource):
         vbname: str,
         bucket: aws.s3.BucketV2,
         bucket_type: str,
-        crawler_cfg: dict,
+        crawler_cfg: CapeConfig,
     ):
         """Creates/configures a crawler for a bucket based on config values.
 
@@ -327,7 +315,6 @@ class Tributary(DescribedComponentResource):
 
     def configure_etl(
         self,
-        etl_cfgs: list,
         auto_assets_bucket: aws.s3.BucketV2,
         etl_attrs_ddb_table: aws.dynamodb.Table,
     ):
@@ -344,7 +331,8 @@ class Tributary(DescribedComponentResource):
         """
 
         jobs = []
-        for cfg in etl_cfgs:
+        for cfg in self.config.get("pipelines", "data", "etl", default=[]):
+            cfg = CapeConfig(cfg)
             job = EtlJob(
                 f"{self.name}-ETL-{cfg['name']}",
                 self.buckets[Tributary.RAW].bucket,
@@ -357,7 +345,7 @@ class Tributary(DescribedComponentResource):
                         Tributary.CLEAN
                     ].bucket.bucket,
                 },
-                max_concurrent_runs=cfg.get("max_concurrent_runs", 5),
+                max_concurrent_runs=cfg.get("max_concurrent_runs", default=5),
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} raw to clean ETL job"),
             )
@@ -382,7 +370,8 @@ class Tributary(DescribedComponentResource):
                         "etl_job": {"S": job.job.id},
                         "suffixes": {
                             "L": [
-                                {"S": suf} for suf in cfg.get("suffixes", [""])
+                                {"S": suf}
+                                for suf in cfg.get("suffixes", default=[""])
                             ]
                         },
                     }

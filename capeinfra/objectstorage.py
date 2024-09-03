@@ -3,10 +3,10 @@
 import pulumi_aws as aws
 from pulumi import Archive, Asset, ResourceOptions
 
-from .pulumi import DescribedComponentResource
+from .pulumi import CapeComponentResource
 
 
-class VersionedBucket(DescribedComponentResource):
+class VersionedBucket(CapeComponentResource):
     """An object storage location with versioning turned on."""
 
     def __init__(self, name, **kwargs):

@@ -48,8 +48,8 @@ class PrivateSwimlane(ScopedSwimlane):
         return "private"
 
     @property
-    def default_cfg(self) -> dict:
-        """Implementation of abstract property `default_cfg`.
+    def default_config(self) -> dict:
+        """Implementation of abstract property `default_config`.
 
         The default config has one public subnet only in the 10.0.0.0-255
         address space. There are no private subnets.

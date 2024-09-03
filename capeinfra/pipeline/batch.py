@@ -6,7 +6,7 @@ import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 
 from ..iam import get_inline_role, get_instance_profile
-from ..pulumi import DescribedComponentResource
+from ..pulumi import CapeComponentResource
 
 
 # NOTE: Is there a better way to define and maintain validated data structures
@@ -52,7 +52,7 @@ def new_batch_compute_resources(
     return BatchComputeResources(**params)
 
 
-class BatchCompute(DescribedComponentResource):
+class BatchCompute(CapeComponentResource):
     """A batch compute environment."""
 
     def __init__(

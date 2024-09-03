@@ -47,7 +47,7 @@ class CapeConfig(dict):
                        is not returned.
         """
         if isinstance(config, str):
-            config = Config(config_name or "cape-cod").require_object(config)
+            config = Config(config_name).require_object(config)
             if not isinstance(config, Mapping):
                 raise TypeError(
                     f"Pulumi config value for {config_name}:{config} is not an object"
