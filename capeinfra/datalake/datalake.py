@@ -10,6 +10,7 @@ from capeinfra.iam import (
 )
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
+from capeinfra.util.config import CapeConfig
 
 from ..pulumi import DescribedComponentResource
 
@@ -31,8 +32,7 @@ class DatalakeHouse(DescribedComponentResource):
 
         self.name = f"{name}"
 
-        config = Config("cape-cod")
-        datalake_config = config.require_object("datalakehouse")
+        datalake_config = CapeConfig("datalakehouse")
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
