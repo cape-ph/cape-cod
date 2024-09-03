@@ -29,7 +29,7 @@ class CapeConfig(dict):
     def __init__(
         self,
         config: dict | str,
-        config_name: str | None = None,
+        config_name: str = "cape-cod",
         default: dict | None = None,
     ):
         """Constructor.
