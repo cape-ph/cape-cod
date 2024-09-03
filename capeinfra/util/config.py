@@ -74,8 +74,9 @@ class CapeConfig(dict):
         curr = self
         for key in keys:
             if not isinstance(curr, Mapping) or key not in curr:
-                return default
-            curr = dict(curr).get(key)
+                curr = default
+                break
+            curr = curr[key]
         return CapeConfig(curr) if isinstance(curr, Mapping) else curr
 
     def update(self, delta: dict):
