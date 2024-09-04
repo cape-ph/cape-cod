@@ -194,6 +194,12 @@ class DataCrawler(CapeComponentResource):
 class EtlJob(CapeComponentResource):
     """An extract/transform/load job."""
 
+    @property
+    def default_config(self):
+        return {
+            "max_concurrent_runs": 5,
+        }
+
     def __init__(
         self,
         name: str,
@@ -273,12 +279,6 @@ class EtlJob(CapeComponentResource):
             tags={"desc_name": self.desc_name or "AWS Glue ETL Job"},
         )
         self.register_outputs({"job_name": self.job.name})
-
-    @property
-    def default_config(self):
-        return {
-            "max_concurrent_runs": 5,
-        }
 
     def add_trigger_function(self):
         """Adds a trigger function to kick off this job.
