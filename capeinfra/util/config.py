@@ -94,3 +94,4 @@ class CapeConfig(dict):
                    have been changed.
         """
         update_dict(self, delta)
+        return self
