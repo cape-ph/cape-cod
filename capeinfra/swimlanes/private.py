@@ -56,7 +56,7 @@ class PrivateSwimlane(ScopedSwimlane):
             "compute": {},
         }
 
-    def __init__(self, name, *args, **kwargs):
+    def __init__(self, name, meta_bucket, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
 
@@ -449,6 +449,9 @@ class PrivateSwimlane(ScopedSwimlane):
             },
             # good for roughly a year
             validity_period_hours=8766,
+            is_ca_certificate=True,
+            set_subject_key_id=True,
+            set_authority_key_id=True,
             allowed_uses=[
                 "key_encipherment",
                 "digital_signature",
