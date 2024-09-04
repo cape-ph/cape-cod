@@ -1,5 +1,12 @@
 encryptionsalt: v1:PZ8pzBjNSVk=:v1:SGEZ1sCsg7aCAu5i:Ntz5ud8IjMsY1H5RLI/n6zmuuIK9sQ==
 config:
+    # This block is for meta about the deployment itself that may be reused in
+    # later config settings.
+    deployment:meta: &depmet
+        # stage-name is used anywhere we need the deployment stage name and
+        # should be values like "dev", "prod", etc. There is exact no exact
+        # enumeration of values yet.
+        stage-name: "dev"
     aws:region: us-east-2
     cape-cod:meta:
         glue:
@@ -34,6 +41,13 @@ config:
                   # if True, the private subnet's outgoing traffic will be
                   # routed to the NAT gateway for egress to the internet
                   egress-to-nat: True
+            # NOTE: the apis section here will likely need to be re-worked as we
+            #       move the api to a real host name, add certs, and all the
+            #       things. for now just trying to get the stage name
+            #       configurable from the root deployment:meta section
+            api:
+                dap:
+                    meta: *depmet
             compute:
                 environments:
                     - name: analysis
