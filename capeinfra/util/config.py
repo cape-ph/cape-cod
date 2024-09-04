@@ -12,9 +12,11 @@ def update_dict(base: Any, delta: Mapping):
     common_keys = set(base).intersection(delta)
     new_keys = set(delta).difference(common_keys)
     for key in common_keys:
-        base[key] = update_dict(base[key], delta[key])
+        if delta[key] is not None:
+            base[key] = update_dict(base[key], delta[key])
     for key in new_keys:
-        base[key] = delta[key]
+        if delta[key] is not None:
+            base[key] = delta[key]
     return base
 
 
