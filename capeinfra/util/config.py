@@ -18,6 +18,9 @@ def update_dict(base, delta: dict):
     return base
 
 
+DEFAULT_CONFIG_NAME = "cape-cod"
+
+
 class CapeConfig(dict):
     """Class for CAPE configuration objects
 
@@ -28,7 +31,7 @@ class CapeConfig(dict):
     def __init__(
         self,
         config: dict | str,
-        config_name: str | None = "cape-cod",
+        config_name: str | None = DEFAULT_CONFIG_NAME,
         default: dict | None = None,
     ):
         """Constructor.
@@ -47,7 +50,9 @@ class CapeConfig(dict):
                        is not returned.
         """
         if isinstance(config, str):
-            config = Config(config_name).require_object(config)
+            config = Config(config_name or DEFAULT_CONFIG_NAME).require_object(
+                config
+            )
             if not isinstance(config, Mapping):
                 raise TypeError(
                     f"Pulumi config value for {config_name}:{config} is not an object"

@@ -16,7 +16,7 @@ class CapeComponentResource(ComponentResource):
         *args,
         desc_name=None,
         config: dict | str = {},
-        config_name: str | None = "cape-cod",
+        config_name: str | None = None,
         **kwargs,
     ):
         """Constructor.
