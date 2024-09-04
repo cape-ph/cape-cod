@@ -213,10 +213,8 @@ class EtlJob(CapeComponentResource):
         raw_bucket: aws.s3.BucketV2,
         clean_bucket: aws.s3.BucketV2,
         script_bucket: aws.s3.BucketV2,
-        script_path: str,
         *args,
         default_args: dict | None = None,
-        max_concurrent_runs: int | None = 5,
         **kwargs,
     ):
         """Constructor.
@@ -229,10 +227,7 @@ class EtlJob(CapeComponentResource):
                           use as the sink for the output of transform.
             script_bucket: The object storage location where etl scripts are
                            kept.
-            script_path: The path in `script_bucket` to the ETL script for this
-                        job.
             default_args: default arguments for this ETL job if any.
-            max_concurrent_runs: Number of concurrent runs of the job (Default: 5)
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -257,7 +252,7 @@ class EtlJob(CapeComponentResource):
                     args["raw_bucket"],
                     args["clean_bucket"],
                     args["script_bucket"],
-                    script_path,
+                    self.config["script"],
                 )
             ),
             srvc_policy_attach=None,
@@ -269,18 +264,24 @@ class EtlJob(CapeComponentResource):
             role_arn=self.etl_role.arn,
             command=aws.glue.JobCommandArgs(
                 script_location=script_bucket.bucket.apply(
-                    lambda b: f"s3://{b}/{script_path}"
+                    lambda b: f"s3://{b}/{self.config['script']}"
                 ),
                 python_version="3",
             ),
             default_arguments=default_args,
             execution_property=aws.glue.JobExecutionPropertyArgs(
-                max_concurrent_runs=max_concurrent_runs,
+                max_concurrent_runs=self.config.get("max_concurrent_runs"),
             ),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue ETL Job"},
         )
         self.register_outputs({"job_name": self.job.name})
+
+    @property
+    def default_config(self):
+        return {
+            "max_concurrent_runs": 5,
+        }
 
     def add_trigger_function(self):
         """Adds a trigger function to kick off this job.

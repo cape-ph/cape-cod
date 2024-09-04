@@ -332,22 +332,20 @@ class Tributary(CapeComponentResource):
 
         jobs = []
         for cfg in self.config.get("pipelines", "data", "etl", default=[]):
-            cfg = CapeConfig(cfg)
             job = EtlJob(
                 f"{self.name}-ETL-{cfg['name']}",
                 self.buckets[Tributary.RAW].bucket,
                 self.buckets[Tributary.CLEAN].bucket,
                 auto_assets_bucket,
-                cfg["script"],
                 default_args={
                     "--additional-python-modules": ",".join(cfg["pymodules"]),
                     "--CLEAN_BUCKET_NAME": self.buckets[
                         Tributary.CLEAN
                     ].bucket.bucket,
                 },
-                max_concurrent_runs=cfg.get("max_concurrent_runs", default=5),
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} raw to clean ETL job"),
+                config=cfg,
             )
 
             jobs.append(job)
@@ -355,7 +353,7 @@ class Tributary(CapeComponentResource):
             # put the ETL job configuration into the tributary attributes table
             # for the raw bucket
             aws.dynamodb.TableItem(
-                f"{self.name}-{cfg['name']}-ddbitem",
+                f"{self.name}-{job.config['name']}-ddbitem",
                 table_name=etl_attrs_ddb_table.name,
                 hash_key=etl_attrs_ddb_table.hash_key,
                 range_key=etl_attrs_ddb_table.range_key.apply(
@@ -366,12 +364,14 @@ class Tributary(CapeComponentResource):
                         "bucket_name": {
                             "S": self.buckets[Tributary.RAW].bucket.id,
                         },
-                        "prefix": {"S": cfg["prefix"]},
+                        "prefix": {"S": job.config["prefix"]},
                         "etl_job": {"S": job.job.id},
                         "suffixes": {
                             "L": [
                                 {"S": suf}
-                                for suf in cfg.get("suffixes", default=[""])
+                                for suf in job.config.get(
+                                    "suffixes", default=[""]
+                                )
                             ]
                         },
                     }
