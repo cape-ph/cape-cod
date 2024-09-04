@@ -10,7 +10,6 @@ from capeinfra.iam import (
 )
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
-from capeinfra.util.config import CapeConfig
 
 from ..pulumi import CapeComponentResource
 
@@ -23,7 +22,6 @@ class DatalakeHouse(CapeComponentResource):
         name: str,
         auto_assets_bucket: aws.s3.BucketV2,
         *args,
-        config="datalakehouse",
         **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
@@ -31,7 +29,7 @@ class DatalakeHouse(CapeComponentResource):
             "capeinfra:datalake:DatalakeHouse",
             name,
             *args,
-            config=config,
+            config="datalakehouse",
             **kwargs,
         )
 
@@ -279,37 +277,14 @@ class Tributary(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        self.configure_crawler(
-            bucket_name,
-            self.buckets[bucket_type].bucket,
-            bucket_type,
-            bucket_config.get("crawler", default={}),
-        )
-
-    def configure_crawler(
-        self,
-        vbname: str,
-        bucket: aws.s3.BucketV2,
-        bucket_type: str,
-        crawler_cfg: CapeConfig,
-    ):
-        """Creates/configures a crawler for a bucket based on config values.
-
-        Args:
-            vbname: The VersionedBucket name for the crawler to crawl.
-            bucket: The bucket to be crawled.
-            bucket_type: The type (e.g. raw, clean) of the bucket being crawled.
-            crawler_cfg: The config dict for the crawler as specified in the
-                         pulumi stack config.
-        """
-        if crawler_cfg:
+        if bucket_config.get("crawler"):
             DataCrawler(
-                f"{vbname}-crwl",
-                bucket,
+                f"{bucket_name}-crwl",
+                self.buckets[bucket_type].bucket,
                 self.catalog,
                 opts=ResourceOptions(parent=self),
                 desc_name=f"{self.desc_name} {bucket_type} data crawler",
-                config=crawler_cfg,
+                config=bucket_config["crawler"],
             )
 
     def configure_etl(
