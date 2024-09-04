@@ -1,66 +1,30 @@
 """Abstractions for batch pipelines."""
 
-from typing import NotRequired, Sequence, TypedDict
-
 import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 
 from ..iam import get_inline_role, get_instance_profile
-from ..pulumi import DescribedComponentResource
+from ..pulumi import CapeComponentResource
 
 
-# NOTE: Is there a better way to define and maintain validated data structures
-# in python that resolve to a dictionary and have required/optional fields?
-class BatchComputeResources(TypedDict):
-    """A class for defining resources for instances in an AWS Batch compute environment
-
-    Attributes:
-        instance_types: A list of AWS EC2 instance types to request
-        max_vcpus: The maximum number of vCPUs in an environment
-        desired_vcpus: The desired number of vCPUs in an environment (Optional)
-        min_vcpus: The minimum number of vCPUs in an environment (Optional)
-    """
-
-    instance_types: Sequence[str]
-    max_vcpus: int
-    desired_vcpus: NotRequired[int]
-    min_vcpus: NotRequired[int]
-
-
-def new_batch_compute_resources(
-    instance_types: Sequence[str] = ["c4.large"],
-    max_vcpus: int = 16,
-    desired_vcpus: int | None = None,
-    min_vcpus: int | None = None,
-):
-    """Create a new BatchComputeResources dictionary with set defaults
-
-    Args:
-        instance_types: A list of AWS EC2 instance types to request
-        max_vcpus: The maximum number of vCPUs in an environment
-        desired_vcpus: The desired number of vCPUs in an environment (Optional)
-        min_vcpus: The minimum number of vCPUs in an environment (Optional)
-
-    Returns:
-        A `BatchComputeResources` typed dictionary
-    """
-    params = {"instance_types": instance_types, "max_vcpus": max_vcpus}
-    if desired_vcpus is not None:
-        params["desired_vcpus"] = desired_vcpus
-    if min_vcpus is not None:
-        params["min_vcpus"] = min_vcpus
-    return BatchComputeResources(**params)
-
-
-class BatchCompute(DescribedComponentResource):
+class BatchCompute(CapeComponentResource):
     """A batch compute environment."""
+
+    @property
+    def default_config(self):
+        return {
+            "resources": {
+                # A list of AWS EC2 instance types to request
+                "instance_types": ["c4.large"],
+                # The maximum number of vCPUs in an environment
+                "max_vcpus": 16,
+            }
+        }
 
     def __init__(
         self,
         name: Input[str],
-        image_id: Input[str],
-        subnets: Sequence[Input[str]],
-        resources: BatchComputeResources,
+        subnets: dict[str, aws.ec2.Subnet],
         *args,
         **kwargs,
     ):
@@ -133,6 +97,14 @@ class BatchCompute(DescribedComponentResource):
 
         # self.key_pair = aws.ec2.KeyPair(f"{self.name}-kypr")
 
+        env_subnets = []
+        for subnet_name in self.config.get("subnets"):
+            subnet = subnets.get(subnet_name)
+            assert (
+                subnet is not None
+            ), f"Unknown subnet in compute environment {name}: {subnet_name}"
+            env_subnets.append(subnet.id)
+
         self.compute_environment = aws.batch.ComputeEnvironment(
             f"{self.name}-btch",
             service_role=self.service_role.arn,
@@ -145,11 +117,11 @@ class BatchCompute(DescribedComponentResource):
                 # SSHing into the machines (plus inbound requests should
                 # probably be blocked anyway)
                 # ec2_key_pair=self.key_pair.key_name,
-                image_id=image_id,
+                image_id=self.config.get("image"),
                 placement_group=self.placement_group.name,
                 security_group_ids=[self.security_group.id],
-                subnets=subnets,
-                **resources,
+                subnets=env_subnets,
+                **self.config.get("resources"),
             ),
             opts=ResourceOptions(parent=self),
         )
