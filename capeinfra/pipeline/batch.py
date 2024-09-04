@@ -14,7 +14,9 @@ class BatchCompute(CapeComponentResource):
     def default_config(self):
         return {
             "resources": {
+                # A list of AWS EC2 instance types to request
                 "instance_types": ["c4.large"],
+                # The maximum number of vCPUs in an environment
                 "max_vcpus": 16,
             }
         }

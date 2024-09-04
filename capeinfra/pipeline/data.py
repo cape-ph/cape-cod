@@ -36,8 +36,17 @@ class DataCrawler(CapeComponentResource):
     @property
     def default_config(self):
         return {
-            "schedule": "0 * * * ? *",  # NECKBEARD SPEAK FOR EVERY HOUR
+            # a cron formatted schedule string for the crawler's periodicity.
+            # NOTE: this cannot be faster than every 5
+            # minutes. see here for more:
+            # https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
+            "schedule": "0 * * * ? *",
+            # A list of custom classifiers for the crawler, if any.
             "classifiers": [],
+            # a list of exclude paths for the crawler. see here for more:
+            # https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
+            # NOTE: at this time, all given exclusions apply to all buckets the
+            # crawler is set up for.
             "excludes": [],
         }
 
