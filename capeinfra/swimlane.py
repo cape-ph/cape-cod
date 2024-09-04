@@ -3,15 +3,16 @@
 from abc import abstractmethod
 
 import pulumi_aws as aws
-from pulumi import Config, ResourceOptions
+from pulumi import ResourceOptions
 
-from capeinfra.pipeline.batch import BatchCompute, new_batch_compute_resources
+from capeinfra.pipeline.batch import BatchCompute
+from capeinfra.util.config import CapeConfig
 from capeinfra.util.naming import disemvowel
 
-from .pulumi import DescribedComponentResource
+from .pulumi import CapeComponentResource
 
 
-class ScopedSwimlane(DescribedComponentResource):
+class ScopedSwimlane(CapeComponentResource):
     """Base class for all scoped swimlanes.
 
     A scoped swimlane is the logical grouping of public, protected or private
@@ -20,8 +21,13 @@ class ScopedSwimlane(DescribedComponentResource):
 
     def __init__(self, basename, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(self.type_name, basename, *args, **kwargs)
-        self._cfg_dict = None
+        super().__init__(
+            self.type_name,
+            basename,
+            *args,
+            config=CapeConfig("swimlanes").get(self.scope, default={}),
+            **kwargs,
+        )
         self._inet_gw = None
         self.basename = basename
         self.private_subnets = dict[str, aws.ec2.Subnet]()
@@ -42,12 +48,6 @@ class ScopedSwimlane(DescribedComponentResource):
     @abstractmethod
     def scope(self) -> str:
         """Abstract property to get the scope (public, protected, private)."""
-        pass
-
-    @property
-    @abstractmethod
-    def default_cfg(self) -> dict:
-        """Abstract property to get the type_name (pulumi namespacing)."""
         pass
 
     @property
@@ -82,19 +82,6 @@ class ScopedSwimlane(DescribedComponentResource):
 
         return self._inet_gw
 
-    def get_config_dict(self):
-        """Gets the config dict for the swimlane based on its setup.
-
-        Returns:
-            The configuration dict for the swimlane. This comes from the pulumi
-            config under the key `cape-cod:swimlanes`
-        """
-        if self._cfg_dict is None:
-            config = Config("cape-cod")
-            all_sl_config = config.require_object("swimlanes")
-            self._cfg_dict = all_sl_config.get(self.scope, self.default_cfg)
-        return self._cfg_dict
-
     def create_vpc(self):
         """Create the VPC for the swimlane."""
         self.vpc_name = f"{self.basename}-vpc"
@@ -102,9 +89,7 @@ class ScopedSwimlane(DescribedComponentResource):
         self.vpc = aws.ec2.Vpc(
             self.vpc_name,
             args=aws.ec2.VpcArgs(
-                cidr_block=self.get_config_dict().get(
-                    "cidr-block", self.default_cfg["cidr-block"]
-                ),
+                cidr_block=self.config.get("cidr-block"),
                 enable_dns_hostnames=True,
                 enable_dns_support=True,
                 # NOTE: to set the name of a VPC resource (the name that's
@@ -131,9 +116,7 @@ class ScopedSwimlane(DescribedComponentResource):
         self.public_subnet = aws.ec2.Subnet(
             pubsn_name,
             vpc_id=self.vpc.id,
-            cidr_block=self.get_config_dict()
-            .get("public-subnet", self.default_cfg["public-subnet"])
-            .get("cidr-block", None),
+            cidr_block=self.config.get("public-subnet", "cidr-block"),
             map_public_ip_on_launch=True,
             tags={
                 "Name": pubsn_name,
@@ -175,11 +158,8 @@ class ScopedSwimlane(DescribedComponentResource):
         all outgoing traffic to the NAT gateway in the public subnet if
         configured.
         """
-        # private_sn_configs = self.get_config_dict().get("private-subnets", self.default_cfg["private-subnets"])
 
-        for psnc in self.get_config_dict().get(
-            "private-subnets", self.default_cfg["private-subnets"]
-        ):
+        for psnc in self.config.get("private-subnets", default=[]):
             config_sn_name = psnc.get("name")
             # devowel the configured name to try to save some characters in max
             # string lengths for identifiers when constructing the subnet name
@@ -223,24 +203,10 @@ class ScopedSwimlane(DescribedComponentResource):
         all outgoing traffic to the NAT gateway in the public subnet if
         configured.
         """
-        for env in (
-            self.get_config_dict()
-            .get("compute", self.default_cfg["compute"])
-            .get("environments", [])
-        ):
+        for env in self.config.get("compute", "environments", default=[]):
             name = env.get("name")
-            subnets = []
-            for subnet_name in env.get("subnets"):
-                subnet = self.private_subnets.get(subnet_name)
-                assert (
-                    subnet is not None
-                ), f"Unknown subnet in compute environment {name}: {subnet_name}"
-                subnets.append(subnet.id)
             self.compute_environments[name] = BatchCompute(
                 name,
-                image_id=env.get("image"),
-                subnets=subnets,
-                resources=new_batch_compute_resources(
-                    **env.get("resources", {})
-                ),
+                subnets=self.private_subnets,
+                config=env,
             )

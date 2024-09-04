@@ -1,5 +1,7 @@
 """Abstractions for data pipelines."""
 
+from copy import deepcopy
+
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
@@ -10,7 +12,7 @@ from ..iam import (
     get_start_crawler_policy,
     get_start_etl_job_policy,
 )
-from ..pulumi import DescribedComponentResource
+from ..pulumi import CapeComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
@@ -28,11 +30,25 @@ CUSTOM_CLASSIFIERS = {
 }
 
 
-class DataCrawler(DescribedComponentResource):
+class DataCrawler(CapeComponentResource):
     """A crawler for object storage."""
 
-    # default schedule for our crawlers will be every hour
-    DEFAULT_SCHEDULE = "0 * * * ? *"
+    @property
+    def default_config(self):
+        return {
+            # a cron formatted schedule string for the crawler's periodicity.
+            # NOTE: this cannot be faster than every 5
+            # minutes. see here for more:
+            # https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
+            "schedule": "0 * * * ? *",
+            # A list of custom classifiers for the crawler, if any.
+            "classifiers": [],
+            # a list of exclude paths for the crawler. see here for more:
+            # https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
+            # NOTE: at this time, all given exclusions apply to all buckets the
+            # crawler is set up for.
+            "excludes": [],
+        }
 
     def __init__(
         self,
@@ -40,9 +56,6 @@ class DataCrawler(DescribedComponentResource):
         buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
         db: aws.glue.CatalogDatabase,
         *args,
-        classifiers=None,
-        schedule: str | None = None,
-        excludes: list | None = None,
         prefix: str | None = None,
         **kwargs,
     ):
@@ -55,16 +68,6 @@ class DataCrawler(DescribedComponentResource):
             prefix: A prefix string within a bucket to crawl which limits the
                     content that will be indexed by the crawler.
             db: The catalog database where the crawler will write metadata.
-            classifiers: A list of custom classifiers for the crawler, if any.
-            schedule: a cron formatted schedule string for the crawler's
-                      periodicity. NOTE: this cannot be faster than every 5
-                      minutes. see here for more:
-                      https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
-            excludes: a list of exclude paths for the crawler. see here for
-                      more:
-                      https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
-                      NOTE: at this time, all given exclusions apply to all
-                      buckets the crawler is set up for.
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -75,9 +78,6 @@ class DataCrawler(DescribedComponentResource):
         self.buckets = buckets = (
             buckets if isinstance(buckets, list) else [buckets]
         )
-
-        self.schedule = schedule or self.DEFAULT_SCHEDULE
-        self.excludes = excludes or []
 
         # get a role for the crawler
         self.crawler_role = get_inline_role(
@@ -95,15 +95,11 @@ class DataCrawler(DescribedComponentResource):
 
         # if we have specified custom classifiers in the config, get the actual
         # names for them from our mapping.
-        custom_classifiers = (
-            [
-                CUSTOM_CLASSIFIERS[c].name
-                for c in classifiers
-                if CUSTOM_CLASSIFIERS.get(c)
-            ]
-            if classifiers
-            else []
-        )
+        custom_classifiers = [
+            CUSTOM_CLASSIFIERS[c].name
+            for c in self.config.get("classifiers", default=[])
+            if CUSTOM_CLASSIFIERS.get(c)
+        ]
 
         self.crawler = aws.glue.Crawler(
             f"{self.name}-gcrwl",
@@ -114,12 +110,12 @@ class DataCrawler(DescribedComponentResource):
                     path=bucket.bucket.apply(
                         lambda b: f"s3://{b}/{prefix+'/' if prefix else ''}"
                     ),
-                    exclusions=self.excludes,
+                    exclusions=self.config["excludes"],
                 )
                 for bucket in buckets
             ],
             classifiers=custom_classifiers,
-            schedule=f"cron({self.schedule})",
+            schedule=f"cron({self.config['schedule']})",
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Data Crawler"},
         )
@@ -204,8 +200,14 @@ class DataCrawler(DescribedComponentResource):
             )
 
 
-class EtlJob(DescribedComponentResource):
+class EtlJob(CapeComponentResource):
     """An extract/transform/load job."""
+
+    @property
+    def default_config(self):
+        return {
+            "max_concurrent_runs": 5,
+        }
 
     def __init__(
         self,
@@ -213,10 +215,8 @@ class EtlJob(DescribedComponentResource):
         raw_bucket: aws.s3.BucketV2,
         clean_bucket: aws.s3.BucketV2,
         script_bucket: aws.s3.BucketV2,
-        script_path: str,
         *args,
-        default_args: dict | None = None,
-        max_concurrent_runs: int | None = 5,
+        default_args: dict = {},
         **kwargs,
     ):
         """Constructor.
@@ -229,10 +229,7 @@ class EtlJob(DescribedComponentResource):
                           use as the sink for the output of transform.
             script_bucket: The object storage location where etl scripts are
                            kept.
-            script_path: The path in `script_bucket` to the ETL script for this
-                        job.
             default_args: default arguments for this ETL job if any.
-            max_concurrent_runs: Number of concurrent runs of the job (Default: 5)
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -257,25 +254,35 @@ class EtlJob(DescribedComponentResource):
                     args["raw_bucket"],
                     args["clean_bucket"],
                     args["script_bucket"],
-                    script_path,
+                    self.config["script"],
                 )
             ),
             srvc_policy_attach=None,
             opts=ResourceOptions(parent=self),
         )
 
+        default_args = deepcopy(default_args)
+        if (
+            "pymodules" in self.config
+            and "--additional-python-modules" not in default_args
+        ):
+            default_args["--additional-python-modules"] = ",".join(
+                self.config["pymodules"]
+            )
+        default_args["--CLEAN_BUCKET_NAME"] = self.clean_bucket.bucket
+
         self.job = aws.glue.Job(
             self.name,
             role_arn=self.etl_role.arn,
             command=aws.glue.JobCommandArgs(
                 script_location=script_bucket.bucket.apply(
-                    lambda b: f"s3://{b}/{script_path}"
+                    lambda b: f"s3://{b}/{self.config['script']}"
                 ),
                 python_version="3",
             ),
             default_arguments=default_args,
             execution_property=aws.glue.JobExecutionPropertyArgs(
-                max_concurrent_runs=max_concurrent_runs,
+                max_concurrent_runs=self.config.get("max_concurrent_runs"),
             ),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue ETL Job"},
