@@ -4,7 +4,17 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions
+import pulumi_tls as tls
+from pulumi import (
+    AssetArchive,
+    Config,
+    FileAsset,
+    Output,
+    ResourceOptions,
+    StringAsset,
+)
+
+from capeinfra.objectstorage import VersionedBucket
 
 from ..iam import (
     get_dap_api_policy,
@@ -18,16 +28,23 @@ from ..util.naming import disemvowel
 class PrivateSwimlane(ScopedSwimlane):
     """Contains resources for the private swimlane of the CAPE Infra."""
 
-    def __init__(self, name, *args, **kwargs):
+    def __init__(self, name, meta_bucket: VersionedBucket, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
 
+        # TODO: hate passing in the meta bucket here (should be encapsulated in
+        #       the CapeMeta class). maybe we make the keys in CapeMeta and pass
+        #       the id/arn/whatevs here??? THIS IS USED TO WRITE THE VPN CLIENT
+        #       KEYS
+        self.meta_bucket = meta_bucket
+
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
         self.create_dap_api()
+        self.create_vpn()
 
     @property
     def type_name(self) -> str:
@@ -397,3 +414,208 @@ class PrivateSwimlane(ScopedSwimlane):
             function_name=self.dap_submit_qmsg_handler.arn,
             function_response_types=["ReportBatchItemFailures"],
         )
+
+    # TODO: we will obvi not want self signed garbage here. This is just for dev
+    #       testing. Remains to be seen what we will want (i.e. AWS public certs
+    #       or make our own CA and such) long term. Not worth thinking about too
+    #       much until we have actual domains to work against anyway...
+    def create_tls_assets(self):
+        """"""
+        # server's private key
+        self.vpn_server_key = tls.PrivateKey(
+            f"{self.basename}-vpn-srvrky",
+            algorithm="RSA",
+            rsa_bits=2048,
+            opts=ResourceOptions(parent=self),
+        )
+
+        # server's self-signed cert
+        self.vpn_server_cert = tls.SelfSignedCert(
+            f"{self.basename}-vpn-sssrvrcrt",
+            private_key_pem=self.vpn_server_key.private_key_pem,
+            subject={
+                "common_name": "cape-dev.org",
+                "organization": "CAPE development",
+            },
+            # good for roughly a year
+            validity_period_hours=8766,
+            allowed_uses=[
+                "key_encipherment",
+                "digital_signature",
+                "server_auth",
+            ],
+            opts=ResourceOptions(parent=self),
+        )
+
+        # client's private key
+        self.vpn_client_key = tls.PrivateKey(
+            f"{self.basename}-vpn-clntky",
+            algorithm="RSA",
+            rsa_bits=2048,
+            opts=ResourceOptions(parent=self),
+        )
+
+        # CSR for the client cert
+        client_csr = tls.CertRequest(
+            f"{self.basename}-vpn-clntcsr",
+            private_key_pem=self.vpn_client_key.private_key_pem,
+            subject={
+                "common_name": "cape-dev.org",
+                "organization": "CAPE development",
+            },
+        )
+
+        # Use locally signed cert for the client cert and give it the signing
+        # request
+        self.vpn_client_cert = tls.LocallySignedCert(
+            f"{self.basename}-vpn-clntcrt",
+            ca_private_key_pem=self.vpn_server_key.private_key_pem,
+            ca_cert_pem=self.vpn_server_cert.cert_pem,
+            cert_request_pem=client_csr.cert_request_pem,
+            # good roughly 1 year
+            validity_period_hours=8766,
+            allowed_uses=[
+                "key_encipherment",
+                "digital_signature",
+                "client_auth",
+            ],
+        )
+
+        # upload the server and client key/cert pairs to ACM
+        self.vpn_server_acm_cert = aws.acm.Certificate(
+            f"{self.basename}-vpn-srvracmcert",
+            private_key=self.vpn_server_key.private_key_pem,
+            certificate_body=self.vpn_server_cert.cert_pem,
+            opts=ResourceOptions(parent=self),
+        )
+
+        # write the client cert/key pair to s3 so we can access them later
+        aws.s3.BucketObjectv2(
+            f"{self.basename}-vpn-clntpubkybo",
+            bucket=self.meta_bucket.bucket.id,
+            key="vpn/prvsl-client_pub.key",
+            content=self.vpn_client_key.public_key_pem.apply(lambda k: f"{k}"),
+            opts=ResourceOptions(parent=self.vpn_client_key),
+        )
+
+        # TODO: REMOVE ME WHEN SHOWN NOT NEEDED!!!
+        aws.s3.BucketObjectv2(
+            f"{self.basename}-vpn-clntkybo",
+            bucket=self.meta_bucket.bucket.id,
+            key="vpn/prvsl-client.key",
+            content=self.vpn_client_key.private_key_pem.apply(lambda k: f"{k}"),
+            opts=ResourceOptions(parent=self.vpn_client_key),
+        )
+
+        aws.s3.BucketObjectv2(
+            f"{self.basename}-vpn-clntcrtbo",
+            bucket=self.meta_bucket.bucket.id,
+            key="vpn/prvsl-client.crt",
+            content=self.vpn_client_cert.cert_pem.apply(lambda k: f"{k}"),
+            opts=ResourceOptions(parent=self.vpn_client_cert),
+        )
+
+        # self.vpn_client_acm_cert = aws.acm.Certificate(
+        #     f"{self.basename}-vpn-clntacmcert",
+        #     private_key=self.vpn_client_key.private_key_pem,
+        #     certificate_body=self.vpn_client_cert.cert_pem,
+        #     opts=ResourceOptions(parent=self),
+        # )
+
+    # TODO: we may or may not want VPN embedded like this long-term. this was
+    #       setup for testing of specific functionality (e.g. web forms) prior
+    #       to the addition of users and such. if we do keep it, this is
+    #       probably not the best way to configure things as it relies on
+    #       knowing a private subnet named "vpn" exists, while the configuration
+    #       allows for subnet names to be be anything at all...
+    def create_vpn(self):
+        """Creates/configures a Client VPN Endpoint for the private swimlane.
+
+        NOTE: Currently, this expects a subnet named "vpn" to exist. Not a good
+              long term plan.
+        """
+
+        # TODO: this is all self-signed right now
+        self.create_tls_assets()
+
+        # log group and log stream for the VPN endpoint
+        self.vpn_log_group = aws.cloudwatch.LogGroup(
+            f"{self.basename}-vpn-logs",
+            name=f"{self.basename}-vpn-logs",
+            tags={"desc_name": (f"{self.desc_name} VPN Log Group")},
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.vpn_log_stream = aws.cloudwatch.LogStream(
+            f"{self.basename}-vpn-logs-stream",
+            name=f"{self.basename}-vpn-logs-stream",
+            log_group_name=self.vpn_log_group.name,
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Create a Client VPN Endpoint
+        self.client_vpn_endpoint = aws.ec2clientvpn.Endpoint(
+            f"{self.basename}-vpnep",
+            description=f"{self.desc_name} Client VPN Endpoint",
+            server_certificate_arn=self.vpn_server_acm_cert.arn,
+            authentication_options=[
+                {
+                    "type": "certificate-authentication",
+                    "root_certificate_chain_arn": self.vpn_server_acm_cert.arn,
+                }
+            ],
+            client_cidr_block="10.1.0.0/22",
+            connection_log_options={
+                "enabled": True,
+                "cloudwatch_log_group": self.vpn_log_group.name,
+                "cloudwatch_log_stream": self.vpn_log_stream.name,
+            },
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} DAP submission sqs message lambda trigger "
+                    "function"
+                )
+            },
+            transport_protocol="tcp",
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Associate the Client VPN Endpoint with a Subnet of the VPC
+        subnet_association = aws.ec2clientvpn.NetworkAssociation(
+            f"{self.basename}-vpnassctn",
+            client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+            # NOTE: Subnets need to be created (or at least requested for
+            #       creation) before we can make the vpn.
+            subnet_id=self.private_subnets["vpn"].id,
+            opts=ResourceOptions(
+                depends_on=[self.client_vpn_endpoint],
+                parent=self.client_vpn_endpoint,
+            ),
+        )
+
+        # Set up Authorization Rule to grant access
+        authorize_access = aws.ec2clientvpn.AuthorizationRule(
+            f"{self.basename}-vpn-authzrl",
+            client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+            # access vpn subnet only
+            target_network_cidr=(
+                self.private_subnets["vpn"].cidr_block.apply(lambda cb: f"{cb}")
+            ),
+            # access whole vpc
+            # target_network_cidr=(self.vpc.cidr_block.apply(lambda cb: f"{cb}")),
+            # TODO: be more restrictive...
+            authorize_all_groups=True,
+            opts=ResourceOptions(parent=self.client_vpn_endpoint),
+        )
+
+        # Configure a Route to direct the traffic
+        # client_route = aws.ec2clientvpn.Route(
+        #     f"{self.basename}-vpn-rt",
+        #     client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+        #     # TODO: this seems too loose
+        #     destination_cidr_block="10.0.0.0/16",
+        #     target_vpc_subnet_id=self.private_subnets["vpn"].id,
+        #     opts=ResourceOptions(
+        #         depends_on=[subnet_association, authorize_access]
+        #     ),
+        # )
