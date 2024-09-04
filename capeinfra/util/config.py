@@ -30,7 +30,7 @@ class CapeConfig(dict):
 
     def __init__(
         self,
-        config: Mapping | str,
+        config: Mapping | str = {},
         config_name: str | None = DEFAULT_CONFIG_NAME,
         default: Mapping | None = None,
     ):
