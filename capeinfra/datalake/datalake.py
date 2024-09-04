@@ -263,8 +263,6 @@ class Tributary(CapeComponentResource):
 
         Args:
             bucket_type: The type ('raw'/'clean') of the bucket being created.
-            bucket_cfg: The config dict for te bucket, as specified in the
-                        pulumi stack config.
         """
         bucket_config = self.config.get("buckets", bucket_type)
         bucket_name = bucket_config.get(
