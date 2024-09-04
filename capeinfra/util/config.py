@@ -6,7 +6,7 @@ from typing import Any
 from pulumi import Config
 
 
-def update_dict(base, delta: dict):
+def update_dict(base: Any, delta: Mapping):
     if not isinstance(base, dict):
         return delta
     common_keys = set(base).intersection(delta)
@@ -30,9 +30,9 @@ class CapeConfig(dict):
 
     def __init__(
         self,
-        config: dict | str,
+        config: Mapping | str,
         config_name: str | None = DEFAULT_CONFIG_NAME,
-        default: dict | None = None,
+        default: Mapping | None = None,
     ):
         """Constructor.
 
@@ -85,7 +85,7 @@ class CapeConfig(dict):
             curr = default
         return CapeConfig(curr) if isinstance(curr, Mapping) else curr
 
-    def update(self, delta: dict):
+    def update(self, delta: Mapping):
         """Update the configuration with values from a new table.
 
         Args:
