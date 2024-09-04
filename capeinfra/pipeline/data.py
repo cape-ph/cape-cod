@@ -1,5 +1,7 @@
 """Abstractions for data pipelines."""
 
+from copy import deepcopy
+
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
@@ -31,8 +33,13 @@ CUSTOM_CLASSIFIERS = {
 class DataCrawler(CapeComponentResource):
     """A crawler for object storage."""
 
-    # default schedule for our crawlers will be every hour
-    DEFAULT_SCHEDULE = "0 * * * ? *"
+    @property
+    def default_config(self):
+        return {
+            "schedule": "0 * * * ? *",  # NECKBEARD SPEAK FOR EVERY HOUR
+            "classifiers": [],
+            "excludes": [],
+        }
 
     def __init__(
         self,
@@ -40,9 +47,6 @@ class DataCrawler(CapeComponentResource):
         buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
         db: aws.glue.CatalogDatabase,
         *args,
-        classifiers=None,
-        schedule: str | None = None,
-        excludes: list | None = None,
         prefix: str | None = None,
         **kwargs,
     ):
@@ -55,16 +59,6 @@ class DataCrawler(CapeComponentResource):
             prefix: A prefix string within a bucket to crawl which limits the
                     content that will be indexed by the crawler.
             db: The catalog database where the crawler will write metadata.
-            classifiers: A list of custom classifiers for the crawler, if any.
-            schedule: a cron formatted schedule string for the crawler's
-                      periodicity. NOTE: this cannot be faster than every 5
-                      minutes. see here for more:
-                      https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
-            excludes: a list of exclude paths for the crawler. see here for
-                      more:
-                      https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
-                      NOTE: at this time, all given exclusions apply to all
-                      buckets the crawler is set up for.
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -75,9 +69,6 @@ class DataCrawler(CapeComponentResource):
         self.buckets = buckets = (
             buckets if isinstance(buckets, list) else [buckets]
         )
-
-        self.schedule = schedule or self.DEFAULT_SCHEDULE
-        self.excludes = excludes or []
 
         # get a role for the crawler
         self.crawler_role = get_inline_role(
@@ -95,15 +86,11 @@ class DataCrawler(CapeComponentResource):
 
         # if we have specified custom classifiers in the config, get the actual
         # names for them from our mapping.
-        custom_classifiers = (
-            [
-                CUSTOM_CLASSIFIERS[c].name
-                for c in classifiers
-                if CUSTOM_CLASSIFIERS.get(c)
-            ]
-            if classifiers
-            else []
-        )
+        custom_classifiers = [
+            CUSTOM_CLASSIFIERS[c].name
+            for c in self.config.get("classifiers", default=[])
+            if CUSTOM_CLASSIFIERS.get(c)
+        ]
 
         self.crawler = aws.glue.Crawler(
             f"{self.name}-gcrwl",
@@ -114,12 +101,12 @@ class DataCrawler(CapeComponentResource):
                     path=bucket.bucket.apply(
                         lambda b: f"s3://{b}/{prefix+'/' if prefix else ''}"
                     ),
-                    exclusions=self.excludes,
+                    exclusions=self.config["excludes"],
                 )
                 for bucket in buckets
             ],
             classifiers=custom_classifiers,
-            schedule=f"cron({self.schedule})",
+            schedule=f"cron({self.config['schedule']})",
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Data Crawler"},
         )
@@ -214,7 +201,7 @@ class EtlJob(CapeComponentResource):
         clean_bucket: aws.s3.BucketV2,
         script_bucket: aws.s3.BucketV2,
         *args,
-        default_args: dict | None = None,
+        default_args: dict = {},
         **kwargs,
     ):
         """Constructor.
@@ -258,6 +245,16 @@ class EtlJob(CapeComponentResource):
             srvc_policy_attach=None,
             opts=ResourceOptions(parent=self),
         )
+
+        default_args = deepcopy(default_args)
+        if (
+            "pymodules" in self.config
+            and "--additional-python-modules" not in default_args
+        ):
+            default_args["--additional-python-modules"] = ",".join(
+                self.config["pymodules"]
+            )
+        default_args["--CLEAN_BUCKET_NAME"] = self.clean_bucket.bucket
 
         self.job = aws.glue.Job(
             self.name,

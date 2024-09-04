@@ -23,6 +23,7 @@ class DatalakeHouse(CapeComponentResource):
         name: str,
         auto_assets_bucket: aws.s3.BucketV2,
         *args,
+        config="datalakehouse",
         **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
@@ -30,7 +31,7 @@ class DatalakeHouse(CapeComponentResource):
             "capeinfra:datalake:DatalakeHouse",
             name,
             *args,
-            config="datalakehouse",
+            config=config,
             **kwargs,
         )
 
@@ -306,11 +307,9 @@ class Tributary(CapeComponentResource):
                 f"{vbname}-crwl",
                 bucket,
                 self.catalog,
-                classifiers=crawler_cfg.get("classifiers", []),
-                schedule=crawler_cfg.get("schedule"),
-                excludes=crawler_cfg.get("exclude"),
                 opts=ResourceOptions(parent=self),
                 desc_name=f"{self.desc_name} {bucket_type} data crawler",
+                config=crawler_cfg,
             )
 
     def configure_etl(
@@ -337,12 +336,6 @@ class Tributary(CapeComponentResource):
                 self.buckets[Tributary.RAW].bucket,
                 self.buckets[Tributary.CLEAN].bucket,
                 auto_assets_bucket,
-                default_args={
-                    "--additional-python-modules": ",".join(cfg["pymodules"]),
-                    "--CLEAN_BUCKET_NAME": self.buckets[
-                        Tributary.CLEAN
-                    ].bucket.bucket,
-                },
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} raw to clean ETL job"),
                 config=cfg,
