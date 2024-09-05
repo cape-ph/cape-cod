@@ -3,6 +3,8 @@
 This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
+import os.path
+
 import pulumi_aws as aws
 import pulumi_tls as tls
 from pulumi import (
@@ -431,102 +433,136 @@ class PrivateSwimlane(ScopedSwimlane):
     #       much until we have actual domains to work against anyway...
     def create_tls_assets(self):
         """"""
-        # server's private key
-        self.vpn_server_key = tls.PrivateKey(
-            f"{self.basename}-vpn-srvrky",
-            algorithm="RSA",
-            rsa_bits=2048,
-            opts=ResourceOptions(parent=self),
-        )
+        # # server's private key
+        # self.vpn_server_key = tls.PrivateKey(
+        #     f"{self.basename}-vpn-srvrky",
+        #     algorithm="RSA",
+        #     rsa_bits=2048,
+        #     opts=ResourceOptions(parent=self),
+        # )
+        #
+        # # server's self-signed cert
+        # self.vpn_server_cert = tls.SelfSignedCert(
+        #     f"{self.basename}-vpn-sssrvrcrt",
+        #     private_key_pem=self.vpn_server_key.private_key_pem,
+        #     subject={
+        #         "common_name": "cape-dev.org",
+        #         "organization": "CAPE development",
+        #     },
+        #     # good for roughly a year
+        #     validity_period_hours=8766,
+        #     is_ca_certificate=True,
+        #     set_subject_key_id=True,
+        #     set_authority_key_id=True,
+        #     allowed_uses=[
+        #         "key_encipherment",
+        #         "digital_signature",
+        #         "server_auth",
+        #     ],
+        #     opts=ResourceOptions(parent=self),
+        # )
+        #
+        # # client's private key
+        # self.vpn_client_key = tls.PrivateKey(
+        #     f"{self.basename}-vpn-clntky",
+        #     algorithm="RSA",
+        #     rsa_bits=2048,
+        #     opts=ResourceOptions(parent=self),
+        # )
+        #
+        # # CSR for the client cert
+        # client_csr = tls.CertRequest(
+        #     f"{self.basename}-vpn-clntcsr",
+        #     private_key_pem=self.vpn_client_key.private_key_pem,
+        #     subject={
+        #         "common_name": "cape-dev.org",
+        #         "organization": "CAPE development",
+        #     },
+        # )
+        #
+        # # Use locally signed cert for the client cert and give it the signing
+        # # request
+        # self.vpn_client_cert = tls.LocallySignedCert(
+        #     f"{self.basename}-vpn-clntcrt",
+        #     ca_private_key_pem=self.vpn_server_key.private_key_pem,
+        #     ca_cert_pem=self.vpn_server_cert.cert_pem,
+        #     cert_request_pem=client_csr.cert_request_pem,
+        #     # good roughly 1 year
+        #     validity_period_hours=8766,
+        #     allowed_uses=[
+        #         "key_encipherment",
+        #         "digital_signature",
+        #         "client_auth",
+        #     ],
+        # )
 
-        # server's self-signed cert
-        self.vpn_server_cert = tls.SelfSignedCert(
-            f"{self.basename}-vpn-sssrvrcrt",
-            private_key_pem=self.vpn_server_key.private_key_pem,
-            subject={
-                "common_name": "cape-dev.org",
-                "organization": "CAPE development",
-            },
-            # good for roughly a year
-            validity_period_hours=8766,
-            is_ca_certificate=True,
-            set_subject_key_id=True,
-            set_authority_key_id=True,
-            allowed_uses=[
-                "key_encipherment",
-                "digital_signature",
-                "server_auth",
-            ],
-            opts=ResourceOptions(parent=self),
-        )
+        def read_pem(pth):
+            s = None
+            with open(pth) as f:
+                s = f.read()
 
-        # client's private key
-        self.vpn_client_key = tls.PrivateKey(
-            f"{self.basename}-vpn-clntky",
-            algorithm="RSA",
-            rsa_bits=2048,
-            opts=ResourceOptions(parent=self),
-        )
+            return s
 
-        # CSR for the client cert
-        client_csr = tls.CertRequest(
-            f"{self.basename}-vpn-clntcsr",
-            private_key_pem=self.vpn_client_key.private_key_pem,
-            subject={
-                "common_name": "cape-dev.org",
-                "organization": "CAPE development",
-            },
-        )
+        tls_dir = self.config.get("tls", "vpn", "dir")
+        ca_crt_pem, server_key_pem, server_cert_pem = [
+            read_pem(os.path.join(tls_dir, f))
+            for f in [
+                self.config.get("tls", "vpn", "ca-cert"),
+                self.config.get("tls", "vpn", "server-key"),
+                self.config.get("tls", "vpn", "server-cert"),
+            ]
+        ]
 
-        # Use locally signed cert for the client cert and give it the signing
-        # request
-        self.vpn_client_cert = tls.LocallySignedCert(
-            f"{self.basename}-vpn-clntcrt",
-            ca_private_key_pem=self.vpn_server_key.private_key_pem,
-            ca_cert_pem=self.vpn_server_cert.cert_pem,
-            cert_request_pem=client_csr.cert_request_pem,
-            # good roughly 1 year
-            validity_period_hours=8766,
-            allowed_uses=[
-                "key_encipherment",
-                "digital_signature",
-                "client_auth",
-            ],
-        )
-
-        # upload the server and client key/cert pairs to ACM
         self.vpn_server_acm_cert = aws.acm.Certificate(
             f"{self.basename}-vpn-srvracmcert",
-            private_key=self.vpn_server_key.private_key_pem,
-            certificate_body=self.vpn_server_cert.cert_pem,
+            certificate_chain=ca_crt_pem,
+            private_key=server_key_pem,
+            certificate_body=server_cert_pem,
             opts=ResourceOptions(parent=self),
         )
 
-        # write the client cert/key pair to s3 so we can access them later
-        aws.s3.BucketObjectv2(
-            f"{self.basename}-vpn-clntpubkybo",
-            bucket=self.meta_bucket.bucket.id,
-            key="vpn/prvsl-client_pub.key",
-            content=self.vpn_client_key.public_key_pem.apply(lambda k: f"{k}"),
-            opts=ResourceOptions(parent=self.vpn_client_key),
-        )
+        # for v,c in [
+        #     (ca_crt_pem, self.config.get('tls', 'vpn', 'ca-cert')),
+        #     (server_crt_pem, self.config.get('tls', 'vpn', 'server-cert')),
+        #     (ca_crt_pem, self.config.get('tls', 'vpn', 'ca-cert')),
+        # ]:
+        #     with open(f"{os.path.join(tls_dir, c)}") as f:
+        #         v = f.read()
+        #
 
-        # TODO: REMOVE ME WHEN SHOWN NOT NEEDED!!!
-        aws.s3.BucketObjectv2(
-            f"{self.basename}-vpn-clntkybo",
-            bucket=self.meta_bucket.bucket.id,
-            key="vpn/prvsl-client.key",
-            content=self.vpn_client_key.private_key_pem.apply(lambda k: f"{k}"),
-            opts=ResourceOptions(parent=self.vpn_client_key),
-        )
+        # upload the server and client key/cert pairs to ACM
+        # self.vpn_server_acm_cert = aws.acm.Certificate(
+        #     f"{self.basename}-vpn-srvracmcert",
+        #     private_key=self.vpn_server_key.private_key_pem,
+        #     certificate_body=self.vpn_server_cert.cert_pem,
+        #     opts=ResourceOptions(parent=self),
+        # )
 
-        aws.s3.BucketObjectv2(
-            f"{self.basename}-vpn-clntcrtbo",
-            bucket=self.meta_bucket.bucket.id,
-            key="vpn/prvsl-client.crt",
-            content=self.vpn_client_cert.cert_pem.apply(lambda k: f"{k}"),
-            opts=ResourceOptions(parent=self.vpn_client_cert),
-        )
+        # # write the client cert/key pair to s3 so we can access them later
+        # aws.s3.BucketObjectv2(
+        #     f"{self.basename}-vpn-clntpubkybo",
+        #     bucket=self.meta_bucket.bucket.id,
+        #     key="vpn/prvsl-client_pub.key",
+        #     content=self.vpn_client_key.public_key_pem.apply(lambda k: f"{k}"),
+        #     opts=ResourceOptions(parent=self.vpn_client_key),
+        # )
+        #
+        # # TODO: REMOVE ME WHEN SHOWN NOT NEEDED!!!
+        # aws.s3.BucketObjectv2(
+        #     f"{self.basename}-vpn-clntkybo",
+        #     bucket=self.meta_bucket.bucket.id,
+        #     key="vpn/prvsl-client.key",
+        #     content=self.vpn_client_key.private_key_pem.apply(lambda k: f"{k}"),
+        #     opts=ResourceOptions(parent=self.vpn_client_key),
+        # )
+        #
+        # aws.s3.BucketObjectv2(
+        #     f"{self.basename}-vpn-clntcrtbo",
+        #     bucket=self.meta_bucket.bucket.id,
+        #     key="vpn/prvsl-client.crt",
+        #     content=self.vpn_client_cert.cert_pem.apply(lambda k: f"{k}"),
+        #     opts=ResourceOptions(parent=self.vpn_client_cert),
+        # )
 
         # self.vpn_client_acm_cert = aws.acm.Certificate(
         #     f"{self.basename}-vpn-clntacmcert",
