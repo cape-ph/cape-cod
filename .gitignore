@@ -1,3 +1,4 @@
 *.py[cod]
 venv/
 .DS_Store
+assets/tls
