@@ -25,6 +25,12 @@ config:
                   srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
     cape-cod:swimlanes:
         private:
+            tls:
+                vpn:
+                    dir: ./assets/tls/vpn
+                    ca-cert: ca.crt
+                    server-key: server.key
+                    server-cert: server.crt
             # TODO: This is huge. way bigger than we need. For growth but also
             # cause we don't really know what address space we need yet. Adjust
             # as needed
