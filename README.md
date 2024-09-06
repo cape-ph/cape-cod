@@ -220,6 +220,7 @@ each item.
 
 ## 📐 Additional Documentation
 
+-   [Debug VPN Deployment/Setup](./extra-doc/README.vpn.md)
 -   [Writeup of some queuing considerations](./extra-doc/README.queuing.md)
 
 ## 🗒️ Links
