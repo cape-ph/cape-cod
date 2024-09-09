@@ -23,7 +23,6 @@ cape_meta = CapeMeta(f"{stack_ns}-meta", desc_name=f"{CAPE_STACK_NS} Meta ")
 # private swimlane setup
 private_swimlane = PrivateSwimlane(
     f"{stack_ns}-pvsl",
-    cape_meta.automation_assets_bucket,
     desc_name=f"{CAPE_STACK_NS} private swimlane",
 )
 
