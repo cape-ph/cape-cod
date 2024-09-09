@@ -159,6 +159,13 @@ class ScopedSwimlane(CapeComponentResource):
         configured.
         """
 
+        # we need this to create a lookup for route configuration in addition
+        # to iteration below...
+        named_pscs = {
+            psnc["name"]: psnc
+            for psnc in self.config.get("private-subnets", default=[])
+        }
+
         for psnc in self.config.get("private-subnets", default=[]):
             config_sn_name = psnc.get("name")
             # devowel the configured name to try to save some characters in max
