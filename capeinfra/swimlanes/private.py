@@ -6,17 +6,14 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 import os.path
 
 import pulumi_aws as aws
-import pulumi_tls as tls
 from pulumi import (
     AssetArchive,
     Config,
     FileAsset,
     Output,
     ResourceOptions,
-    StringAsset,
+    warn,
 )
-
-from capeinfra.objectstorage import VersionedBucket
 
 from ..iam import (
     get_dap_api_policy,
@@ -58,18 +55,12 @@ class PrivateSwimlane(ScopedSwimlane):
             "compute": {},
         }
 
-    def __init__(self, name, meta_bucket, *args, **kwargs):
+    def __init__(self, name, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
-
-        # TODO: hate passing in the meta bucket here (should be encapsulated in
-        #       the CapeMeta class). maybe we make the keys in CapeMeta and pass
-        #       the id/arn/whatevs here??? THIS IS USED TO WRITE THE VPN CLIENT
-        #       KEYS
-        self.meta_bucket = meta_bucket
 
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
@@ -427,54 +418,84 @@ class PrivateSwimlane(ScopedSwimlane):
             function_response_types=["ReportBatchItemFailures"],
         )
 
-    # TODO: we will obvi not want self signed garbage here. This is just for dev
-    #       testing. Remains to be seen what we will want (i.e. AWS public certs
-    #       or make our own CA and such) long term. Not worth thinking about too
-    #       much until we have actual domains to work against anyway...
-    def create_tls_assets(self):
-        """"""
+    # TODO:ISSUE #99
+    def create_vpn_acm_certificate(self):
+        """Create an ACM Certificate resource for VPN.
+
+        In the case that the VPN configuration section does not exist or has any
+        missing values, a ValueError will be raised, meaning VPN configuration
+        should not continue.
+
+        Raises:
+            ValueError: On missing/invalid configuration options
+        """
 
         def read_pem(pth):
-            # TODO: comment
+            """Simple file read helper for use in a list comprehension.
+
+            This is used to read PEM files, but obvi the format of the file
+            doesn't matter to `open`.
+
+            Args:
+                pth: the path to the file to read
+            Raises:
+                FileNotFoundError: if the path cannot be found.
+            Returns:
+                The contents of the file at `pth`.
+            """
             s = None
             with open(pth) as f:
                 s = f.read()
 
             return s
 
-        tls_dir = self.config.get("tls", "vpn", "dir")
-        ca_crt_pem, server_key_pem, server_cert_pem = [
-            read_pem(os.path.join(tls_dir, f))
-            for f in [
-                self.config.get("tls", "vpn", "ca-cert"),
-                self.config.get("tls", "vpn", "server-key"),
-                self.config.get("tls", "vpn", "server-cert"),
+        tls_dir = self.config.get("vpn", "tls", "dir")
+        if tls_dir is None:
+            raise ValueError(
+                "TLS assets directory not configured for Private swimlane VPN."
+            )
+
+        try:
+            ca_crt_pem, server_key_pem, server_cert_pem = [
+                read_pem(os.path.join(tls_dir, f))
+                for f in [
+                    self.config.get("vpn", "tls", "ca-cert"),
+                    self.config.get("vpn", "tls", "server-key"),
+                    self.config.get("vpn", "tls", "server-cert"),
+                ]
             ]
-        ]
 
-        self.vpn_server_acm_cert = aws.acm.Certificate(
-            f"{self.basename}-vpn-srvracmcert",
-            certificate_chain=ca_crt_pem,
-            private_key=server_key_pem,
-            certificate_body=server_cert_pem,
-            opts=ResourceOptions(parent=self),
-        )
+            self.vpn_server_acm_cert = aws.acm.Certificate(
+                f"{self.basename}-vpn-srvracmcert",
+                certificate_chain=ca_crt_pem,
+                private_key=server_key_pem,
+                certificate_body=server_cert_pem,
+                opts=ResourceOptions(parent=self),
+            )
+        except FileNotFoundError as fnfe:
+            raise ValueError(
+                f"One or more configured TLS asset files could not be found "
+                f"during VPN configuration: {fnfe}"
+            )
 
-    # TODO: we may or may not want VPN embedded like this long-term. this was
-    #       setup for testing of specific functionality (e.g. web forms) prior
-    #       to the addition of users and such. if we do keep it, this is
-    #       probably not the best way to configure things as it relies on
-    #       knowing a private subnet named "vpn" exists, while the configuration
-    #       allows for subnet names to be be anything at all...
+    # TODO: ISSUE #100
     def create_vpn(self):
         """Creates/configures a Client VPN Endpoint for the private swimlane.
 
-        NOTE: Currently, this expects a subnet named "vpn" to exist. Not a good
-              long term plan.
+        In the case that the required configuration for the VPN ACM certificate
+        does not exist or has issues, a message will be printed to the pulumi
+        console and VPN configuration will cease.
+
         """
 
-        # TODO: this is all self-signed right now
-        self.create_tls_assets()
+        try:
+            self.create_vpn_acm_certificate()
+        except ValueError as ve:
+            warn(
+                f"Error encountered in configuration of Private swimlane VPN. "
+                f"{ve}. VPN will not be configured."
+            )
+            return
 
         # log group and log stream for the VPN endpoint
         self.vpn_log_group = aws.cloudwatch.LogGroup(
@@ -491,7 +512,7 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # Create a Client VPN Endpoint
+        # Client VPN endpoint, which is the interface VPN connections go thu
         self.client_vpn_endpoint = aws.ec2clientvpn.Endpoint(
             f"{self.basename}-vpnep",
             description=f"{self.desc_name} Client VPN Endpoint",
@@ -502,8 +523,9 @@ class PrivateSwimlane(ScopedSwimlane):
                     "root_certificate_chain_arn": self.vpn_server_acm_cert.arn,
                 }
             ],
-            # TODO: config me
-            client_cidr_block="10.1.0.0/22",
+            client_cidr_block=self.config.get(
+                "vpn", "cidr-block", default="10.1.0.0/22"
+            ),
             connection_log_options={
                 "enabled": True,
                 "cloudwatch_log_group": self.vpn_log_group.name,
@@ -515,23 +537,18 @@ class PrivateSwimlane(ScopedSwimlane):
                     "function"
                 )
             },
-            # TODO:
-            #   - change me back to UDP (configurable)
-            #   - writeup of how to do all this (including sudo on connect)
-            #   - egress to inet (see if we can get slack working)
-            #   - management of certs/keys
-            #   - clean code up for PR. rename the tls function and comment as
-            #     needed
-            transport_protocol="udp",
+            transport_protocol=self.config.get(
+                "vpn", "transport-proto", default="udp"
+            ),
             opts=ResourceOptions(parent=self),
         )
 
-        # Associate the Client VPN Endpoint with a Subnet of the VPC
+        # The client endpoint needs to be associated with a subnet, so associate
+        # it with the configured "vpn" subnet.
+        # TODO: ISSUE #100
         subnet_association = aws.ec2clientvpn.NetworkAssociation(
             f"{self.basename}-vpnassctn",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
-            # NOTE: Subnets need to be created (or at least requested for
-            #       creation) before we can make the vpn.
             subnet_id=self.private_subnets["vpn"].id,
             opts=ResourceOptions(
                 depends_on=[self.client_vpn_endpoint],
@@ -539,7 +556,18 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
-        # Set up Authorization Rule to grant access to the vpn subnet
+        # By default, the client endpoint will get a route to the VPC itself. we
+        # need to also authorize the endpoint to route traffic to the VPN subnet
+        # and to the internet (through the VPN subnet). This requires an auth
+        # rule and a route for the internet case and just an auth rule for the
+        # VPN case
+
+        # NOTE: leaving as 2 explicit auth rule creations instead of
+        # trying to reduce DRY violation in a loop or something on purpose. Do
+        # not know how this is going to shake out in the long term and we may
+        # end up with more/fewer rules. :shrug: we can refactor when that
+        # becomes clear
+
         auth_rule_vpn = aws.ec2clientvpn.AuthorizationRule(
             f"{self.basename}-vpn-authzrl",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
@@ -549,12 +577,11 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
             # access whole vpc
             # target_network_cidr=(self.vpc.cidr_block.apply(lambda cb: f"{cb}")),
-            # TODO: be more restrictive...
+            # TODO: ISSUE #101
             authorize_all_groups=True,
             opts=ResourceOptions(parent=self.client_vpn_endpoint),
         )
 
-        # and access to the internet
         auth_rule_inet = aws.ec2clientvpn.AuthorizationRule(
             f"{self.basename}-inet-authzrl",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
@@ -562,14 +589,14 @@ class PrivateSwimlane(ScopedSwimlane):
             target_network_cidr="0.0.0.0/0",
             # access whole vpc
             # target_network_cidr=(self.vpc.cidr_block.apply(lambda cb: f"{cb}")),
-            # TODO: be more restrictive...
+            # TODO: ISSUE #101
             authorize_all_groups=True,
             opts=ResourceOptions(parent=self.client_vpn_endpoint),
         )
 
-        # Configure a Route to direct the traffic
-        client_route = aws.ec2clientvpn.Route(
-            f"{self.basename}-vpn-rt",
+        # Route to internet (egress only)
+        aws.ec2clientvpn.Route(
+            f"{self.basename}-inet-rt",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
             destination_cidr_block="0.0.0.0/0",
             target_vpc_subnet_id=self.private_subnets["vpn"].id,
