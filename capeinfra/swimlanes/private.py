@@ -433,70 +433,9 @@ class PrivateSwimlane(ScopedSwimlane):
     #       much until we have actual domains to work against anyway...
     def create_tls_assets(self):
         """"""
-        # # server's private key
-        # self.vpn_server_key = tls.PrivateKey(
-        #     f"{self.basename}-vpn-srvrky",
-        #     algorithm="RSA",
-        #     rsa_bits=2048,
-        #     opts=ResourceOptions(parent=self),
-        # )
-        #
-        # # server's self-signed cert
-        # self.vpn_server_cert = tls.SelfSignedCert(
-        #     f"{self.basename}-vpn-sssrvrcrt",
-        #     private_key_pem=self.vpn_server_key.private_key_pem,
-        #     subject={
-        #         "common_name": "cape-dev.org",
-        #         "organization": "CAPE development",
-        #     },
-        #     # good for roughly a year
-        #     validity_period_hours=8766,
-        #     is_ca_certificate=True,
-        #     set_subject_key_id=True,
-        #     set_authority_key_id=True,
-        #     allowed_uses=[
-        #         "key_encipherment",
-        #         "digital_signature",
-        #         "server_auth",
-        #     ],
-        #     opts=ResourceOptions(parent=self),
-        # )
-        #
-        # # client's private key
-        # self.vpn_client_key = tls.PrivateKey(
-        #     f"{self.basename}-vpn-clntky",
-        #     algorithm="RSA",
-        #     rsa_bits=2048,
-        #     opts=ResourceOptions(parent=self),
-        # )
-        #
-        # # CSR for the client cert
-        # client_csr = tls.CertRequest(
-        #     f"{self.basename}-vpn-clntcsr",
-        #     private_key_pem=self.vpn_client_key.private_key_pem,
-        #     subject={
-        #         "common_name": "cape-dev.org",
-        #         "organization": "CAPE development",
-        #     },
-        # )
-        #
-        # # Use locally signed cert for the client cert and give it the signing
-        # # request
-        # self.vpn_client_cert = tls.LocallySignedCert(
-        #     f"{self.basename}-vpn-clntcrt",
-        #     ca_private_key_pem=self.vpn_server_key.private_key_pem,
-        #     ca_cert_pem=self.vpn_server_cert.cert_pem,
-        #     cert_request_pem=client_csr.cert_request_pem,
-        #     # good roughly 1 year
-        #     validity_period_hours=8766,
-        #     allowed_uses=[
-        #         "key_encipherment",
-        #         "digital_signature",
-        #         "client_auth",
-        #     ],
-        # )
 
         def read_pem(pth):
+            # TODO: comment
             s = None
             with open(pth) as f:
                 s = f.read()
@@ -520,56 +459,6 @@ class PrivateSwimlane(ScopedSwimlane):
             certificate_body=server_cert_pem,
             opts=ResourceOptions(parent=self),
         )
-
-        # for v,c in [
-        #     (ca_crt_pem, self.config.get('tls', 'vpn', 'ca-cert')),
-        #     (server_crt_pem, self.config.get('tls', 'vpn', 'server-cert')),
-        #     (ca_crt_pem, self.config.get('tls', 'vpn', 'ca-cert')),
-        # ]:
-        #     with open(f"{os.path.join(tls_dir, c)}") as f:
-        #         v = f.read()
-        #
-
-        # upload the server and client key/cert pairs to ACM
-        # self.vpn_server_acm_cert = aws.acm.Certificate(
-        #     f"{self.basename}-vpn-srvracmcert",
-        #     private_key=self.vpn_server_key.private_key_pem,
-        #     certificate_body=self.vpn_server_cert.cert_pem,
-        #     opts=ResourceOptions(parent=self),
-        # )
-
-        # # write the client cert/key pair to s3 so we can access them later
-        # aws.s3.BucketObjectv2(
-        #     f"{self.basename}-vpn-clntpubkybo",
-        #     bucket=self.meta_bucket.bucket.id,
-        #     key="vpn/prvsl-client_pub.key",
-        #     content=self.vpn_client_key.public_key_pem.apply(lambda k: f"{k}"),
-        #     opts=ResourceOptions(parent=self.vpn_client_key),
-        # )
-        #
-        # # TODO: REMOVE ME WHEN SHOWN NOT NEEDED!!!
-        # aws.s3.BucketObjectv2(
-        #     f"{self.basename}-vpn-clntkybo",
-        #     bucket=self.meta_bucket.bucket.id,
-        #     key="vpn/prvsl-client.key",
-        #     content=self.vpn_client_key.private_key_pem.apply(lambda k: f"{k}"),
-        #     opts=ResourceOptions(parent=self.vpn_client_key),
-        # )
-        #
-        # aws.s3.BucketObjectv2(
-        #     f"{self.basename}-vpn-clntcrtbo",
-        #     bucket=self.meta_bucket.bucket.id,
-        #     key="vpn/prvsl-client.crt",
-        #     content=self.vpn_client_cert.cert_pem.apply(lambda k: f"{k}"),
-        #     opts=ResourceOptions(parent=self.vpn_client_cert),
-        # )
-
-        # self.vpn_client_acm_cert = aws.acm.Certificate(
-        #     f"{self.basename}-vpn-clntacmcert",
-        #     private_key=self.vpn_client_key.private_key_pem,
-        #     certificate_body=self.vpn_client_cert.cert_pem,
-        #     opts=ResourceOptions(parent=self),
-        # )
 
     # TODO: we may or may not want VPN embedded like this long-term. this was
     #       setup for testing of specific functionality (e.g. web forms) prior
@@ -613,6 +502,7 @@ class PrivateSwimlane(ScopedSwimlane):
                     "root_certificate_chain_arn": self.vpn_server_acm_cert.arn,
                 }
             ],
+            # TODO: config me
             client_cidr_block="10.1.0.0/22",
             connection_log_options={
                 "enabled": True,
@@ -625,7 +515,14 @@ class PrivateSwimlane(ScopedSwimlane):
                     "function"
                 )
             },
-            transport_protocol="tcp",
+            # TODO:
+            #   - change me back to UDP (configurable)
+            #   - writeup of how to do all this (including sudo on connect)
+            #   - egress to inet (see if we can get slack working)
+            #   - management of certs/keys
+            #   - clean code up for PR. rename the tls function and comment as
+            #     needed
+            transport_protocol="udp",
             opts=ResourceOptions(parent=self),
         )
 
@@ -642,8 +539,8 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
-        # Set up Authorization Rule to grant access
-        authorize_access = aws.ec2clientvpn.AuthorizationRule(
+        # Set up Authorization Rule to grant access to the vpn subnet
+        auth_rule_vpn = aws.ec2clientvpn.AuthorizationRule(
             f"{self.basename}-vpn-authzrl",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
             # access vpn subnet only
@@ -657,14 +554,26 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self.client_vpn_endpoint),
         )
 
+        # and access to the internet
+        auth_rule_inet = aws.ec2clientvpn.AuthorizationRule(
+            f"{self.basename}-inet-authzrl",
+            client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+            # access vpn subnet only
+            target_network_cidr="0.0.0.0/0",
+            # access whole vpc
+            # target_network_cidr=(self.vpc.cidr_block.apply(lambda cb: f"{cb}")),
+            # TODO: be more restrictive...
+            authorize_all_groups=True,
+            opts=ResourceOptions(parent=self.client_vpn_endpoint),
+        )
+
         # Configure a Route to direct the traffic
-        # client_route = aws.ec2clientvpn.Route(
-        #     f"{self.basename}-vpn-rt",
-        #     client_vpn_endpoint_id=self.client_vpn_endpoint.id,
-        #     # TODO: this seems too loose
-        #     destination_cidr_block="10.0.0.0/16",
-        #     target_vpc_subnet_id=self.private_subnets["vpn"].id,
-        #     opts=ResourceOptions(
-        #         depends_on=[subnet_association, authorize_access]
-        #     ),
-        # )
+        client_route = aws.ec2clientvpn.Route(
+            f"{self.basename}-vpn-rt",
+            client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+            destination_cidr_block="0.0.0.0/0",
+            target_vpc_subnet_id=self.private_subnets["vpn"].id,
+            opts=ResourceOptions(
+                depends_on=[subnet_association, auth_rule_inet]
+            ),
+        )
