@@ -1,5 +1,7 @@
 # CAPE Cod
 
+[![CI/CD](https://github.com/cape-ph/cape-cod/actions/workflows/cape.yml/badge.svg)](https://github.com/cape-ph/cape-cod/actions/workflows/cape.yml)
+
 Welcome to the home of the Center For Applied Pathogen Genomics (_and Outbreak
 Control_) Pulumi IaC (Infrastructure as Code).
 
