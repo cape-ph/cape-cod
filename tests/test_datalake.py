@@ -8,7 +8,7 @@ def test_catalog(mock_datalake):
         catalog_database, catalog_name = args
 
         assert catalog_name == f"{mock_datalake.name}-catalog"
-        assert type(catalog_database) == aws.glue.CatalogDatabase
+        assert type(catalog_database) is aws.glue.CatalogDatabase
 
     return pulumi.Output.all(
         mock_datalake.catalog.catalog_database,
