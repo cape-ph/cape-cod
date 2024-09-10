@@ -167,6 +167,7 @@ class ScopedSwimlane(CapeComponentResource):
         }
 
         for psnc in self.config.get("private-subnets", default=[]):
+            psnc = CapeConfig(psnc)
             config_sn_name = psnc.get("name")
             # devowel the configured name to try to save some characters in max
             # string lengths for identifiers when constructing the subnet name
@@ -182,7 +183,7 @@ class ScopedSwimlane(CapeComponentResource):
             )
 
             routes = []
-            for rte in psnc.get("routes") or []:
+            for rte in psnc.get("routes", default=[]):
                 # NOTE: special handling for the public subnet route. we
                 #       assume in this case we're reouting all traffic to the
                 #       NAT. this may be a bad assumption in the future

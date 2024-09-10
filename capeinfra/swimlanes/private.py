@@ -53,6 +53,10 @@ class PrivateSwimlane(ScopedSwimlane):
                 },
             },
             "compute": {},
+            "vpn": {
+                "cidr-block": "10.1.0.0/22",
+                "transport-proto": "udp",
+            },
         }
 
     def __init__(self, name, *args, **kwargs):
@@ -449,7 +453,8 @@ class PrivateSwimlane(ScopedSwimlane):
 
             return s
 
-        tls_dir = self.config.get("vpn", "tls", "dir")
+        tls = self.config.get("vpn", "tls")
+        tls_dir = tls.get("dir")
         if tls_dir is None:
             raise ValueError(
                 "TLS assets directory not configured for Private swimlane VPN."
@@ -459,9 +464,9 @@ class PrivateSwimlane(ScopedSwimlane):
             ca_crt_pem, server_key_pem, server_cert_pem = [
                 read_pem(os.path.join(tls_dir, f))
                 for f in [
-                    self.config.get("vpn", "tls", "ca-cert"),
-                    self.config.get("vpn", "tls", "server-key"),
-                    self.config.get("vpn", "tls", "server-cert"),
+                    tls.get("ca-cert"),
+                    tls.get("server-key"),
+                    tls.get("server-cert"),
                 ]
             ]
 
@@ -523,9 +528,7 @@ class PrivateSwimlane(ScopedSwimlane):
                     "root_certificate_chain_arn": self.vpn_server_acm_cert.arn,
                 }
             ],
-            client_cidr_block=self.config.get(
-                "vpn", "cidr-block", default="10.1.0.0/22"
-            ),
+            client_cidr_block=self.config.get("vpn", "cidr-block"),
             connection_log_options={
                 "enabled": True,
                 "cloudwatch_log_group": self.vpn_log_group.name,
@@ -537,9 +540,7 @@ class PrivateSwimlane(ScopedSwimlane):
                     "function"
                 )
             },
-            transport_protocol=self.config.get(
-                "vpn", "transport-proto", default="udp"
-            ),
+            transport_protocol=self.config.get("vpn", "transport-proto"),
             opts=ResourceOptions(parent=self),
         )
 
