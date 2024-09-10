@@ -40,7 +40,7 @@ instructions _should_ work for real certs/keys, but this has not been tested.
 
 This process is adapted from the
 [AWS Client VPN Administrator's Guide](https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/client-auth-mutual-enable.html)
-as of the time of writing of thie README. If things don't work, try that guide
+as of the time of writing of this README. If things don't work, try that guide
 to see if there are changes not captured here.
 
 We use [easyrsa](https://github.com/OpenVPN/easy-rsa) (from `OpenVPN`) to
@@ -53,9 +53,9 @@ and on the system path. adjust for your setup as needed. We tested against
 not expire and are not compromised. The cert rotation procedure is not covered
 here. Additionally, if the server certificate changes, the VPN endpoint must be
 replaced due to how association with the endpoint and cert works in AWS. Client
-key/cert can be regenrated (or new ones can be made for new clients) at any time
-from the server files and the PEM text only needs to be changed/inserted in the
-`ovpn` file if they are regenerated or new ones are created.
+key/cert can be regenerated (or new ones can be made for new clients) at any
+time from the server files and the PEM text only needs to be changed/inserted in
+the `ovpn` file if they are regenerated or new ones are created.
 
 -   Create a directory for the pki environment, and initialize the environment:
 
@@ -90,7 +90,7 @@ easyrsa build-client-full client1.domain.tld nopass
 -   at this point, all files needed for the deployment and the vpn connection
     exist (as long as only one client cert/key pair is desired).
 
-### Modifiy Deployment Configuration
+### Modify Deployment Configuration
 
 In order to deploy the generated files (and set some other basic VPN
 configuration), we need to set some values in the `pulumi` configuration. If
@@ -149,7 +149,7 @@ server cert is replaced (as the endpoint will have to be replaced at that time)
 among other events. The main items in the configuration that may change are the
 remote name and the contents of `<ca>`, `<cert>`, and `<key>` blocks (depending
 on how certs and keys are being managed). If `CAPE` is re-deployed but the VPN
-endpoint is not changed in any way, the VPN configration should remain valid.
+endpoint is not changed in any way, the VPN configuration should remain valid.
 
 ### Get the Configuration for the Deployed Endpoint
 
