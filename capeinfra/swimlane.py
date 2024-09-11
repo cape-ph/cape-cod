@@ -159,7 +159,15 @@ class ScopedSwimlane(CapeComponentResource):
         configured.
         """
 
+        # we need this to create a lookup for route configuration in addition
+        # to iteration below...
+        named_pscs = {
+            psnc["name"]: psnc
+            for psnc in self.config.get("private-subnets", default=[])
+        }
+
         for psnc in self.config.get("private-subnets", default=[]):
+            psnc = CapeConfig(psnc)
             config_sn_name = psnc.get("name")
             # devowel the configured name to try to save some characters in max
             # string lengths for identifiers when constructing the subnet name
@@ -174,25 +182,42 @@ class ScopedSwimlane(CapeComponentResource):
                 },
             )
 
-            if psnc.get("egress-to-nat", False):
-                subnet_nat_rt = aws.ec2.RouteTable(
-                    f"{sn_name}-rt",
-                    vpc_id=self.vpc.id,
-                    routes=[
+            routes = []
+            for rte in psnc.get("routes", default=[]):
+                # NOTE: special handling for the public subnet route. we
+                #       assume in this case we're reouting all traffic to the
+                #       NAT. this may be a bad assumption in the future
+                if rte == "public":
+                    routes.append(
                         {
                             # all outgoing traffic in the compute subnet goes to the
                             # NAT gateway
                             "cidr_block": "0.0.0.0/0",
                             "nat_gateway_id": self.nat_gateway.id,
                         }
-                    ],
-                )
+                    )
+                else:
+                    # in this case we assume we're setting up a route from a
+                    # private VPC subnet to another private VPC subnet, so local
+                    # routing
+                    routes.append(
+                        {
+                            "cidr_block": named_pscs[rte]["cidr_block"],
+                            "gateway_id": "local",
+                        }
+                    )
 
-                aws.ec2.RouteTableAssociation(
-                    f"{sn_name}-rtassn",
-                    subnet_id=subnet.id,
-                    route_table_id=subnet_nat_rt.id,
-                )
+            subnet_rt = aws.ec2.RouteTable(
+                f"{sn_name}-rt",
+                vpc_id=self.vpc.id,
+                routes=routes,
+            )
+
+            aws.ec2.RouteTableAssociation(
+                f"{sn_name}-rtassn",
+                subnet_id=subnet.id,
+                route_table_id=subnet_rt.id,
+            )
 
             self.private_subnets[config_sn_name] = subnet
 

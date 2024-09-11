@@ -22,7 +22,8 @@ cape_meta = CapeMeta(f"{stack_ns}-meta", desc_name=f"{CAPE_STACK_NS} Meta ")
 
 # private swimlane setup
 private_swimlane = PrivateSwimlane(
-    f"{stack_ns}-pvsl", desc_name=f"{CAPE_STACK_NS} private swimlane"
+    f"{stack_ns}-pvsl",
+    desc_name=f"{CAPE_STACK_NS} private swimlane",
 )
 
 # here there be data
