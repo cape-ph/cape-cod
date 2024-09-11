@@ -1,0 +1,14 @@
+name: Release
+
+on:
+    push:
+        tags: ["**"]
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    Release:
+        uses: cape-ph/.github/.github/workflows/release.yml@main
+        secrets: inherit
