@@ -232,6 +232,7 @@ class ScopedSwimlane(CapeComponentResource):
             name = env.get("name")
             self.compute_environments[name] = BatchCompute(
                 name,
+                vpc=self.vpc,
                 subnets=self.private_subnets,
                 config=env,
             )

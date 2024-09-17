@@ -24,6 +24,7 @@ class BatchCompute(CapeComponentResource):
     def __init__(
         self,
         name: Input[str],
+        vpc: aws.ec2.Vpc,
         subnets: dict[str, aws.ec2.Subnet],
         *args,
         **kwargs,
@@ -86,6 +87,7 @@ class BatchCompute(CapeComponentResource):
                     "cidr_blocks": ["0.0.0.0/0"],
                 }
             ],
+            vpc_id=vpc.id,
             opts=ResourceOptions(parent=self),
         )
 
