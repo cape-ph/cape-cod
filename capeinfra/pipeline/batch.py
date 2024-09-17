@@ -24,6 +24,7 @@ class BatchCompute(CapeComponentResource):
     def __init__(
         self,
         name: Input[str],
+        vpc: aws.ec2.Vpc,
         subnets: dict[str, aws.ec2.Subnet],
         *args,
         **kwargs,
@@ -55,7 +56,7 @@ class BatchCompute(CapeComponentResource):
             f"{self.name}-instnc",
             f"{self.desc_name} AWS batch instance role",
             "",
-            "batch.amazonaws.com",
+            "ec2.amazonaws.com",
             # TODO: add policy (ISSUE #73)
             srvc_policy_attach="arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
             opts=ResourceOptions(parent=self),
@@ -86,6 +87,7 @@ class BatchCompute(CapeComponentResource):
                     "cidr_blocks": ["0.0.0.0/0"],
                 }
             ],
+            vpc_id=vpc.id,
             opts=ResourceOptions(parent=self),
         )
 

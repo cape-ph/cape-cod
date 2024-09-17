@@ -3,6 +3,7 @@
 This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
+import json
 import os.path
 
 import pulumi_aws as aws
@@ -18,6 +19,8 @@ from pulumi import (
 from ..iam import (
     get_dap_api_policy,
     get_inline_role,
+    get_instance_profile,
+    get_nextflow_executor_policy,
     get_sqs_lambda_dap_submit_policy,
 )
 from ..swimlane import ScopedSwimlane
@@ -70,6 +73,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_dap_submission_queue()
         self.create_dap_api()
         self.create_vpn()
+        self.prepare_nextflow_executor()
 
     @property
     def type_name(self) -> str:
@@ -605,3 +609,43 @@ class PrivateSwimlane(ScopedSwimlane):
                 depends_on=[subnet_association, auth_rule_inet]
             ),
         )
+
+    # TODO: ISSUE #115
+    # Generalize this to work for all "head node"/"job submission"-like EC2
+    # instances that spin up AWS Batch jobs. Currently it's very specific to
+    # Nextflow and the policy it requires
+    def prepare_nextflow_executor(self):
+        """Creates necessary resources for our nextflow EC2 instance."""
+
+        self.nextflow_role = get_inline_role(
+            f"{self.basename}-nxtflw",
+            f"{self.desc_name} instance role for nextflow kickoff instance",
+            "ec2",
+            "ec2.amazonaws.com",
+            role_policy=get_nextflow_executor_policy(),
+        )
+        self.nextflow_role_profile = get_instance_profile(
+            f"{self.basename}-nxtflw-instnc-rl", self.nextflow_role
+        )
+
+        for env_name in self.compute_environments:
+            compute_environment = self.compute_environments[env_name]
+            compute_environment.instance_role.arn
+            aws.iam.RolePolicy(
+                f"{self.basename}-nxtflow-pass-{env_name}-plcy",
+                role=self.nextflow_role.id,
+                policy=compute_environment.instance_role.arn.apply(
+                    lambda arn: json.dumps(
+                        {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "iam:PassRole",
+                                    "Resource": arn,
+                                }
+                            ],
+                        }
+                    )
+                ),
+            )
