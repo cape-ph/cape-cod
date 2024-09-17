@@ -101,9 +101,10 @@ VPN will not continue.
 **_Because the keys should be protected, it is very important that the
 directories set up and referenced in the configuration not end up in the
 repository._** The repository is currently setup to ignore files in
-`assets/tls`. We recommend using subdirectories here to manage tls assets being
-deployed so they do not end up in the repo accidentally. If you use other
-directories, be careful.
+`assets-untracked`. We recommend using subdirectories here to manage tls assets
+(and other secrects that should not end up in the repo) being deployed so they
+do not end up in the repo accidentally. If you use other directories, **_BE
+CAREFUL_**.
 
 The following configuration block is supported for VPN (within the `private`
 block in the `cape-cod:swimlanes` block):
@@ -120,7 +121,7 @@ vpn:
     # default to "udp"
     transport-proto: "udp"
     tls:
-        dir: ./assets/tls/vpn
+        dir: ./assets-untracked/tls/vpn
         # all files must exist in the above `dir`
         ca-cert: ca.crt
         server-key: server.key

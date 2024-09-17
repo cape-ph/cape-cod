@@ -1,5 +1,4 @@
 *.py[cod]
 venv/
 .DS_Store
-# TODO: ISSUE #107
-assets/tls
+assets-untracked/
