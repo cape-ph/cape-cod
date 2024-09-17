@@ -55,7 +55,7 @@ class BatchCompute(CapeComponentResource):
             f"{self.name}-instnc",
             f"{self.desc_name} AWS batch instance role",
             "",
-            "batch.amazonaws.com",
+            "ec2.amazonaws.com",
             # TODO: add policy (ISSUE #73)
             srvc_policy_attach="arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
             opts=ResourceOptions(parent=self),
