@@ -64,7 +64,7 @@ config:
         # default to "udp"
         transport-proto: "udp"
         tls:
-          dir: ./assets/tls/vpn
+          dir: ./assets-untracked/tls/vpn
           ca-cert: ca.crt
           server-key: server.key
           server-cert: server.crt
