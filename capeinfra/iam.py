@@ -93,6 +93,58 @@ def get_start_crawler_policy(crawler: str) -> str:
     )
 
 
+def get_nextflow_executor_policy() -> str:
+    """Get a role policy statement for an EC2 instance of Nextflow.
+
+    Returns:
+        The policy statement as a json encoded string.
+    """
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "batch:CancelJob",
+                        "batch:DescribeComputeEnvironments",
+                        "batch:DescribeJobDefinitions",
+                        "batch:DescribeJobQueues",
+                        "batch:DescribeJobs",
+                        "batch:ListJobs",
+                        "batch:RegisterJobDefinition",
+                        "batch:SubmitJob",
+                        "batch:TagResource",
+                        "batch:TerminateJob",
+                        "ec2:DescribeInstanceAttribute",
+                        "ec2:DescribeInstanceStatus",
+                        "ec2:DescribeInstanceTypes",
+                        "ec2:DescribeInstances",
+                        "ecr:BatchCheckLayerAvailability",
+                        "ecr:BatchGetImage",
+                        "ecr:DescribeImageScanFindings",
+                        "ecr:DescribeImages",
+                        "ecr:DescribeRepositories",
+                        "ecr:GetAuthorizationToken",
+                        "ecr:GetDownloadUrlForLayer",
+                        "ecr:GetLifecyclePolicy",
+                        "ecr:GetLifecyclePolicyPreview",
+                        "ecr:GetRepositoryPolicy",
+                        "ecr:ListImages",
+                        "ecr:ListTagsForResource",
+                        "ecs:DescribeContainerInstances",
+                        "ecs:DescribeTasks",
+                        "logs:GetLogEvents",
+                        "s3:*",
+                    ],
+                    "Resource": ["*"],
+                },
+            ],
+        },
+    )
+
+
 def get_start_etl_job_policy(job: str) -> str:
     """Get a role policy statement for starting an ETL job.
 
