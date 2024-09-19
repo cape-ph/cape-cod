@@ -9,7 +9,7 @@ from .pulumi import CapeComponentResource
 class VersionedBucket(CapeComponentResource):
     """An object storage location with versioning turned on."""
 
-    def __init__(self, name, **kwargs):
+    def __init__(self, name, bucket_name=None, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
             "capeinfra:objectstorage:S3VersionedBucket",
@@ -21,6 +21,7 @@ class VersionedBucket(CapeComponentResource):
 
         self.bucket = aws.s3.BucketV2(
             f"{self.name}-s3",
+            bucket=bucket_name,
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} S3 Bucket"},
         )
