@@ -17,12 +17,14 @@ from pulumi import (
 )
 
 from ..iam import (
+    get_bucket_web_host_policy,
     get_dap_api_policy,
     get_inline_role,
     get_instance_profile,
     get_nextflow_executor_policy,
     get_sqs_lambda_dap_submit_policy,
 )
+from ..objectstorage import VersionedBucket
 from ..swimlane import ScopedSwimlane
 from ..util.naming import disemvowel
 
@@ -72,6 +74,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
         self.create_dap_api()
+        self.create_web_resources()
         self.create_vpn()
         self.prepare_nextflow_executor()
 
@@ -425,6 +428,76 @@ class PrivateSwimlane(ScopedSwimlane):
             function_name=self.dap_submit_qmsg_handler.arn,
             function_response_types=["ReportBatchItemFailures"],
         )
+
+    def create_web_resources(self):
+        """"""
+        # NOTE: This is a notional proof of concept. this is not intended to be
+        #       a very maintainable or modifyable implementation. once we show
+        #       it to be working and that it will fulfill the intended purpose
+        #       for other use cases, we can make it better. we should probably
+        #       abstract the ALB and "application" out to a separate class that
+        #       can be instantiated a number of times based on config
+
+        # TODO: Config all these values
+        # need to make a new cert/key pair for this domain (wildcard cert?)
+        bucket_name = "analysis-pipelines.cape-dev.org"
+
+        # bucket for hosting static web application for analysis pipelines
+        self.dap_web_assets_bucket = VersionedBucket(
+            f"{self.basename}-dap-web-vbkt",
+            bucket_name=bucket_name,
+            desc_name=(
+                f"{self.desc_name} analysis pipeline static web application "
+                "bucket"
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        # bucket policy that allows read access to this bucket if you come from
+        # the private swimlane vpc
+        aws.s3.BucketPolicy(
+            f"{self.basename}-dap-web-vbktplcy",
+            bucket=self.dap_web_assets_bucket.bucket.id,
+            policy=get_bucket_web_host_policy(
+                self.dap_web_assets_bucket.bucket, self.vpc.id
+            ),
+        )
+
+        # s3 endpoint for vpc
+        self.dap_web_assets_s3vpcep = aws.ec2.VpcEndpoint(
+            f"{self.basename}-dap-web-s3vpcep",
+            vpc_id=self.vpc.id,
+            service_name=f"com.amazonaws.{aws.get_region().name}.s3",
+            vpc_endpoint_type="Interface",
+            # TODO: need the second AZ vpn subnet here...
+            subnet_ids=[self.private_subnets["vpn"].id],
+            # TODO: ISSUE #112
+            # TODO: make function, tighten s3 perms to GetObj if possible
+            policy=Output.all(self.dap_web_assets_bucket.bucket).apply(
+                lambda bucket_name: f"""{{
+                "Version": "2012-10-17",
+                "Statement": [{{
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": ["s3:*"],
+                    "Resource": [
+                        "arn:aws:s3:::{bucket_name}",
+                        "arn:aws:s3:::{bucket_name}/*"
+                    ]
+                }}]
+            }}"""
+            ),
+        )
+
+        # TODO: LEFTOFF
+        # * new acm cert
+        # * ALB
+        # * Add route53 Stuff after VPC and subnets, but *before* client VPN
+        #   * zone
+        #   * zone records
+        #   * resolver
+        # * mod client vpn to use DNS (resolver ips)
+        pass
 
     # TODO:ISSUE #99
     def create_vpn_acm_certificate(self):
