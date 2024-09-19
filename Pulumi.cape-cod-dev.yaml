@@ -44,6 +44,18 @@ config:
                       - "public"
                 - name: vpn
                   cidr-block: 10.0.3.0/24
+                  az: "us-east-2b"
+                  routes:
+                      - "public"
+                # TODO: ISSUE #118
+                #       We really don't want this kind of name coupling for
+                #       redundacy of subnets (or anything else). we should
+                #       change how these are specified so redundant subnets are
+                #       defined under the same blocks. This is just being done
+                #       for quick demo turn around
+                - name: vpn2
+                  cidr-block: 10.0.4.0/24
+                  az: "us-east-2c"
                   routes:
                       - "public"
             # NOTE: the apis section here will likely need to be re-worked as we
@@ -54,9 +66,12 @@ config:
                 dap:
                     meta: *depmet
             vpn:
-                # This CIDR block cannot overlap with the VPC nor with the
-                # subnet being assoociated with the VPN endpoint. Additionally
-                # it must be at least a /22 and no more than a /12. More here:
+                # This cidr-block is where vpn client ips will be allocated
+                # from. This is different than the cidr block of the vpn subnet
+                # itself. This CIDR block cannot overlap with the VPC nor with
+                # the subnet being assoociated with the VPN endpoint.
+                # Additionally it must be at least a /22 and no more than /12.
+                # More here:
                 # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
                 # If not specified, this will default to "10.1.0.0/22"
                 cidr-block: "10.1.0.0/22"
