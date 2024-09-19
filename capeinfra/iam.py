@@ -66,6 +66,55 @@ def get_bucket_reader_policy(
     )
 
 
+def get_bucket_web_host_policy(
+    buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
+    vpc_id: Input[str] | None = None,
+) -> str:
+    """Get a role policy statement for Get perm on s3 buckets.
+
+    This statement also allows an optional VPC id to limit access to. If not
+    specified, this will result in no VPC restriction
+
+    Args:
+        buckets: A BucketV2 object or a list of BucketV2 objects to grant
+                 Get/List permissions to.
+        vpc_id: An optional VPC id to limit access to.
+
+    Returns:
+        The policy statement as a json encoded string.
+    """
+    buckets = [buckets] if isinstance(buckets, aws.s3.BucketV2) else buckets
+
+    stmnts = [
+        {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject"],
+            "Resource": [
+                f"arn:aws:s3:::{bucket}/*",
+                f"arn:aws:s3:::{bucket}",
+            ],
+        }
+        for bucket in buckets
+    ]
+
+    # TODO: This would be a ton cleaner using aws.iam.get_policy_document
+    #       which has arguments for all of these things (resources, conditions,
+    #       etc). We should consider switching this module to use that instead
+    #       of dumping our own manual json dicts
+    if vpc_id:
+        for d in stmnts:
+            d.update(
+                {"Condition": {"StringEquals": {"aws:SourceVpce": vpc_id}}}
+            )
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": stmnts,
+        },
+    )
+
+
 def get_start_crawler_policy(crawler: str) -> str:
     """Get a role policy statement for starting a crawler.
 
