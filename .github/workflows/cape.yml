@@ -7,9 +7,9 @@ on:
 jobs:
     python:
         name: Python
-        uses: cape-ph/.github/.github/workflows/python_checks.yml@main
+        uses: cape-ph/.github/.github/workflows/python_checks.yml@v1
         with:
             pytest: true
     general:
         name: General
-        uses: cape-ph/.github/.github/workflows/general_checks.yml@main
+        uses: cape-ph/.github/.github/workflows/general_checks.yml@v1

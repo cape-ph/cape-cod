@@ -10,5 +10,5 @@ permissions:
 
 jobs:
     Release:
-        uses: cape-ph/.github/.github/workflows/release.yml@main
+        uses: cape-ph/.github/.github/workflows/release.yml@v1
         secrets: inherit
