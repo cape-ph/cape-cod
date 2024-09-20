@@ -26,6 +26,7 @@ from ..iam import (
 )
 from ..objectstorage import VersionedBucket
 from ..swimlane import ScopedSwimlane
+from ..util.file import file_as_string
 from ..util.naming import disemvowel
 
 
@@ -429,6 +430,60 @@ class PrivateSwimlane(ScopedSwimlane):
             function_response_types=["ReportBatchItemFailures"],
         )
 
+    # TODO: this would potentially be useful in a number of places down the
+    #       road with a little work.
+    # TODO:ISSUE #99
+    def create_acm_certificate(self, name: str, tls_cfg: dict):
+        """Create an ACM Certificate resource for the given tls config.
+
+        In the event that the config is not valid or has any bad values
+        (including names of files that cannot be read), a ValueError will be
+        raised.
+
+        Args:
+            name: The name to give the AWS ACM Cert resource.
+            tls_cfg: The configuration dict for the cert being created. It
+                     should have keys for `dir`, `ca-cert`, `server-key`, and
+                     `server-crt`.
+        Returns:
+            The created ACM cert.
+        Raises:
+            ValueError: On missing/invalid configuration options
+        """
+
+        tls_dir = tls_cfg.get("dir")
+        files = [
+            tls_cfg.get("ca-cert"),
+            tls_cfg.get("server-key"),
+            tls_cfg.get("server-cert"),
+        ]
+
+        if tls_dir is None or None in files:
+            raise ValueError(
+                f"TLS configuration for ACM cert resource {name} is invalid. "
+                "One or more expected configuration values are not provided."
+            )
+
+        try:
+            ca_crt_pem, server_key_pem, server_crt_pem = [
+                # join with `f or ""` is to make LSP happy...
+                file_as_string(os.path.join(tls_dir, f or ""))
+                for f in files
+            ]
+
+            return aws.acm.Certificate(
+                name,
+                certificate_chain=ca_crt_pem,
+                private_key=server_key_pem,
+                certificate_body=server_crt_pem,
+                opts=ResourceOptions(parent=self),
+            )
+        except (FileNotFoundError, IsADirectoryError) as err:
+            raise ValueError(
+                f"One or more configured TLS asset files could not be found "
+                f"during ACM Cert ({name}) creation: {err}"
+            )
+
     def create_web_resources(self):
         """"""
         # NOTE: This is a notional proof of concept. this is not intended to be
@@ -441,6 +496,13 @@ class PrivateSwimlane(ScopedSwimlane):
         # TODO: Config all these values
         # need to make a new cert/key pair for this domain (wildcard cert?)
         bucket_name = "analysis-pipelines.cape-dev.org"
+        # this should be in a block similar to what we use in vpn config
+        tls_cfg = {
+            "dir": "./assets-untracked/tls/dap-ui",
+            "ca-cert": "ca.crt",
+            "server-key": "analysis-pipelines.cape-dev.org.key",
+            "server-cert": "analysis-pipelines.cape-dev.org.crt",
+        }
 
         # bucket for hosting static web application for analysis pipelines
         self.dap_web_assets_bucket = VersionedBucket(
@@ -489,76 +551,129 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
-        # TODO: LEFTOFF
-        # * new acm cert
+        # NOTE: is case this results in a ValueError, we want the deployment to
+        # fail for now.
+        # TODO: need to change up VPN stuff to fail if VPN not configured
+        #       correctly. currently it warns the user and moves on, but if VPN
+        #       isn't configured, all this UI stuff can't be accessed anyway.
+        #       just need to clean up how all of this works and fails.
+        self.dapui_acm_certificate = self.create_acm_certificate(
+            f"{self.basename}-dapui-srvracmcert", tls_cfg
+        )
+
         # * ALB
+        # TODO: ISSUE #112
+        self.dapui_alb = aws.lb.LoadBalancer(
+            f"{self.basename}-dapui-alb",
+            internal=True,
+            load_balancer_type="application",
+            # TODO: ISSUE #118
+            # The usage of named vpn/vpn2 subnets here is bad and will be fixed
+            # in 112. we need to rework things for redundant subnets in a sane
+            # way
+            subnets=[
+                self.private_subnets["vpn"].id,
+                self.private_subnets["vpn2"].id,
+            ],
+            # TODO: need to setup logging for the ALB when we get passed demos
+            #       (using access_logs arg)
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} Data Analysis Pipelines UI Load "
+                    "Balancer"
+                ),
+            },
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.dapui_alb_targetgroup = aws.lb.TargetGroup(
+            f"{self.basename}-dapui-trgtgrp",
+            port=443,
+            protocol="HTTPS",
+            protocol_version="HTTP1",
+            target_type="ip",
+            vpc_id=self.vpc.id,
+            health_check=aws.lb.TargetGroupHealthCheckArgs(
+                path="/",
+                port="80",
+                protocol="HTTP",
+                matcher="200,307,405",
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        # attach the s3 network interfaces to the target group
+        # NOTE: this is a bit complicated due to resolution order of stuff in
+        #       pulumi. LSS, we're doing our attachments in an Output.all.apply
+        #       call and this helper is used in the lambda for that call. all
+        #       enumeration is needed to get unique resource names
+        def targetgroupattach_helper(args):
+            for idx, nid in enumerate(args["nids"]):
+                aws.lb.TargetGroupAttachment(
+                    f"{self.basename}-dapui-alb-trgtgrpattch{idx}",
+                    target_group_arn=self.dapui_alb_targetgroup.arn,
+                    target_id=nid,
+                    port=443,
+                    opts=ResourceOptions(parent=self),
+                )
+
+        Output.all(
+            {"nids": self.dap_web_assets_s3vpcep.network_interface_ids}
+        ).apply(lambda args: targetgroupattach_helper(args))
+
+        self.dapui_alb_redirectlistener = aws.lb.Listener(
+            f"{self.basename}-dapui-alb-lstnr",
+            load_balancer_arn=self.dapui_alb.arn,
+            certificate_arn=self.dapui_acm_certificate.arn,
+            port=443,
+            protocol="HTTPS",
+            default_actions=[
+                aws.lb.ListenerDefaultActionArgs(
+                    type="forward",
+                    forward=aws.lb.ListenerDefaultActionForwardArgs(
+                        target_groups=[
+                            aws.lb.ListenerDefaultActionForwardTargetGroupArgs(
+                                arn=self.dapui_alb_targetgroup.arn,
+                                weight=0,
+                            )
+                        ],
+                    ),
+                ),
+            ],
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.dapui_alb_redirectrule = aws.lb.ListenerRule(
+            f"{self.basename}-dapui-alb-lstnrrl",
+            listener_arn=self.dapui_alb_redirectlistener.arn,
+            conditions=[
+                aws.lb.ListenerRuleConditionArgs(
+                    path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
+                        values=["*/"],  # paths ending with `/`
+                    ),
+                ),
+            ],
+            actions=[
+                aws.lb.ListenerRuleActionArgs(
+                    type="redirect",
+                    redirect=aws.lb.ListenerRuleActionRedirectArgs(
+                        # rewrite to go to index.html at the path with
+                        # trailing `/`
+                        path="/#{path}index.html",
+                        protocol="HTTPS",
+                        status_code="HTTP_301",  # Permanent redirect
+                    ),
+                ),
+            ],
+            priority=200,
+            opts=ResourceOptions(parent=self),
+        )
+
         # * Add route53 Stuff after VPC and subnets, but *before* client VPN
         #   * zone
         #   * zone records
         #   * resolver
         # * mod client vpn to use DNS (resolver ips)
-        pass
-
-    # TODO:ISSUE #99
-    def create_vpn_acm_certificate(self):
-        """Create an ACM Certificate resource for VPN.
-
-        In the case that the VPN configuration section does not exist or has any
-        missing values, a ValueError will be raised, meaning VPN configuration
-        should not continue.
-
-        Raises:
-            ValueError: On missing/invalid configuration options
-        """
-
-        def read_pem(pth):
-            """Simple file read helper for use in a list comprehension.
-
-            This is used to read PEM files, but obvi the format of the file
-            doesn't matter to `open`.
-
-            Args:
-                pth: the path to the file to read
-            Raises:
-                FileNotFoundError: if the path cannot be found.
-            Returns:
-                The contents of the file at `pth`.
-            """
-            s = None
-            with open(pth) as f:
-                s = f.read()
-
-            return s
-
-        tls = self.config.get("vpn", "tls")
-        tls_dir = tls.get("dir")
-        if tls_dir is None:
-            raise ValueError(
-                "TLS assets directory not configured for Private swimlane VPN."
-            )
-
-        try:
-            ca_crt_pem, server_key_pem, server_cert_pem = [
-                read_pem(os.path.join(tls_dir, f))
-                for f in [
-                    tls.get("ca-cert"),
-                    tls.get("server-key"),
-                    tls.get("server-cert"),
-                ]
-            ]
-
-            self.vpn_server_acm_cert = aws.acm.Certificate(
-                f"{self.basename}-vpn-srvracmcert",
-                certificate_chain=ca_crt_pem,
-                private_key=server_key_pem,
-                certificate_body=server_cert_pem,
-                opts=ResourceOptions(parent=self),
-            )
-        except FileNotFoundError as fnfe:
-            raise ValueError(
-                f"One or more configured TLS asset files could not be found "
-                f"during VPN configuration: {fnfe}"
-            )
 
     # TODO: ISSUE #100
     def create_vpn(self):
@@ -571,7 +686,10 @@ class PrivateSwimlane(ScopedSwimlane):
         """
 
         try:
-            self.create_vpn_acm_certificate()
+            tls_cfg = self.config.get("vpn", "tls")
+            self.vpn_server_acm_cert = self.create_acm_certificate(
+                f"{self.basename}-vpn-srvracmcert", tls_cfg
+            )
         except ValueError as ve:
             warn(
                 f"Error encountered in configuration of Private swimlane VPN. "
