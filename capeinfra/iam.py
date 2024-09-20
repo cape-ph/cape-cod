@@ -6,7 +6,7 @@ Helpfully, the big three cloud providers all use this term.
 import json
 
 import pulumi_aws as aws
-from pulumi import Input, ResourceOptions
+from pulumi import Input, Output, ResourceOptions
 
 # TODO: ISSUE #72
 
@@ -69,7 +69,7 @@ def get_bucket_reader_policy(
 def get_bucket_web_host_policy(
     buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
     vpc_id: Input[str] | None = None,
-) -> str:
+) -> Output[str]:
     """Get a role policy statement for Get perm on s3 buckets.
 
     This statement also allows an optional VPC id to limit access to. If not
@@ -107,7 +107,7 @@ def get_bucket_web_host_policy(
                 {"Condition": {"StringEquals": {"aws:SourceVpce": vpc_id}}}
             )
 
-    return json.dumps(
+    return Output.json_dumps(
         {
             "Version": "2012-10-17",
             "Statement": stmnts,
