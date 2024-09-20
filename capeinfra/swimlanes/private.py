@@ -503,6 +503,8 @@ class PrivateSwimlane(ScopedSwimlane):
             "server-key": "analysis-pipelines.cape-dev.org.key",
             "server-cert": "analysis-pipelines.cape-dev.org.crt",
         }
+        # private route53 zone
+        rte53_prvt_zone_name = "cape-dev.org"
 
         # bucket for hosting static web application for analysis pipelines
         self.dap_web_assets_bucket = VersionedBucket(
@@ -549,6 +551,9 @@ class PrivateSwimlane(ScopedSwimlane):
                 }}]
             }}"""
             ),
+            tags={
+                "desc_name": f"{self.desc_name} S3 webhost endpoint",
+            },
         )
 
         # NOTE: is case this results in a ValueError, we want the deployment to
@@ -600,6 +605,9 @@ class PrivateSwimlane(ScopedSwimlane):
                 matcher="200,307,405",
             ),
             opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": f"{self.desc_name} DAP UI ALB target group",
+            },
         )
 
         # attach the s3 network interfaces to the target group
@@ -640,6 +648,9 @@ class PrivateSwimlane(ScopedSwimlane):
                     ),
                 ),
             ],
+            tags={
+                "desc_name": f"{self.desc_name} DAP UI ALB HTTPS Listener",
+            },
             opts=ResourceOptions(parent=self),
         )
 
@@ -667,13 +678,75 @@ class PrivateSwimlane(ScopedSwimlane):
             ],
             priority=200,
             opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} DAP UI ALB HTTPS Listener Rule for "
+                    "trailing slash"
+                ),
+            },
         )
 
-        # * Add route53 Stuff after VPC and subnets, but *before* client VPN
-        #   * zone
-        #   * zone records
-        #   * resolver
-        # * mod client vpn to use DNS (resolver ips)
+        self.cape_rt53_private_zone = aws.route53.Zone(
+            f"{self.basename}-cape-rt53-prvtzn",
+            name=rte53_prvt_zone_name,
+            vpcs=[
+                aws.route53.ZoneVpcArgs(vpc_id=self.vpc.id),
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} Route53 private Zone for "
+                    f"{rte53_prvt_zone_name}"
+                ),
+            },
+        )
+
+        self.dapui_alb_zone_record = aws.route53.Record(
+            f"{self.basename}-dapui-rt53-rec",
+            zone_id=self.cape_rt53_private_zone.id,
+            # TODO: don't call this bucket_name long term. this is the dap ui
+            #       domain that just happens to be used for the bucket name
+            name=f"{bucket_name}",
+            type=aws.route53.RecordType.A,
+            aliases=[
+                aws.route53.RecordAliasArgs(
+                    evaluate_target_health=True,
+                    name=self.dapui_alb.dns_name,
+                    zone_id=self.cape_rt53_private_zone.id,
+                ),
+            ],
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.rte53_dns_endpoint = aws.route53.ResolverEndpoint(
+            f"{self.basename}-rt53-dns",
+            direction="INBOUND",
+            # TODO: ISSUE #112
+            security_group_ids=[self.vpc.default_security_group_id],
+            # TODO: ISSUE #118
+            ip_addresses=[
+                aws.route53.ResolverEndpointIpAddressArgs(
+                    subnet_id=self.private_subnets["vpn"].id
+                ),
+                aws.route53.ResolverEndpointIpAddressArgs(
+                    subnet_id=self.private_subnets["vpn2"].id
+                ),
+            ],
+            protocols=[
+                "Do53",
+            ],
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} Route53 DNS Endpoint for "
+                    f"{rte53_prvt_zone_name}"
+                ),
+            },
+            opts=ResourceOptions(parent=self),
+        )
+
+        # TODO:
+        # * deploy root index and schedule dap index files
+        # * config items
 
     # TODO: ISSUE #100
     def create_vpn(self):
@@ -712,6 +785,17 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
+        # make a list of our DNS endpoints
+        dns_server_ips = []
+
+        def ipaddr_list_helper(args):
+            for ipaddr in args["ipaddrs"]:
+                dns_server_ips.append(ipaddr.ip)
+
+        Output.all({"ipaddrs": self.rte53_dns_endpoint.ip_addresses}).apply(
+            lambda args: ipaddr_list_helper(args)
+        )
+
         # Client VPN endpoint, which is the interface VPN connections go thu
         self.client_vpn_endpoint = aws.ec2clientvpn.Endpoint(
             f"{self.basename}-vpnep",
@@ -729,6 +813,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 "cloudwatch_log_group": self.vpn_log_group.name,
                 "cloudwatch_log_stream": self.vpn_log_stream.name,
             },
+            dns_servers=dns_server_ips,
             tags={
                 "desc_name": (
                     f"{self.desc_name} DAP submission sqs message lambda trigger "
