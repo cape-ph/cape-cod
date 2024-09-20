@@ -527,6 +527,27 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
+        # upload our static site
+        # TODO: this is noot great long term as (much like etl scripts) we
+        #       really don't want this site managed in this repo, nor do we want
+        #       to re-upload these files on every deployment (as could happen
+        #       here). but for now...
+        aws.s3.BucketObjectv2(
+            f"{self.basename}-dapui-rtidx",
+            bucket=self.dap_web_assets_bucket.bucket.id,
+            source=FileAsset("./assets/web/static/dap-ui/index.html"),
+            opts=ResourceOptions(parent=self),
+        )
+
+        aws.s3.BucketObjectv2(
+            f"{self.basename}-dapui-reqidx",
+            bucket=self.dap_web_assets_bucket.bucket.id,
+            source=FileAsset(
+                "./assets/web/static/dap-ui/request-dap/index.html"
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
         # s3 endpoint for vpc
         self.dap_web_assets_s3vpcep = aws.ec2.VpcEndpoint(
             f"{self.basename}-dap-web-s3vpcep",
@@ -744,10 +765,6 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # TODO:
-        # * deploy root index and schedule dap index files
-        # * config items
-
     # TODO: ISSUE #100
     def create_vpn(self):
         """Creates/configures a Client VPN Endpoint for the private swimlane.
@@ -785,7 +802,9 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # make a list of our DNS endpoints
+        # make a list of our DNS endpoints. use Output.all.apply method since
+        # the ips may not be resolved and we can't iterate the lis of ip
+        # addresses directly.
         dns_server_ips = []
 
         def ipaddr_list_helper(args):
