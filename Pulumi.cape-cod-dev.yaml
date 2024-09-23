@@ -103,6 +103,8 @@ config:
                           # min_vcpus: 8
 
     cape-cod:datalakehouse:
+        # NOTE: unless specified otherwise in here, all crawlers will run at
+        #       0200 daily
         tributaries:
             - name: hai
               buckets:
@@ -113,7 +115,6 @@ config:
                       name:
                       crawler:
                           exclude:
-                          schedule: "0/5 * * * ? *"
                           classifiers:
                               - cape-csv-standard-classifier
               pipelines:

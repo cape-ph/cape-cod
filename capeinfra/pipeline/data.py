@@ -37,10 +37,11 @@ class DataCrawler(CapeComponentResource):
     def default_config(self):
         return {
             # a cron formatted schedule string for the crawler's periodicity.
+            # The default is 0200 daily (so as to not rack up charges)
             # NOTE: this cannot be faster than every 5
             # minutes. see here for more:
             # https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
-            "schedule": "0 * * * ? *",
+            "schedule": "0 2 * * ? *",
             # A list of custom classifiers for the crawler, if any.
             "classifiers": [],
             # a list of exclude paths for the crawler. see here for more:
