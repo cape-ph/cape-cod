@@ -1,5 +1,7 @@
 """Contains abstractions of object storage for various providers."""
 
+from typing import Any, Optional
+
 import pulumi_aws as aws
 from pulumi import Archive, Asset, ResourceOptions
 
@@ -39,7 +41,9 @@ class VersionedBucket(CapeComponentResource):
         # resource that will get returned by default.
         self.register_outputs({"bucket_name": self.bucket.bucket})
 
-    def add_object(self, name, key, source: Asset | Archive):
+    def add_object(
+        self, name, key, source: Asset | Archive, **obj_kwargs: Optional[Any]
+    ):
         """Adds an object to the versioned bucket.
 
         Args:
@@ -57,4 +61,5 @@ class VersionedBucket(CapeComponentResource):
             key=key,
             source=source,
             opts=ResourceOptions(parent=self),
+            **obj_kwargs,
         )
