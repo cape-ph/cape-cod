@@ -68,7 +68,7 @@ def get_bucket_reader_policy(
 
 def get_bucket_web_host_policy(
     buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
-    vpc_id: Input[str] | None = None,
+    vpce_id: Input[str] | None = None,
 ) -> Output[str]:
     """Get a role policy statement for Get perm on s3 buckets.
 
@@ -78,7 +78,7 @@ def get_bucket_web_host_policy(
     Args:
         buckets: A BucketV2 object or a list of BucketV2 objects to grant
                  Get/List permissions to.
-        vpc_id: An optional VPC id to limit access to.
+        vpce_id: An optional VPC Endpoint id to limit access to.
 
     Returns:
         The policy statement as a json encoded string.
@@ -89,9 +89,13 @@ def get_bucket_web_host_policy(
         {
             "Effect": "Allow",
             "Action": ["s3:GetObject"],
+            "Principal": "*",
             "Resource": [
-                f"arn:aws:s3:::{bucket}/*",
-                f"arn:aws:s3:::{bucket}",
+                # NOTE: because this is used in Output.json_dumps below, we need
+                #       to do these as output.apply instead of just using
+                #       `bucket` as done in some other functions in this module
+                bucket.bucket.apply(lambda b: f"arn:aws:s3:::{b}/*"),
+                bucket.bucket.apply(lambda b: f"arn:aws:s3:::{b}"),
             ],
         }
         for bucket in buckets
