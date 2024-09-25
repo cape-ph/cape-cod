@@ -517,65 +517,104 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # bucket policy that allows read access to this bucket if you come from
-        # the private swimlane vpc
-        aws.s3.BucketPolicy(
-            f"{self.basename}-dap-web-vbktplcy",
-            bucket=self.dap_web_assets_bucket.bucket.id,
-            policy=get_bucket_web_host_policy(
-                self.dap_web_assets_bucket.bucket, self.vpc.id
-            ),
-        )
-
-        # upload our static site
-        # TODO: this is noot great long term as (much like etl scripts) we
-        #       really don't want this site managed in this repo, nor do we want
-        #       to re-upload these files on every deployment (as could happen
-        #       here). but for now...
-        aws.s3.BucketObjectv2(
-            f"{self.basename}-dapui-rtidx",
-            bucket=self.dap_web_assets_bucket.bucket.id,
-            source=FileAsset("./assets/web/static/dap-ui/index.html"),
-            opts=ResourceOptions(parent=self),
-        )
-
-        aws.s3.BucketObjectv2(
-            f"{self.basename}-dapui-reqidx",
-            bucket=self.dap_web_assets_bucket.bucket.id,
-            source=FileAsset(
-                "./assets/web/static/dap-ui/request-dap/index.html"
-            ),
-            opts=ResourceOptions(parent=self),
-        )
-
         # s3 endpoint for vpc
         self.dap_web_assets_s3vpcep = aws.ec2.VpcEndpoint(
             f"{self.basename}-dap-web-s3vpcep",
             vpc_id=self.vpc.id,
             service_name=f"com.amazonaws.{aws.get_region().name}.s3",
             vpc_endpoint_type="Interface",
-            # TODO: need the second AZ vpn subnet here...
-            subnet_ids=[self.private_subnets["vpn"].id],
+            # TODO: need to not know subnet names here...
+            subnet_ids=[
+                self.private_subnets["vpn"].id,
+                self.private_subnets["vpn2"].id,
+            ],
             # TODO: ISSUE #112
             # TODO: make function, tighten s3 perms to GetObj if possible
-            policy=Output.all(self.dap_web_assets_bucket.bucket).apply(
-                lambda bucket_name: f"""{{
-                "Version": "2012-10-17",
-                "Statement": [{{
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": ["s3:*"],
-                    "Resource": [
-                        "arn:aws:s3:::{bucket_name}",
-                        "arn:aws:s3:::{bucket_name}/*"
-                    ]
-                }}]
-            }}"""
+            # policy=Output.all(bucketv2=self.dap_web_assets_bucket.bucket).apply(
+            #     lambda args: f"""{{
+            #     "Version": "2012-10-17",
+            #     "Statement": [{{
+            #         "Effect": "Allow",
+            #         "Principal": "*",
+            #         "Action": ["s3:*"],
+            #         "Resource": [
+            #             "arn:aws:s3:::{args["bucketv2"].bucket}",
+            #             "arn:aws:s3:::{args["bucketv2"].bucket}/*"
+            #         ]
+            #     }}]
+            # }}"""
+            # ),
+            policy=Output.json_dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": ["s3:*"],
+                            "Resource": [
+                                self.dap_web_assets_bucket.bucket.bucket.apply(
+                                    lambda b: f"arn:aws:s3:::{b}"
+                                ),
+                                self.dap_web_assets_bucket.bucket.bucket.apply(
+                                    lambda b: f"arn:aws:s3:::{b}/*"
+                                ),
+                            ],
+                        }
+                    ],
+                }
             ),
             tags={
                 "desc_name": f"{self.desc_name} S3 webhost endpoint",
             },
         )
+
+        # bucket policy that allows read access to this bucket if you come from
+        # the private swimlane vpc
+        aws.s3.BucketPolicy(
+            f"{self.basename}-dap-web-vbktplcy",
+            bucket=self.dap_web_assets_bucket.bucket.id,
+            policy=get_bucket_web_host_policy(
+                self.dap_web_assets_bucket.bucket,
+                self.dap_web_assets_s3vpcep.id,
+            ),
+        )
+
+        # upload our static site
+        # TODO: this is not great long term as (much like etl scripts) we
+        #       really don't want this site managed in this repo, nor do we want
+        #       to re-upload these files on every deployment (as could happen
+        #       here). but for now...
+        self.dap_web_assets_bucket.add_object(
+            f"{self.basename}-dapui-rtidx",
+            "index.html",
+            source=FileAsset("./assets/web/static/dap-ui/index.html"),
+            content_type="text/html",
+        )
+
+        self.dap_web_assets_bucket.add_object(
+            f"{self.basename}-dapui-reqidx",
+            "request-dap/index.html",
+            source=FileAsset(
+                "./assets/web/static/dap-ui/request-dap/index.html"
+            ),
+            content_type="txt/html",
+        )
+        # aws.s3.BucketObjectv2(
+        #     f"{self.basename}-dapui-rtidx",
+        #     bucket=self.dap_web_assets_bucket.bucket.id,
+        #     source=FileAsset("./assets/web/static/dap-ui/index.html"),
+        #     opts=ResourceOptions(parent=self),
+        # )
+
+        # aws.s3.BucketObjectv2(
+        #     f"{self.basename}-dapui-reqidx",
+        #     bucket=self.dap_web_assets_bucket.bucket.id,
+        #     source=FileAsset(
+        #         "./assets/web/static/dap-ui/request-dap/index.html"
+        #     ),
+        #     opts=ResourceOptions(parent=self),
+        # )
 
         # NOTE: is case this results in a ValueError, we want the deployment to
         # fail for now.
@@ -638,16 +677,17 @@ class PrivateSwimlane(ScopedSwimlane):
         #       enumeration is needed to get unique resource names
         def targetgroupattach_helper(args):
             for idx, nid in enumerate(args["nids"]):
+                eni = aws.ec2.get_network_interface(id=nid)
                 aws.lb.TargetGroupAttachment(
                     f"{self.basename}-dapui-alb-trgtgrpattch{idx}",
                     target_group_arn=self.dapui_alb_targetgroup.arn,
-                    target_id=nid,
+                    target_id=eni.private_ip,
                     port=443,
                     opts=ResourceOptions(parent=self),
                 )
 
         Output.all(
-            {"nids": self.dap_web_assets_s3vpcep.network_interface_ids}
+            nids=self.dap_web_assets_s3vpcep.network_interface_ids
         ).apply(lambda args: targetgroupattach_helper(args))
 
         self.dapui_alb_redirectlistener = aws.lb.Listener(
@@ -663,7 +703,7 @@ class PrivateSwimlane(ScopedSwimlane):
                         target_groups=[
                             aws.lb.ListenerDefaultActionForwardTargetGroupArgs(
                                 arn=self.dapui_alb_targetgroup.arn,
-                                weight=0,
+                                weight=1,
                             )
                         ],
                     ),
@@ -675,37 +715,53 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        self.dapui_alb_redirectrule = aws.lb.ListenerRule(
-            f"{self.basename}-dapui-alb-lstnrrl",
-            listener_arn=self.dapui_alb_redirectlistener.arn,
-            conditions=[
-                aws.lb.ListenerRuleConditionArgs(
-                    path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
-                        values=["*/"],  # paths ending with `/`
-                    ),
-                ),
+        # TODO: a bit obnoxious. the rules for path matching are not super
+        #       flexible when many paths are needed. we'll need to play around
+        #       with the best way to do this. seems it's best to have a new rule
+        #       for each path (as opposed to a different condition as there can
+        #       only be 5 conditions per rule)
+        # priorities for these rules are executed lowest to highest (and range
+        # on 1-50000). so have the list here in the order you want them tried
+        # in and the idx will take care of the priority
+        for idx, (ptrn, redir) in enumerate(
+            [
+                ("*/", "/#{path}index.html"),
+                ("/request-dap", "/#{path}/index.html"),
             ],
-            actions=[
-                aws.lb.ListenerRuleActionArgs(
-                    type="redirect",
-                    redirect=aws.lb.ListenerRuleActionRedirectArgs(
-                        # rewrite to go to index.html at the path with
-                        # trailing `/`
-                        path="/#{path}index.html",
-                        protocol="HTTPS",
-                        status_code="HTTP_301",  # Permanent redirect
+            start=1,
+        ):
+            self.dapui_alb_redirectrule = aws.lb.ListenerRule(
+                f"{self.basename}-dapui-alb-lstnrrl{idx}",
+                listener_arn=self.dapui_alb_redirectlistener.arn,
+                conditions=[
+                    aws.lb.ListenerRuleConditionArgs(
+                        path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
+                            values=[ptrn],
+                        ),
                     ),
-                ),
-            ],
-            priority=200,
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} DAP UI ALB HTTPS Listener Rule for "
-                    "trailing slash"
-                ),
-            },
-        )
+                ],
+                actions=[
+                    aws.lb.ListenerRuleActionArgs(
+                        type="redirect",
+                        redirect=aws.lb.ListenerRuleActionRedirectArgs(
+                            # rewrite to go to index.html at the path with
+                            # trailing `/`
+                            # path="/#{path}index.html",
+                            path=redir,
+                            protocol="HTTPS",
+                            status_code="HTTP_301",  # Permanent redirect
+                        ),
+                    ),
+                ],
+                priority=idx,
+                opts=ResourceOptions(parent=self),
+                tags={
+                    "desc_name": (
+                        f"{self.desc_name} DAP UI ALB HTTPS Listener Rule for "
+                        "trailing slash"
+                    ),
+                },
+            )
 
         self.cape_rt53_private_zone = aws.route53.Zone(
             f"{self.basename}-cape-rt53-prvtzn",
@@ -733,7 +789,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 aws.route53.RecordAliasArgs(
                     evaluate_target_health=True,
                     name=self.dapui_alb.dns_name,
-                    zone_id=self.cape_rt53_private_zone.id,
+                    zone_id=self.dapui_alb.zone_id,
                 ),
             ],
             opts=ResourceOptions(parent=self),
@@ -807,13 +863,16 @@ class PrivateSwimlane(ScopedSwimlane):
         # addresses directly.
         dns_server_ips = []
 
-        def ipaddr_list_helper(args):
-            for ipaddr in args["ipaddrs"]:
-                dns_server_ips.append(ipaddr.ip)
-
-        Output.all({"ipaddrs": self.rte53_dns_endpoint.ip_addresses}).apply(
-            lambda args: ipaddr_list_helper(args)
-        )
+        # def ipaddr_list_helper(args):
+        #     warn(f"ipaddr_list_helper with args: {args}")
+        #     for ipaddr in args["ipaddrs"]:
+        #         dns_server_ips.append(ipaddr["ip"])
+        #
+        # Output.all(ipaddrs=self.rte53_dns_endpoint.ip_addresses).apply(
+        #     lambda args: ipaddr_list_helper(args)
+        # )
+        #
+        # warn(f"dns_server_ips: {dns_server_ips}")
 
         # Client VPN endpoint, which is the interface VPN connections go thu
         self.client_vpn_endpoint = aws.ec2clientvpn.Endpoint(
@@ -832,7 +891,12 @@ class PrivateSwimlane(ScopedSwimlane):
                 "cloudwatch_log_group": self.vpn_log_group.name,
                 "cloudwatch_log_stream": self.vpn_log_stream.name,
             },
-            dns_servers=dns_server_ips,
+            # dns_servers=dns_server_ips,
+            dns_servers=Output.all(
+                ipaddrs=self.rte53_dns_endpoint.ip_addresses
+            ).apply(
+                lambda args: [ia["ip"] for ia in args["ipaddrs"]],
+            ),
             tags={
                 "desc_name": (
                     f"{self.desc_name} DAP submission sqs message lambda trigger "
