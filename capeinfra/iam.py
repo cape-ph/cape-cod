@@ -105,10 +105,10 @@ def get_bucket_web_host_policy(
     #       which has arguments for all of these things (resources, conditions,
     #       etc). We should consider switching this module to use that instead
     #       of dumping our own manual json dicts
-    if vpc_id:
+    if vpce_id:
         for d in stmnts:
             d.update(
-                {"Condition": {"StringEquals": {"aws:SourceVpce": vpc_id}}}
+                {"Condition": {"StringEquals": {"aws:SourceVpce": vpce_id}}}
             )
 
     return Output.json_dumps(
