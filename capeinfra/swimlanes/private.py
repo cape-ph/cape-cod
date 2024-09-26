@@ -598,23 +598,8 @@ class PrivateSwimlane(ScopedSwimlane):
             source=FileAsset(
                 "./assets/web/static/dap-ui/request-dap/index.html"
             ),
-            content_type="txt/html",
+            content_type="text/html",
         )
-        # aws.s3.BucketObjectv2(
-        #     f"{self.basename}-dapui-rtidx",
-        #     bucket=self.dap_web_assets_bucket.bucket.id,
-        #     source=FileAsset("./assets/web/static/dap-ui/index.html"),
-        #     opts=ResourceOptions(parent=self),
-        # )
-
-        # aws.s3.BucketObjectv2(
-        #     f"{self.basename}-dapui-reqidx",
-        #     bucket=self.dap_web_assets_bucket.bucket.id,
-        #     source=FileAsset(
-        #         "./assets/web/static/dap-ui/request-dap/index.html"
-        #     ),
-        #     opts=ResourceOptions(parent=self),
-        # )
 
         # NOTE: is case this results in a ValueError, we want the deployment to
         # fail for now.
