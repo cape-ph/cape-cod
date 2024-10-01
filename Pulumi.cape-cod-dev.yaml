@@ -31,7 +31,7 @@ config:
             # registrar unless it is also the domain used in a public facing
             # resource. The domain will need to be able to be used for creation
             # of TLS cert/key pairs though (in the development case, these are
-            # self-signed and in all cases need to ba managed outside this
+            # self-signed and in all cases need to be managed outside this
             # repo).
             domain: cape-dev.org
             # TODO: This is huge. way bigger than we need. For growth but also
@@ -58,7 +58,7 @@ config:
                       - "public"
                 # TODO: ISSUE #118
                 #       We really don't want this kind of name coupling for
-                #       redundacy of subnets (or anything else). we should
+                #       redundancy of subnets (or anything else). we should
                 #       change how these are specified so redundant subnets are
                 #       defined under the same blocks. This is just being done
                 #       for quick demo turn around
@@ -85,7 +85,7 @@ config:
                       dir: "./assets-untracked/tls/dap-ui"
                       ca-cert: "ca.crt"
                       # if not specified, the key and cert are expected to be
-                      # named follwing the pattern {fqdn}.[key|crt] where
+                      # named following the pattern {fqdn}.[key|crt] where
                       # `{fqdn}` is the value of the fqdn provided in the above
                       # static_app scope
                       server-key: "analysis-pipelines.cape-dev.org.key"
