@@ -78,7 +78,7 @@ config:
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
             # but have no server side functions. they are served as-is
-            static_apps:
+            static-apps:
                 - name: "dap-ui"
                   fqdn: "analysis-pipelines.cape-dev.org"
                   tls:
@@ -99,9 +99,9 @@ config:
                   # file paths are relative to `dir`
                   files:
                       - path: "index.html"
-                        content_type: "text/html"
+                        content-type: "text/html"
                       - path: "request-dap/index.html"
-                        content_type: "text/html"
+                        content-type: "text/html"
 
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
