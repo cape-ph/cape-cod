@@ -434,8 +434,8 @@ class PrivateSwimlane(ScopedSwimlane):
             function_response_types=["ReportBatchItemFailures"],
         )
 
-    # TODO: this would potentially be useful in a number of places down the
-    #       road with a little work.
+    # TODO:ISSUE #126
+    # TODO:ISSUE #125
     # TODO:ISSUE #99
     def create_acm_certificate(self, name: str, tls_cfg: dict):
         """Create an ACM Certificate resource for the given tls config.
@@ -488,8 +488,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 f"during ACM Cert ({name}) creation: {err}"
             )
 
-    # TODO: this is probs useful outside here when we do our refactor. would
-    #       work for any static app, not just here
+    # TODO: ISSUE #126
     def _deploy_static_app(self, sa_cfg: dict):
         """Create the S3 bucket for a static app and then deploy app files.
 
@@ -527,14 +526,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.static_apps.setdefault(sa_name, {})
 
         # bucket for hosting static web application
-        # TODO: right now we're setting up a bucket per app. this probably isn't
-        #       totally necessary given we're not using the inherant s3 hosting
-        #       (so we can actually serve from prefixes/subdirs and can probably
-        #       get away with a single static app bucket, though not 100%
-        #       sure). One trick is that the bucket is named for the domain
-        #       being hosted, so all apps would need to be below that (with a
-        #       prefix) and the certs would need to apply for all apps in the
-        #       bucket.
+        # TODO: ISSUE #127
         self.static_apps[sa_name]["bucket"] = VersionedBucket(
             f"{self.basename}-sa-{sa_name}-vbkt",
             bucket_name=sa_fqdn,
@@ -557,8 +549,7 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
         # deploy the static app files
-        # TODO: mod this so we only need subdirs or we deploy everything under
-        #       sa_dir. it's annoying to specify all the files...
+        # TODO: ISSUE #128
         # TODO: this is not great long term as (much like etl scripts) we
         #       really don't want this site managed in this repo, nor do we want
         #       to re-upload these files on every deployment (as could happen
@@ -566,20 +557,12 @@ class PrivateSwimlane(ScopedSwimlane):
         for idx, f in enumerate(sa_files):
             # first we need to track the path to the file (but not the
             # filename). we need this to setup the ALB listener rules later.
-            # TODO: this probably isn't the best way to handle this stuff and
-            #       doesn't take into account things like configuration values
-            #       with ".." in them or other potentially nefarious
-            #       activities. we will refactor the deployment of these files
-            #       and construction of alb listener rules anyway, and when we
-            #       do we need to consider all this stuff too
+            # TODO: ISSUE #128
             p = pathlib.Path(f["path"])
             self.static_apps[sa_name].setdefault("paths", []).append(p.parent)
 
             # then actually add the file to the bucket
-            # TODO: there is an error in our VersionedBucket relating to setting
-            #       the resource name. the bucket object has a bunch of repeated
-            #       info in the resource name after the `vbckt` part. names have
-            #       very limited lengths, so we need to axe that stuff
+            # TODO: ISSUE #129
             self.static_apps[sa_name]["bucket"].add_object(
                 f"{self.basename}-{sa_name}-{idx}",
                 f["path"],
@@ -587,16 +570,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 content_type=f["content-type"],
             )
 
-        # TODO: need to change up VPN stuff to fail if VPN not configured
-        #       correctly. currently it warns the user and moves on, but if VPN
-        #       isn't configured, all this UI stuff can't be accessed anyway.
-        #       just need to clean up how all of this works and fails.
-        # TODO: tls config works as is here, but we probably want to
-        #       consider different setups like having a different cert/key
-        #       setup for each app as well as a single wildcard cert/key
-        #       for all the tls things. in the case we don't use different
-        #       cert/keys for everything, we need a way to see if a cert
-        #       already exists in acm for a given config
+        # TODO: ISSUE #125
         self.static_apps[sa_name]["cert"] = self.create_acm_certificate(
             f"{self.basename}-{sa_name}-srvracmcert", tls_cfg
         )
@@ -604,22 +578,17 @@ class PrivateSwimlane(ScopedSwimlane):
     def _create_static_app_alb(self):
         """Create the application load balancer for static applications."""
         # TODO: ISSUE #112
-        # TODO: we do not need a new load balancer per application. this needs
-        #       to come out and be a single ALB for all apps
         self.sa_alb = aws.lb.LoadBalancer(
             f"{self.basename}-saalb",
             internal=True,
             load_balancer_type="application",
             # TODO: ISSUE #118
-            # The usage of named vpn/vpn2 subnets here is bad and will be fixed
-            # in 112. we need to rework things for redundant subnets in a sane
-            # way
+            # TODO: ISSUE #131
             subnets=[
                 self.private_subnets["vpn"].id,
                 self.private_subnets["vpn2"].id,
             ],
-            # TODO: need to setup logging for the ALB when we get passed demos
-            #       (using access_logs arg)
+            # TODO: ISSUE #132
             tags={
                 "desc_name": (
                     f"{self.desc_name} Static Web Application Pipelines UI "
@@ -672,22 +641,12 @@ class PrivateSwimlane(ScopedSwimlane):
             nids=self.static_app_vpcendpoint.network_interface_ids
         ).apply(lambda args: targetgroupattach_helper(args))
 
-        # TODO: The load balancer/listener/rule/cert setup needs some thought.
-        # - ALBs are limited to 50 per region per account
-        # - An ALB can have a max of 25 certs, 50 listeners, and 100 rules
-        # - certs are setup at the listener level, so if there's a cert per app,
-        #   we'll have a max of 25 apps (and 25 listeners)
-        # - if we do a wildcard cert for all apps, we can have a single listener
-        #   and a rule for each app. this probably has the best bang for buck.
-        # FOR NOW, WE'RE SETTING UP WITH A CERT/LISTENER PER APPLICATION AS THAT
-        # IS HOW WE TESTED ORIGINALLY. THIS SHOULD BE REFACTORED AS ASAP. THE
-        # ONLY THING REALLY STANDING IN THE WAY IS GETTING A WILDCARD CERT GOING
-
+        # TODO: ISSUE #133
         for sa_name, sa_info in self.static_apps.items():
             self.sa_alb_redirectlistener = aws.lb.Listener(
                 f"{self.basename}-{sa_name}-alblstnr",
                 load_balancer_arn=self.sa_alb.arn,
-                certificate_arn=self.static_apps[sa_name]["cert"].arn,
+                certificate_arn=sa_info["cert"].arn,
                 port=443,
                 protocol="HTTPS",
                 default_actions=[
@@ -737,14 +696,7 @@ class PrivateSwimlane(ScopedSwimlane):
                     # the action will be the constant defined above
                     conditions_actions.append((f"/{pth}", actn))
 
-            # TODO: a bit obnoxious. the rules for path matching are not super
-            #       flexible when many paths are needed. we'll need to play around
-            #       with the best way to do this. seems it's best to have a new rule
-            #       for each path (as opposed to a different condition as there can
-            #       only be 5 conditions per rule). if we go with one listener
-            #       and a rule per app as described in a comment above, the
-            #       following would work witha little refactor (with one
-            #       condition per rule which maps to a specific path)
+            # TODO: ISSUE #133
             # priorities for these rules are executed lowest to highest (and range
             # on 1-50000). so have the list here in the order you want them tried
             # in and the idx will take care of the priority
@@ -780,25 +732,9 @@ class PrivateSwimlane(ScopedSwimlane):
                     },
                 )
 
+    # TODO: ISSUES #128
     def create_static_web_resources(self):
-        """Creates resources realted to the simple/toy DAP UI.
-
-        NOTE: This is a notional proof of concept. this is not intended to be
-              a very maintainable or modifyable implementation. once we show
-              it to be working and that it will fulfill the intended purpose
-              for other use cases, we can make it better. Changes to consider:
-              * abstract the ALB out to a separate classe that can be
-                instantiated a number of times based on config (for different
-                applications)
-              * develop a repeatable pattern for deploying the "application"
-                (static asset bundles that are served from s3 in this case).
-                the endpoints from this application should probably feed the
-                ALB abstraction.
-              * move all these abstractions outside this file to somewhere
-                reusable
-              * more TBD
-        """
-        # TODO: update method comment
+        """Creates resources related to private swimlane web resources."""
 
         # private route53 zone
         rte53_prvt_zone_name = self.config.get("domain", default=None)
@@ -813,7 +749,7 @@ class PrivateSwimlane(ScopedSwimlane):
             vpc_id=self.vpc.id,
             service_name=f"com.amazonaws.{aws.get_region().name}.s3",
             vpc_endpoint_type="Interface",
-            # TODO: best to not know subnet names here...
+            # TODO: ISSUE #131
             subnet_ids=[
                 self.private_subnets["vpn"].id,
                 self.private_subnets["vpn2"].id,
@@ -836,15 +772,11 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # Now that we have the static app buckets created, lock them down to
         # read only
-        # TODO: Adding new static apps after the endpoint is created needs to
-        #       change the policy, which may get hard to manage...look into s3
-        #       access points to see if they are needed
+        # TODO: ISSUE #134
         aws.ec2.VpcEndpointPolicy(
             f"{self.basename}-sas3vpcepplcy",
             vpc_endpoint_id=self.static_app_vpcendpoint.id,
-            # TODO: get_bucket_reader_policy and get_bucket_web_host_policy are
-            #       both specified as wanting BucketV2 objects, but i think
-            #       both really want bucket names. verify
+            # TODO: ISSUE #135
             policy=Output.all(
                 buckets=[
                     sa["bucket"].bucket.bucket
@@ -922,6 +854,7 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
     # TODO: ISSUE #100
+    # TODO: ISSUE #130
     def create_vpn(self):
         """Creates/configures a Client VPN Endpoint for the private swimlane.
 
