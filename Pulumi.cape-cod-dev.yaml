@@ -25,6 +25,15 @@ config:
                   srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
     cape-cod:swimlanes:
         private:
+            # This is the private domain that will setup in the cloud provider
+            # private VPC.
+            # At this time, this does not need to be setup with a domain
+            # registrar unless it is also the domain used in a public facing
+            # resource. The domain will need to be able to be used for creation
+            # of TLS cert/key pairs though (in the development case, these are
+            # self-signed and in all cases need to ba managed outside this
+            # repo).
+            domain: cape-dev.org
             # TODO: This is huge. way bigger than we need. For growth but also
             # cause we don't really know what address space we need yet. Adjust
             # as needed
@@ -65,6 +74,35 @@ config:
             api:
                 dap:
                     meta: *depmet
+            # static apps are deployed to s3 as html/js/css bundles and are
+            # exposed through an application load balancer. these may hit API
+            # endpoints (assuming the required permissions/roles are available),
+            # but have no server side functions. they are served as-is
+            static_apps:
+                - name: "dap-ui"
+                  fqdn: "analysis-pipelines.cape-dev.org"
+                  tls:
+                      dir: "./assets-untracked/tls/dap-ui"
+                      ca-cert: "ca.crt"
+                      # if not specified, the key and cert are expected to be
+                      # named follwing the pattern {fqdn}.[key|crt] where
+                      # `{fqdn}` is the value of the fqdn provided in the above
+                      # static_app scope
+                      server-key: "analysis-pipelines.cape-dev.org.key"
+                      server-cert: "analysis-pipelines.cape-dev.org.crt"
+                  # repo_dir is the root directory in the repo for this app's
+                  # files.
+                  # TODO: long-term we will not want to have these apps in the
+                  #       repo, but rather follow the pattern we use with ETL
+                  #       scripts using separate repos
+                  dir: "./assets/web/static/dap-ui"
+                  # file paths are relative to `dir`
+                  files:
+                      - path: "index.html"
+                        content_type: "text/html"
+                      - path: "request-dap/index.html"
+                        content_type: "text/html"
+
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
