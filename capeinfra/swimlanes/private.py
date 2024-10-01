@@ -5,6 +5,7 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 
 import json
 import os.path
+import pathlib
 
 import pulumi_aws as aws
 from pulumi import (
@@ -17,6 +18,7 @@ from pulumi import (
 )
 
 from ..iam import (
+    get_bucket_reader_policy,
     get_bucket_web_host_policy,
     get_dap_api_policy,
     get_inline_role,
@@ -47,10 +49,12 @@ class PrivateSwimlane(ScopedSwimlane):
             # by default (if not overridden in config) this will get ip space
             # 10.0.0.0-255
             "cidr-block": "10.0.0.0/24",
+            "domain": "cape-dev.org",
             "public-subnet": {
                 "cidr-block": "10.0.0.0/24",
             },
             "private-subnets": [],
+            "static-apps": [],
             "api": {
                 "dap": {
                     "meta": {
@@ -75,7 +79,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
         self.create_dap_api()
-        self.create_web_resources()
+        self.create_static_web_resources()
         self.create_vpn()
         self.prepare_nextflow_executor()
 
@@ -484,32 +488,56 @@ class PrivateSwimlane(ScopedSwimlane):
                 f"during ACM Cert ({name}) creation: {err}"
             )
 
-    def create_web_resources(self):
-        """"""
-        # NOTE: This is a notional proof of concept. this is not intended to be
-        #       a very maintainable or modifyable implementation. once we show
-        #       it to be working and that it will fulfill the intended purpose
-        #       for other use cases, we can make it better. we should probably
-        #       abstract the ALB and "application" out to a separate class that
-        #       can be instantiated a number of times based on config
+    # TODO: this is probs useful outside here when we do our refactor. would
+    #       work for any static app, not just here
+    def _deploy_static_app(self, sa_cfg: dict):
+        """Create the S3 bucket for a static app and then deploy app files.
 
-        # TODO: Config all these values
-        # need to make a new cert/key pair for this domain (wildcard cert?)
-        bucket_name = "analysis-pipelines.cape-dev.org"
-        # this should be in a block similar to what we use in vpn config
-        tls_cfg = {
-            "dir": "./assets-untracked/tls/dap-ui",
-            "ca-cert": "ca.crt",
-            "server-key": "analysis-pipelines.cape-dev.org.key",
-            "server-cert": "analysis-pipelines.cape-dev.org.crt",
-        }
-        # private route53 zone
-        rte53_prvt_zone_name = "cape-dev.org"
+        Args:
+            sa_cfg: The configuration dict for the static application.
+        """
+        # Grab the config values of interest so we can check if we should
+        # proceed
+        sa_name = sa_cfg.get("name", None)
+        sa_fqdn = sa_cfg.get("fqdn", None)
+        sa_dir = sa_cfg.get("dir", None)
+        sa_files = sa_cfg.get("files", None)
+        tls_cfg = sa_cfg.get("tls", None)
 
-        # bucket for hosting static web application for analysis pipelines
-        self.dap_web_assets_bucket = VersionedBucket(
-            f"{self.basename}-dap-web-vbkt",
-            bucket_name=bucket_name,
+        if None in (sa_name, sa_fqdn, sa_dir, sa_files, tls_cfg):
+
+            msg = (
+                f"Static App {sa_name or 'UNNAMED'} contains one or more "
+                "invalid configuration values that are required. The "
+                "application will not be deployed. Check the app name, fqdn, "
+                "repo directory, app files and tls configuration."
+            )
+
+            warn(msg)
+            raise ValueError(msg)
+
+        # NOTE:
+        # self.static_apps format:
+        # {
+        #   app_name: {
+        #       "bucket": VersionedBucket,
+        #       "cert": aws.acm.Certificate,
+        #   }
+        # }
+        self.static_apps.setdefault(sa_name, {})
+
+        # bucket for hosting static web application
+        # TODO: right now we're setting up a bucket per app. this probably isn't
+        #       totally necessary given we're not using the inherant s3 hosting
+        #       (so we can actually serve from prefixes/subdirs and can probably
+        #       get away with a single static app bucket, though not 100%
+        #       sure). One trick is that the bucket is named for the domain
+        #       being hosted, so all apps would need to be below that (with a
+        #       prefix) and the certs would need to apply for all apps in the
+        #       bucket.
+        self.static_apps[sa_name]["bucket"] = VersionedBucket(
+            f"{self.basename}-sa-{sa_name}-vbkt",
+            bucket_name=sa_fqdn,
             desc_name=(
                 f"{self.desc_name} analysis pipeline static web application "
                 "bucket"
@@ -517,104 +545,69 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # s3 endpoint for vpc
-        self.dap_web_assets_s3vpcep = aws.ec2.VpcEndpoint(
-            f"{self.basename}-dap-web-s3vpcep",
-            vpc_id=self.vpc.id,
-            service_name=f"com.amazonaws.{aws.get_region().name}.s3",
-            vpc_endpoint_type="Interface",
-            # TODO: need to not know subnet names here...
-            subnet_ids=[
-                self.private_subnets["vpn"].id,
-                self.private_subnets["vpn2"].id,
-            ],
-            # TODO: ISSUE #112
-            # TODO: make function, tighten s3 perms to GetObj if possible
-            # policy=Output.all(bucketv2=self.dap_web_assets_bucket.bucket).apply(
-            #     lambda args: f"""{{
-            #     "Version": "2012-10-17",
-            #     "Statement": [{{
-            #         "Effect": "Allow",
-            #         "Principal": "*",
-            #         "Action": ["s3:*"],
-            #         "Resource": [
-            #             "arn:aws:s3:::{args["bucketv2"].bucket}",
-            #             "arn:aws:s3:::{args["bucketv2"].bucket}/*"
-            #         ]
-            #     }}]
-            # }}"""
-            # ),
-            policy=Output.json_dumps(
-                {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": "*",
-                            "Action": ["s3:*"],
-                            "Resource": [
-                                self.dap_web_assets_bucket.bucket.bucket.apply(
-                                    lambda b: f"arn:aws:s3:::{b}"
-                                ),
-                                self.dap_web_assets_bucket.bucket.bucket.apply(
-                                    lambda b: f"arn:aws:s3:::{b}/*"
-                                ),
-                            ],
-                        }
-                    ],
-                }
-            ),
-            tags={
-                "desc_name": f"{self.desc_name} S3 webhost endpoint",
-            },
-        )
-
         # bucket policy that allows read access to this bucket if you come from
         # the private swimlane vpc
         aws.s3.BucketPolicy(
-            f"{self.basename}-dap-web-vbktplcy",
-            bucket=self.dap_web_assets_bucket.bucket.id,
+            f"{self.basename}-{sa_name}-vbktplcy",
+            bucket=self.static_apps[sa_name]["bucket"].bucket.id,
             policy=get_bucket_web_host_policy(
-                self.dap_web_assets_bucket.bucket,
-                self.dap_web_assets_s3vpcep.id,
+                self.static_apps[sa_name]["bucket"].bucket,
+                self.static_app_vpcendpoint.id,
             ),
         )
 
-        # upload our static site
+        # deploy the static app files
+        # TODO: mod this so we only need subdirs or we deploy everything under
+        #       sa_dir. it's annoying to specify all the files...
         # TODO: this is not great long term as (much like etl scripts) we
         #       really don't want this site managed in this repo, nor do we want
         #       to re-upload these files on every deployment (as could happen
         #       here). but for now...
-        self.dap_web_assets_bucket.add_object(
-            f"{self.basename}-dapui-rtidx",
-            "index.html",
-            source=FileAsset("./assets/web/static/dap-ui/index.html"),
-            content_type="text/html",
-        )
+        for idx, f in enumerate(sa_files):
+            # first we need to track the path to the file (but not the
+            # filename). we need this to setup the ALB listener rules later.
+            # TODO: this probably isn't the best way to handle this stuff and
+            #       doesn't take into account things like configuration values
+            #       with ".." in them or other potentially nefarious
+            #       activities. we will refactor the deployment of these files
+            #       and construction of alb listener rules anyway, and when we
+            #       do we need to consider all this stuff too
+            p = pathlib.Path(f["path"])
+            self.static_apps[sa_name].setdefault("paths", []).append(p.parent)
 
-        self.dap_web_assets_bucket.add_object(
-            f"{self.basename}-dapui-reqidx",
-            "request-dap/index.html",
-            source=FileAsset(
-                "./assets/web/static/dap-ui/request-dap/index.html"
-            ),
-            content_type="text/html",
-        )
+            # then actually add the file to the bucket
+            # TODO: there is an error in our VersionedBucket relating to setting
+            #       the resource name. the bucket object has a bunch of repeated
+            #       info in the resource name after the `vbckt` part. names have
+            #       very limited lengths, so we need to axe that stuff
+            self.static_apps[sa_name]["bucket"].add_object(
+                f"{self.basename}-{sa_name}-{idx}",
+                f["path"],
+                source=FileAsset(os.path.join(sa_dir, f["path"])),
+                content_type=f["content-type"],
+            )
 
-        # NOTE: is case this results in a ValueError, we want the deployment to
-        # fail for now.
         # TODO: need to change up VPN stuff to fail if VPN not configured
         #       correctly. currently it warns the user and moves on, but if VPN
         #       isn't configured, all this UI stuff can't be accessed anyway.
         #       just need to clean up how all of this works and fails.
-        self.dapui_acm_certificate = self.create_acm_certificate(
-            f"{self.basename}-dapui-srvracmcert", tls_cfg
+        # TODO: tls config works as is here, but we probably want to
+        #       consider different setups like having a different cert/key
+        #       setup for each app as well as a single wildcard cert/key
+        #       for all the tls things. in the case we don't use different
+        #       cert/keys for everything, we need a way to see if a cert
+        #       already exists in acm for a given config
+        self.static_apps[sa_name]["cert"] = self.create_acm_certificate(
+            f"{self.basename}-{sa_name}-srvracmcert", tls_cfg
         )
 
-        # * ALB
+    def _create_static_app_alb(self):
+        """Create the application load balancer for static applications."""
         # TODO: ISSUE #112
-        self.dapui_alb = aws.lb.LoadBalancer(
-            f"{self.basename}-dapui-alb",
+        # TODO: we do not need a new load balancer per application. this needs
+        #       to come out and be a single ALB for all apps
+        self.sa_alb = aws.lb.LoadBalancer(
+            f"{self.basename}-saalb",
             internal=True,
             load_balancer_type="application",
             # TODO: ISSUE #118
@@ -629,15 +622,17 @@ class PrivateSwimlane(ScopedSwimlane):
             #       (using access_logs arg)
             tags={
                 "desc_name": (
-                    f"{self.desc_name} Data Analysis Pipelines UI Load "
-                    "Balancer"
+                    f"{self.desc_name} Static Web Application Pipelines UI "
+                    "Load Balancer"
                 ),
             },
             opts=ResourceOptions(parent=self),
         )
 
-        self.dapui_alb_targetgroup = aws.lb.TargetGroup(
-            f"{self.basename}-dapui-trgtgrp",
+        # The target group is where traffic is ultimately sent after being
+        # balanced.
+        self.sa_alb_targetgroup = aws.lb.TargetGroup(
+            f"{self.basename}-saalb-trgtgrp",
             port=443,
             protocol="HTTPS",
             protocol_version="HTTP1",
@@ -651,7 +646,9 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
             opts=ResourceOptions(parent=self),
             tags={
-                "desc_name": f"{self.desc_name} DAP UI ALB target group",
+                "desc_name": (
+                    f"{self.desc_name} static web application ALB target group"
+                ),
             },
         )
 
@@ -664,90 +661,208 @@ class PrivateSwimlane(ScopedSwimlane):
             for idx, nid in enumerate(args["nids"]):
                 eni = aws.ec2.get_network_interface(id=nid)
                 aws.lb.TargetGroupAttachment(
-                    f"{self.basename}-dapui-alb-trgtgrpattch{idx}",
-                    target_group_arn=self.dapui_alb_targetgroup.arn,
+                    f"{self.basename}-saalb-trgtgrpattch{idx}",
+                    target_group_arn=self.sa_alb_targetgroup.arn,
                     target_id=eni.private_ip,
                     port=443,
                     opts=ResourceOptions(parent=self),
                 )
 
         Output.all(
-            nids=self.dap_web_assets_s3vpcep.network_interface_ids
+            nids=self.static_app_vpcendpoint.network_interface_ids
         ).apply(lambda args: targetgroupattach_helper(args))
 
-        self.dapui_alb_redirectlistener = aws.lb.Listener(
-            f"{self.basename}-dapui-alb-lstnr",
-            load_balancer_arn=self.dapui_alb.arn,
-            certificate_arn=self.dapui_acm_certificate.arn,
-            port=443,
-            protocol="HTTPS",
-            default_actions=[
-                aws.lb.ListenerDefaultActionArgs(
-                    type="forward",
-                    forward=aws.lb.ListenerDefaultActionForwardArgs(
-                        target_groups=[
-                            aws.lb.ListenerDefaultActionForwardTargetGroupArgs(
-                                arn=self.dapui_alb_targetgroup.arn,
-                                weight=1,
-                            )
-                        ],
+        # TODO: The load balancer/listener/rule/cert setup needs some thought.
+        # - ALBs are limited to 50 per region per account
+        # - An ALB can have a max of 25 certs, 50 listeners, and 100 rules
+        # - certs are setup at the listener level, so if there's a cert per app,
+        #   we'll have a max of 25 apps (and 25 listeners)
+        # - if we do a wildcard cert for all apps, we can have a single listener
+        #   and a rule for each app. this probably has the best bang for buck.
+        # FOR NOW, WE'RE SETTING UP WITH A CERT/LISTENER PER APPLICATION AS THAT
+        # IS HOW WE TESTED ORIGINALLY. THIS SHOULD BE REFACTORED AS ASAP. THE
+        # ONLY THING REALLY STANDING IN THE WAY IS GETTING A WILDCARD CERT GOING
+
+        for sa_name, sa_info in self.static_apps.items():
+            self.sa_alb_redirectlistener = aws.lb.Listener(
+                f"{self.basename}-{sa_name}-alblstnr",
+                load_balancer_arn=self.sa_alb.arn,
+                certificate_arn=self.static_apps[sa_name]["cert"].arn,
+                port=443,
+                protocol="HTTPS",
+                default_actions=[
+                    aws.lb.ListenerDefaultActionArgs(
+                        type="forward",
+                        forward=aws.lb.ListenerDefaultActionForwardArgs(
+                            target_groups=[
+                                aws.lb.ListenerDefaultActionForwardTargetGroupArgs(
+                                    arn=self.sa_alb_targetgroup.arn,
+                                    weight=1,
+                                )
+                            ],
+                        ),
                     ),
-                ),
+                ],
+                tags={
+                    "desc_name": (
+                        f"{self.desc_name} {sa_name} ALB HTTPS Listener"
+                    ),
+                },
+                opts=ResourceOptions(parent=self),
+            )
+
+            # the following code up some rules around rewriting request paths
+            # where the url ends in a trailing slash or a an application (path)
+            # name. as all of our apps are served as a single `index.html`
+            # file, we need to rewrite the url to actually be for that file.
+            # this is because the default behavior of s3 is to provide a file
+            # listing when given a url ending in a trailing slash. that would
+            # be no bueno
+
+            # first build the list of patterns (for conditions) and
+            # rewrites/redirects (for actions). we will always have a default
+            # that handles paths ending in trailing slashes
+            conditions_actions = [("*/", "/#{path}index.html")]
+
+            # this constant action will work for all of our conditions and so we
+            # only need to define it once
+            actn = "/#{path}/index.html"
+
+            for pth in self.static_apps[sa_name]["paths"]:
+                # we can ignore "." path here as that is the root of the s3
+                # bucket and would be covered by the default case.
+                if pth != ".":
+                    # pth will look like `a/b/c` relative to the root of the s3
+                    # bucket. the condition for that will look like `/a/b/c` and
+                    # the action will be the constant defined above
+                    conditions_actions.append((f"/{pth}", actn))
+
+            # TODO: a bit obnoxious. the rules for path matching are not super
+            #       flexible when many paths are needed. we'll need to play around
+            #       with the best way to do this. seems it's best to have a new rule
+            #       for each path (as opposed to a different condition as there can
+            #       only be 5 conditions per rule). if we go with one listener
+            #       and a rule per app as described in a comment above, the
+            #       following would work witha little refactor (with one
+            #       condition per rule which maps to a specific path)
+            # priorities for these rules are executed lowest to highest (and range
+            # on 1-50000). so have the list here in the order you want them tried
+            # in and the idx will take care of the priority
+            for idx, (ptrn, redir) in enumerate(conditions_actions, start=1):
+                aws.lb.ListenerRule(
+                    f"{self.basename}-saalb-lstnrrl{idx}",
+                    listener_arn=self.sa_alb_redirectlistener.arn,
+                    conditions=[
+                        aws.lb.ListenerRuleConditionArgs(
+                            path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
+                                values=[ptrn],
+                            ),
+                        ),
+                    ],
+                    actions=[
+                        aws.lb.ListenerRuleActionArgs(
+                            type="redirect",
+                            redirect=aws.lb.ListenerRuleActionRedirectArgs(
+                                path=redir,
+                                protocol="HTTPS",
+                                # Permanent redirect for caching
+                                status_code="HTTP_301",
+                            ),
+                        ),
+                    ],
+                    priority=idx,
+                    opts=ResourceOptions(parent=self),
+                    tags={
+                        "desc_name": (
+                            f"{self.desc_name} {sa_name} ALB HTTPS Listener Rule for "
+                            "trailing slash"
+                        ),
+                    },
+                )
+
+    def create_static_web_resources(self):
+        """Creates resources realted to the simple/toy DAP UI.
+
+        NOTE: This is a notional proof of concept. this is not intended to be
+              a very maintainable or modifyable implementation. once we show
+              it to be working and that it will fulfill the intended purpose
+              for other use cases, we can make it better. Changes to consider:
+              * abstract the ALB out to a separate classe that can be
+                instantiated a number of times based on config (for different
+                applications)
+              * develop a repeatable pattern for deploying the "application"
+                (static asset bundles that are served from s3 in this case).
+                the endpoints from this application should probably feed the
+                ALB abstraction.
+              * move all these abstractions outside this file to somewhere
+                reusable
+              * more TBD
+        """
+        # TODO: update method comment
+
+        # private route53 zone
+        rte53_prvt_zone_name = self.config.get("domain", default=None)
+
+        sa_cfgs = self.config.get("static-apps", default=None)
+        if sa_cfgs is None:
+            warn(f"No static apps configured for swimlane {self.basename}")
+            return
+
+        self.static_app_vpcendpoint = aws.ec2.VpcEndpoint(
+            f"{self.basename}-sas3vpcep",
+            vpc_id=self.vpc.id,
+            service_name=f"com.amazonaws.{aws.get_region().name}.s3",
+            vpc_endpoint_type="Interface",
+            # TODO: best to not know subnet names here...
+            subnet_ids=[
+                self.private_subnets["vpn"].id,
+                self.private_subnets["vpn2"].id,
             ],
+            # TODO: ISSUE #112
             tags={
-                "desc_name": f"{self.desc_name} DAP UI ALB HTTPS Listener",
+                "desc_name": f"{self.desc_name} S3 webhost endpoint",
             },
+        )
+
+        self.static_apps = {}
+        for sa_cfg in sa_cfgs:
+            try:
+                self._deploy_static_app(sa_cfg)
+            except ValueError:
+                # ValueError will be thrown for invalid configuration of a
+                # static app. Logging will have already happened, so we just
+                # need to halt the deployment of that app and move on
+                continue
+
+        # Now that we have the static app buckets created, lock them down to
+        # read only
+        # TODO: Adding new static apps after the endpoint is created needs to
+        #       change the policy, which may get hard to manage...look into s3
+        #       access points to see if they are needed
+        aws.ec2.VpcEndpointPolicy(
+            f"{self.basename}-sas3vpcepplcy",
+            vpc_endpoint_id=self.static_app_vpcendpoint.id,
+            # TODO: get_bucket_reader_policy and get_bucket_web_host_policy are
+            #       both specified as wanting BucketV2 objects, but i think
+            #       both really want bucket names. verify
+            policy=Output.all(
+                buckets=[
+                    sa["bucket"].bucket.bucket
+                    for sa in self.static_apps.values()
+                ],
+            ).apply(
+                lambda args: get_bucket_reader_policy(
+                    buckets=args["buckets"], principal="*"
+                )
+            ),
             opts=ResourceOptions(parent=self),
         )
 
-        # TODO: a bit obnoxious. the rules for path matching are not super
-        #       flexible when many paths are needed. we'll need to play around
-        #       with the best way to do this. seems it's best to have a new rule
-        #       for each path (as opposed to a different condition as there can
-        #       only be 5 conditions per rule)
-        # priorities for these rules are executed lowest to highest (and range
-        # on 1-50000). so have the list here in the order you want them tried
-        # in and the idx will take care of the priority
-        for idx, (ptrn, redir) in enumerate(
-            [
-                ("*/", "/#{path}index.html"),
-                ("/request-dap", "/#{path}/index.html"),
-            ],
-            start=1,
-        ):
-            self.dapui_alb_redirectrule = aws.lb.ListenerRule(
-                f"{self.basename}-dapui-alb-lstnrrl{idx}",
-                listener_arn=self.dapui_alb_redirectlistener.arn,
-                conditions=[
-                    aws.lb.ListenerRuleConditionArgs(
-                        path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
-                            values=[ptrn],
-                        ),
-                    ),
-                ],
-                actions=[
-                    aws.lb.ListenerRuleActionArgs(
-                        type="redirect",
-                        redirect=aws.lb.ListenerRuleActionRedirectArgs(
-                            # rewrite to go to index.html at the path with
-                            # trailing `/`
-                            # path="/#{path}index.html",
-                            path=redir,
-                            protocol="HTTPS",
-                            status_code="HTTP_301",  # Permanent redirect
-                        ),
-                    ),
-                ],
-                priority=idx,
-                opts=ResourceOptions(parent=self),
-                tags={
-                    "desc_name": (
-                        f"{self.desc_name} DAP UI ALB HTTPS Listener Rule for "
-                        "trailing slash"
-                    ),
-                },
-            )
+        self._create_static_app_alb()
 
+        # setup the private hosted zone. this is totally inside our private
+        # vpc, so it doesn't need to be registered anywhere public unless used
+        # for public facing resources as well.
         self.cape_rt53_private_zone = aws.route53.Zone(
             f"{self.basename}-cape-rt53-prvtzn",
             name=rte53_prvt_zone_name,
@@ -763,22 +878,22 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         )
 
-        self.dapui_alb_zone_record = aws.route53.Record(
-            f"{self.basename}-dapui-rt53-rec",
-            zone_id=self.cape_rt53_private_zone.id,
-            # TODO: don't call this bucket_name long term. this is the dap ui
-            #       domain that just happens to be used for the bucket name
-            name=f"{bucket_name}",
-            type=aws.route53.RecordType.A,
-            aliases=[
-                aws.route53.RecordAliasArgs(
-                    evaluate_target_health=True,
-                    name=self.dapui_alb.dns_name,
-                    zone_id=self.dapui_alb.zone_id,
-                ),
-            ],
-            opts=ResourceOptions(parent=self),
-        )
+        # we need a zone record per static app bucket
+        for sa_name, sa_info in self.static_apps.items():
+            aws.route53.Record(
+                f"{self.basename}-{sa_name}-rt53rec",
+                zone_id=self.cape_rt53_private_zone.id,
+                name=sa_info["bucket"].bucket.bucket,
+                type=aws.route53.RecordType.A,
+                aliases=[
+                    aws.route53.RecordAliasArgs(
+                        evaluate_target_health=True,
+                        name=self.sa_alb.dns_name,
+                        zone_id=self.sa_alb.zone_id,
+                    ),
+                ],
+                opts=ResourceOptions(parent=self),
+            )
 
         self.rte53_dns_endpoint = aws.route53.ResolverEndpoint(
             f"{self.basename}-rt53-dns",
@@ -842,22 +957,6 @@ class PrivateSwimlane(ScopedSwimlane):
             log_group_name=self.vpn_log_group.name,
             opts=ResourceOptions(parent=self),
         )
-
-        # make a list of our DNS endpoints. use Output.all.apply method since
-        # the ips may not be resolved and we can't iterate the lis of ip
-        # addresses directly.
-        dns_server_ips = []
-
-        # def ipaddr_list_helper(args):
-        #     warn(f"ipaddr_list_helper with args: {args}")
-        #     for ipaddr in args["ipaddrs"]:
-        #         dns_server_ips.append(ipaddr["ip"])
-        #
-        # Output.all(ipaddrs=self.rte53_dns_endpoint.ip_addresses).apply(
-        #     lambda args: ipaddr_list_helper(args)
-        # )
-        #
-        # warn(f"dns_server_ips: {dns_server_ips}")
 
         # Client VPN endpoint, which is the interface VPN connections go thu
         self.client_vpn_endpoint = aws.ec2clientvpn.Endpoint(
