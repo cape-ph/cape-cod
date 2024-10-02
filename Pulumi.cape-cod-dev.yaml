@@ -98,17 +98,10 @@ config:
                   dir: "./assets/web/static/dap-ui"
                   # file paths are relative to `dir`
                   files:
-                      # TODO: These are the inital toy html static pages and
-                      #       they will be removed in the not too distant
-                      #       future
-                      - path: "nested/index.html"
-                        content-type: "text/html"
-                      - path: "nested/request-dap/index.html"
-                        content-type: "text/html"
-                        # These are the files for the baseline POC svelte UI for
-                        # the data analsysis pipelines.
-                        # NOTE: The way these are deployed could change at any
-                        #       time. we do not intend to leave this this way
+                      # These are the files for the baseline POC svelte UI for
+                      # the data analsysis pipelines.
+                      # NOTE: The way these are deployed could change at any
+                      #       time. we do not intend to leave this this way
                       - path: "index.html"
                         content-type: "text/html"
                       - path: "submit.html"
@@ -181,6 +174,13 @@ config:
                         content-type: "application/js"
                       - path: "_app/immutable/entry/app.B5Zzf6Hc.js"
                         content-type: "application/js"
+                      # TODO: These are the inital toy html static pages and
+                      #       they will be removed in the not too distant
+                      #       future
+                      - path: "nested/index.html"
+                        content-type: "text/html"
+                      - path: "nested/request-dap/index.html"
+                        content-type: "text/html"
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
