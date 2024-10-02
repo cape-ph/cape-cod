@@ -125,7 +125,7 @@ config:
                 environments:
                     - name: analysis
                       # an AMI ID to use for each EC2 instance
-                      image: ami-00536b5fab4cc600c
+                      image: ami-045e492cc94d39039
                       # a list of subnets that ec2 instances in the compute
                       # environments live on
                       subnets:
