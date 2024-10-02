@@ -521,6 +521,7 @@ class PrivateSwimlane(ScopedSwimlane):
         #   app_name: {
         #       "bucket": VersionedBucket,
         #       "cert": aws.acm.Certificate,
+        #       "paths": [],
         #   }
         # }
         self.static_apps.setdefault(sa_name, {})
