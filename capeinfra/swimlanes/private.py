@@ -560,7 +560,7 @@ class PrivateSwimlane(ScopedSwimlane):
             # filename). we need this to setup the ALB listener rules later.
             # TODO: ISSUE #128
             p = pathlib.Path(f["path"])
-            self.static_apps[sa_name].setdefault("paths", []).append(p.parent)
+            self.static_apps[sa_name].setdefault("paths", set()).add(p.parent)
 
             # then actually add the file to the bucket
             # TODO: ISSUE #129
