@@ -6,7 +6,7 @@ Helpfully, the big three cloud providers all use this term.
 import json
 
 import pulumi_aws as aws
-from pulumi import Input, ResourceOptions
+from pulumi import Input, Output, ResourceOptions
 
 # TODO: ISSUE #72
 
@@ -37,31 +37,92 @@ def get_service_assume_role(srvc: str) -> str:
 
 def get_bucket_reader_policy(
     buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
+    principal: str | None = None,
 ) -> str:
     """Get a role policy statement for Get/List perms on s3 buckets.
 
     Args:
         buckets: A BucketV2 object or a list of BucketV2 objects to grant
                  Get/List permissions to.
+        principal: The principal the policy applies to. In the case of service
+                   roles (e.g. the policy is in an inline role attached to a
+                   glue crawler role), this isn't needed.
 
     Returns:
         The policy statement as a json encoded string.
     """
     buckets = [buckets] if isinstance(buckets, aws.s3.BucketV2) else buckets
-    return json.dumps(
+    policy_dict = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:ListBucket"],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket}/*",
+                    f"arn:aws:s3:::{bucket}",
+                ],
+            }
+            for bucket in buckets
+        ],
+    }
+
+    if principal is not None:
+        for stmnt in policy_dict["Statement"]:
+            stmnt.setdefault("Principal", principal)
+
+    return json.dumps(policy_dict)
+
+
+def get_bucket_web_host_policy(
+    buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
+    vpce_id: Input[str] | None = None,
+) -> Output[str]:
+    """Get a role policy statement for Get perm on s3 buckets.
+
+    This statement also allows an optional VPC id to limit access to. If not
+    specified, this will result in no VPC restriction
+
+    Args:
+        buckets: A BucketV2 object or a list of BucketV2 objects to grant
+                 Get/List permissions to.
+        vpce_id: An optional VPC Endpoint id to limit access to.
+
+    Returns:
+        The policy statement as a json encoded string.
+    """
+    buckets = [buckets] if isinstance(buckets, aws.s3.BucketV2) else buckets
+
+    stmnts = [
+        {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject"],
+            "Principal": "*",
+            "Resource": [
+                # NOTE: because this is used in Output.json_dumps below, we need
+                #       to do these as output.apply instead of just using
+                #       `bucket` as done in some other functions in this module
+                bucket.bucket.apply(lambda b: f"arn:aws:s3:::{b}/*"),
+                bucket.bucket.apply(lambda b: f"arn:aws:s3:::{b}"),
+            ],
+        }
+        for bucket in buckets
+    ]
+
+    # TODO: This would be a ton cleaner using aws.iam.get_policy_document
+    #       which has arguments for all of these things (resources, conditions,
+    #       etc). We should consider switching this module to use that instead
+    #       of dumping our own manual json dicts
+    if vpce_id:
+        for d in stmnts:
+            d.update(
+                {"Condition": {"StringEquals": {"aws:SourceVpce": vpce_id}}}
+            )
+
+    return Output.json_dumps(
         {
             "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": ["s3:GetObject", "s3:ListBucket"],
-                    "Resource": [
-                        f"arn:aws:s3:::{bucket}/*",
-                        f"arn:aws:s3:::{bucket}",
-                    ],
-                }
-                for bucket in buckets
-            ],
+            "Statement": stmnts,
         },
     )
 
