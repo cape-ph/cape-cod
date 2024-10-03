@@ -688,7 +688,18 @@ class PrivateSwimlane(ScopedSwimlane):
             # only need to define it once
             actn = "/#{path}/index.html"
 
-            for pth in self.static_apps[sa_name]["paths"]:
+            # NOTE: self.static_apps[sa_name]["paths"] is a set. Sets are not
+            #       ordered. So if we do not sort in some way, we will probably
+            #       get a different order every time we iterate over it when we
+            #       make listener rules. This means that the index-based
+            #       listener rules will probably appear different to pulumi
+            #       every deployment. This is an attempt to mitigate that
+            #       somewhat.
+            #       The downside to this (being sorted alphbetically) is that if
+            #       we add a new path that fits somewhere in the middle of the
+            #       sorted list, all listeners after that entry would appear to
+            #       be changed on that deployment...
+            for pth in sorted(self.static_apps[sa_name]["paths"]):
                 # we can ignore "." path here as that is the root of the s3
                 # bucket and would be covered by the default case.
                 if pth != ".":
@@ -703,7 +714,7 @@ class PrivateSwimlane(ScopedSwimlane):
             # in and the idx will take care of the priority
             for idx, (ptrn, redir) in enumerate(conditions_actions, start=1):
                 aws.lb.ListenerRule(
-                    f"{self.basename}-saalb-lstnrrl{idx}",
+                    f"{self.basename}-saalb-{sa_name}-lstnrrl{idx}",
                     listener_arn=self.sa_alb_redirectlistener.arn,
                     conditions=[
                         aws.lb.ListenerRuleConditionArgs(
