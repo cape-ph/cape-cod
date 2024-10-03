@@ -174,7 +174,7 @@ config:
                         content-type: "application/javascript"
                       - path: "_app/immutable/entry/app.B5Zzf6Hc.js"
                         content-type: "application/javascript"
-                      # TODO: These are the inital toy html static pages and
+                      # TODO: These are the initial toy html static pages and
                       #       they will be removed in the not too distant
                       #       future
                       - path: "nested/index.html"
