@@ -98,11 +98,89 @@ config:
                   dir: "./assets/web/static/dap-ui"
                   # file paths are relative to `dir`
                   files:
+                      # These are the files for the baseline POC svelte UI for
+                      # the data analsysis pipelines.
+                      # NOTE: The way these are deployed could change at any
+                      #       time. we do not intend to leave this this way
                       - path: "index.html"
                         content-type: "text/html"
-                      - path: "request-dap/index.html"
+                      - path: "submit.html"
                         content-type: "text/html"
-
+                      - path: "about.html"
+                        content-type: "text/html"
+                      - path: "robots.txt"
+                        content-type: "text/html"
+                      - path: "favicon.png"
+                        content-type: "image/png"
+                      - path: "_app/version.json"
+                        content-type: "application/json"
+                      - path: "_app/env.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/assets/_page.DVE7tXh2.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/_page.BBs3MkDA.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/_layout.IHz5PQXV.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/fira-mono-latin-ext-400-normal.lWlD_NAB.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-latin-ext-400-normal.D6XfiR-_.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-latin-400-normal.g4W12wf9.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-latin-400-normal.DKjLVgQi.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-greek-ext-400-normal.CsqI23CO.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-greek-ext-400-normal.BEhC8Nsh.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-greek-400-normal.DUeQbRz0.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-greek-400-normal.C3zng6O6.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-ext-400-normal.B04YIrm4.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-ext-400-normal.0xXfcOOq.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-400-normal.Dq7SlH2J.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-400-normal.36-45Uyg.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/3.BBs3MkDA.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/2.DVE7tXh2.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/0.BBWRx2yO.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/chunks/stores.C-i_z8mx.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/chunks/scheduler.4LBXMUaS.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/chunks/index.BXw8xzGh.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/chunks/entry.BELrh75s.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/4.O-MOWd-d.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/3.BR4gjy7e.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/2.ry0b9Tec.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/1.CYAX9knE.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/0.DsHDiujY.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/entry/start.DJLpZCZP.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/entry/app.B5Zzf6Hc.js"
+                        content-type: "application/javascript"
+                      # TODO: These are the initial toy html static pages and
+                      #       they will be removed in the not too distant
+                      #       future
+                      - path: "nested/index.html"
+                        content-type: "text/html"
+                      - path: "nested/request-dap/index.html"
+                        content-type: "text/html"
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
@@ -125,7 +203,7 @@ config:
                 environments:
                     - name: analysis
                       # an AMI ID to use for each EC2 instance
-                      image: ami-045e492cc94d39039
+                      image: ami-0cfe23bad78a802ea
                       # a list of subnets that ec2 instances in the compute
                       # environments live on
                       subnets:
