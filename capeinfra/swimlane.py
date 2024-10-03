@@ -166,6 +166,7 @@ class ScopedSwimlane(CapeComponentResource):
             for psnc in self.config.get("private-subnets", default=[])
         }
 
+        # TODO: ISSUE #118
         for psnc in self.config.get("private-subnets", default=[]):
             psnc = CapeConfig(psnc)
             config_sn_name = psnc.get("name")
@@ -176,6 +177,7 @@ class ScopedSwimlane(CapeComponentResource):
                 sn_name,
                 cidr_block=psnc.get("cidr-block"),
                 vpc_id=self.vpc.id,
+                availability_zone=psnc.get("az"),
                 tags={
                     "Name": sn_name,
                     "desc_name": f"{self.desc_name} analysis {sn_name} subnet",

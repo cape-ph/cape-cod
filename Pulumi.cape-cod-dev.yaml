@@ -25,6 +25,15 @@ config:
                   srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
     cape-cod:swimlanes:
         private:
+            # This is the private domain that will setup in the cloud provider
+            # private VPC.
+            # At this time, this does not need to be setup with a domain
+            # registrar unless it is also the domain used in a public facing
+            # resource. The domain will need to be able to be used for creation
+            # of TLS cert/key pairs though (in the development case, these are
+            # self-signed and in all cases need to be managed outside this
+            # repo).
+            domain: cape-dev.org
             # TODO: This is huge. way bigger than we need. For growth but also
             # cause we don't really know what address space we need yet. Adjust
             # as needed
@@ -44,6 +53,18 @@ config:
                       - "public"
                 - name: vpn
                   cidr-block: 10.0.3.0/24
+                  az: "us-east-2b"
+                  routes:
+                      - "public"
+                # TODO: ISSUE #118
+                #       We really don't want this kind of name coupling for
+                #       redundancy of subnets (or anything else). we should
+                #       change how these are specified so redundant subnets are
+                #       defined under the same blocks. This is just being done
+                #       for quick demo turn around
+                - name: vpn2
+                  cidr-block: 10.0.4.0/24
+                  az: "us-east-2c"
                   routes:
                       - "public"
             # NOTE: the apis section here will likely need to be re-worked as we
@@ -53,10 +74,120 @@ config:
             api:
                 dap:
                     meta: *depmet
+            # static apps are deployed to s3 as html/js/css bundles and are
+            # exposed through an application load balancer. these may hit API
+            # endpoints (assuming the required permissions/roles are available),
+            # but have no server side functions. they are served as-is
+            static-apps:
+                - name: "dap-ui"
+                  fqdn: "analysis-pipelines.cape-dev.org"
+                  tls:
+                      dir: "./assets-untracked/tls/dap-ui"
+                      ca-cert: "ca.crt"
+                      # if not specified, the key and cert are expected to be
+                      # named following the pattern {fqdn}.[key|crt] where
+                      # `{fqdn}` is the value of the fqdn provided in the above
+                      # static_app scope
+                      server-key: "analysis-pipelines.cape-dev.org.key"
+                      server-cert: "analysis-pipelines.cape-dev.org.crt"
+                  # repo_dir is the root directory in the repo for this app's
+                  # files.
+                  # TODO: long-term we will not want to have these apps in the
+                  #       repo, but rather follow the pattern we use with ETL
+                  #       scripts using separate repos
+                  dir: "./assets/web/static/dap-ui"
+                  # file paths are relative to `dir`
+                  files:
+                      # These are the files for the baseline POC svelte UI for
+                      # the data analsysis pipelines.
+                      # NOTE: The way these are deployed could change at any
+                      #       time. we do not intend to leave this this way
+                      - path: "index.html"
+                        content-type: "text/html"
+                      - path: "submit.html"
+                        content-type: "text/html"
+                      - path: "about.html"
+                        content-type: "text/html"
+                      - path: "robots.txt"
+                        content-type: "text/html"
+                      - path: "favicon.png"
+                        content-type: "image/png"
+                      - path: "_app/version.json"
+                        content-type: "application/json"
+                      - path: "_app/env.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/assets/_page.DVE7tXh2.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/_page.BBs3MkDA.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/_layout.IHz5PQXV.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/fira-mono-latin-ext-400-normal.lWlD_NAB.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-latin-ext-400-normal.D6XfiR-_.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-latin-400-normal.g4W12wf9.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-latin-400-normal.DKjLVgQi.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-greek-ext-400-normal.CsqI23CO.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-greek-ext-400-normal.BEhC8Nsh.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-greek-400-normal.DUeQbRz0.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-greek-400-normal.C3zng6O6.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-ext-400-normal.B04YIrm4.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-ext-400-normal.0xXfcOOq.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-400-normal.Dq7SlH2J.woff"
+                        content-type: "font/woff"
+                      - path: "_app/immutable/assets/fira-mono-cyrillic-400-normal.36-45Uyg.woff2"
+                        content-type: "font/woff2"
+                      - path: "_app/immutable/assets/3.BBs3MkDA.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/2.DVE7tXh2.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/assets/0.BBWRx2yO.css"
+                        content-type: "text/css"
+                      - path: "_app/immutable/chunks/stores.C-i_z8mx.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/chunks/scheduler.4LBXMUaS.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/chunks/index.BXw8xzGh.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/chunks/entry.BELrh75s.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/4.O-MOWd-d.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/3.BR4gjy7e.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/2.ry0b9Tec.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/1.CYAX9knE.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/nodes/0.DsHDiujY.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/entry/start.DJLpZCZP.js"
+                        content-type: "application/javascript"
+                      - path: "_app/immutable/entry/app.B5Zzf6Hc.js"
+                        content-type: "application/javascript"
+                      # TODO: These are the initial toy html static pages and
+                      #       they will be removed in the not too distant
+                      #       future
+                      - path: "nested/index.html"
+                        content-type: "text/html"
+                      - path: "nested/request-dap/index.html"
+                        content-type: "text/html"
             vpn:
-                # This CIDR block cannot overlap with the VPC nor with the
-                # subnet being assoociated with the VPN endpoint. Additionally
-                # it must be at least a /22 and no more than a /12. More here:
+                # This cidr-block is where vpn client ips will be allocated
+                # from. This is different than the cidr block of the vpn subnet
+                # itself. This CIDR block cannot overlap with the VPC nor with
+                # the subnet being assoociated with the VPN endpoint.
+                # Additionally it must be at least a /22 and no more than /12.
+                # More here:
                 # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
                 # If not specified, this will default to "10.1.0.0/22"
                 cidr-block: "10.1.0.0/22"
@@ -72,7 +203,7 @@ config:
                 environments:
                     - name: analysis
                       # an AMI ID to use for each EC2 instance
-                      image: ami-0bd1e15f0dc074e1c
+                      image: ami-0cfe23bad78a802ea
                       # a list of subnets that ec2 instances in the compute
                       # environments live on
                       subnets:

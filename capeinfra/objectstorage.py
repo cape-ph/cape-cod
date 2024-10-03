@@ -1,5 +1,7 @@
 """Contains abstractions of object storage for various providers."""
 
+from typing import Any, Optional
+
 import pulumi_aws as aws
 from pulumi import Archive, Asset, ResourceOptions
 
@@ -9,7 +11,7 @@ from .pulumi import CapeComponentResource
 class VersionedBucket(CapeComponentResource):
     """An object storage location with versioning turned on."""
 
-    def __init__(self, name, **kwargs):
+    def __init__(self, name, bucket_name=None, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
             "capeinfra:objectstorage:S3VersionedBucket",
@@ -21,6 +23,7 @@ class VersionedBucket(CapeComponentResource):
 
         self.bucket = aws.s3.BucketV2(
             f"{self.name}-s3",
+            bucket=bucket_name,
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} S3 Bucket"},
         )
@@ -38,7 +41,9 @@ class VersionedBucket(CapeComponentResource):
         # resource that will get returned by default.
         self.register_outputs({"bucket_name": self.bucket.bucket})
 
-    def add_object(self, name, key, source: Asset | Archive):
+    def add_object(
+        self, name, key, source: Asset | Archive, **obj_kwargs: Optional[Any]
+    ):
         """Adds an object to the versioned bucket.
 
         Args:
@@ -56,4 +61,5 @@ class VersionedBucket(CapeComponentResource):
             key=key,
             source=source,
             opts=ResourceOptions(parent=self),
+            **obj_kwargs,
         )
