@@ -112,6 +112,21 @@ def index_handler(event, context):
         # And return our response as a 200
         return {
             "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                # TODO: CORS bypass. We do not want this long term. When we get
+                #       all the api and web resources on the same domain, this
+                #       may not matter too much. But we may eventually end up
+                #       with needing to handle requests from one domain served
+                #       up by another domain in a lambda handler. In that case
+                #       we'd need to be able to handle CORS, and would want to
+                #       look into allowing configuration of the lambda (via
+                #       pulumi config that turns into env vars for the lambda)
+                #       that set the origins allowed for CORS.
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "OPTIONS,GET",
+            },
             "body": json.dumps(resp_data),
         }
     except ClientError as err:
