@@ -6,7 +6,7 @@ from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions
 from capeinfra.iam import (
     get_inline_role,
     get_sqs_lambda_glue_trigger_policy,
-    get_sqs_raw_notifier_policy,
+    get_sqs_notifier_policy,
 )
 from capeinfra.objectstorage import VersionedBucket
 from capeinfra.pipeline.data import DataCrawler, EtlJob
@@ -427,7 +427,7 @@ class Tributary(CapeComponentResource):
                 qname=self.raw_data_queue.name,
                 etl_attr_ddb_table_name=etl_attrs_ddb_table.name,
             ).apply(
-                lambda args: get_sqs_raw_notifier_policy(
+                lambda args: get_sqs_notifier_policy(
                     args["qname"], args["etl_attr_ddb_table_name"]
                 )
             ),
