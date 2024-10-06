@@ -5,6 +5,9 @@ from abc import abstractmethod
 import pulumi_aws as aws
 from pulumi import ResourceOptions
 
+# TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
+#       it should not be here after 145.
+from capeinfra.datalake.datalake import CatalogDatabase
 from capeinfra.pipeline.batch import BatchCompute
 from capeinfra.util.config import CapeConfig
 from capeinfra.util.naming import disemvowel
@@ -19,7 +22,13 @@ class ScopedSwimlane(CapeComponentResource):
     resources in the CAPE infra.
     """
 
-    def __init__(self, basename, *args, **kwargs):
+    def __init__(
+        self,
+        basename,
+        *args,
+        data_catalog: CatalogDatabase | None = None,
+        **kwargs,
+    ):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
             self.type_name,
@@ -32,6 +41,12 @@ class ScopedSwimlane(CapeComponentResource):
         self.basename = basename
         self.private_subnets = dict[str, aws.ec2.Subnet]()
         self.compute_environments = dict[str, BatchCompute]()
+
+        # TODO: ISSUE #145 this member is only needed for the temporary DAP S3
+        #       handling. it should not be here after 145. if it needs to, we
+        #       should probably rethink how we expose the catalog to
+        #       non-datalake clients
+        self.data_catalog = data_catalog
         self.create_vpc()
         self.create_public_subnet()
         self.create_private_subnets()
