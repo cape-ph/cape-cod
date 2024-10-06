@@ -118,7 +118,7 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
         # Role for the lambda handlers of the API.
-        # NOTE: At this time we need one role for all opssible operations of the
+        # NOTE: At this time we need one role for all possible operations of the
         #       API (e.g. if it needs to write to SQS in one function and read
         #       from DynamoDB in another, this role's policy must have both
         #       those grants). This may not be the long term implementation.
@@ -170,9 +170,12 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # tracks the methods and integrations we define below. without this
         # things were made in the wrong order.
-        # TODO: if we still have this when we do openapi, we need to understand
-        #       why we need to specify these dependecies in this case but
-        #       nowhere else (cause pulumi usually figures this out)
+        # NOTE: when working with api respurces/methods/integrations, it seems
+        #       that we need to specify these dependencies explicitly or pulumi
+        #       may try to make things before stuff they depend on are ready.
+        #       though pulumi usually figures this kind of thing out pretty
+        #       well, this case is mentioned in their docs as something you
+        #       probably want to do.
         deployment_depends = []
 
         # iterate then endpoint specs and make the endpoints (resources) and
@@ -238,9 +241,9 @@ class PrivateSwimlane(ScopedSwimlane):
                 opts=ResourceOptions(parent=self),
             )
 
-            # TODO: this is probably not the best way to do this. given we'd
-            #       like to refactor to using openapi specs anyway, not going to
-            #       spend much time on it right now...
+            # TODO: ISSUE #141 this is probably not the best way to do this.
+            #       given we'd like to refactor to using openapi specs anyway,
+            #       not going to spend much time on it right now...
             if es["enable_cors"]:
                 # If we are enabling CORS, we need:
                 #   - an OPTIONS method handler
@@ -304,13 +307,14 @@ class PrivateSwimlane(ScopedSwimlane):
                         "method.response.header.Access-Control-Allow-Methods": (
                             f"'OPTIONS,{es['method']}'"
                         ),
-                        # TODO: we should not allow any origin here. if we keep
-                        #       with this CORS stuff and the result of an
-                        #       openapi setup is similar, we'll want a config
-                        #       value for the origins we allow cross requests
-                        #       from (or explicitly limit to whatever to setting
-                        #       is for the swimlane's domain - though that would
-                        #       lock use of the API to the VPN for dev purposes)
+                        # TODO: ISSUE #141 we should not allow any origin here.
+                        #       if we keep with this CORS stuff and the result
+                        #       of an openapi setup is similar, we'll want a
+                        #       config value for the origins we allow cross
+                        #       requests from (or explicitly limit to whatever
+                        #       to setting is for the swimlane's domain -
+                        #       though that would lock use of the API to the
+                        #       VPN for dev purposes)
                         "method.response.header.Access-Control-Allow-Origin": (
                             "'*'"
                         ),
