@@ -1197,13 +1197,10 @@ class PrivateSwimlane(ScopedSwimlane):
         }
         etl_cfg = {
             "name": "dap_results",
-            # TODO: we need the handler lambda. it should be very much like the
-            #       ones for raw data (and it must support the raw bucket and
-            #       obj key like the others do).
             "script": "glue/etl/etl_bactopia_results.py",
             "prefix": "dap_results",
             "suffixes": [],
-            "pymodules": [],
+            # NOTE: no additional pythonmodules at this point
         }
 
         self.dap_results_bucket = VersionedBucket(
@@ -1269,7 +1266,7 @@ class PrivateSwimlane(ScopedSwimlane):
             "lambda.amazonaws.com",
             Output.all(
                 qname=self.dap_results_data_queue.name,
-                job_names=[dap_results_etl_job.job],
+                job_names=[dap_results_etl_job.job.name],
             ).apply(
                 lambda args: get_sqs_lambda_glue_trigger_policy(
                     args["qname"], args["job_names"]
@@ -1307,7 +1304,6 @@ class PrivateSwimlane(ScopedSwimlane):
             environment={
                 "variables": {
                     "QUEUE_NAME": self.dap_results_data_queue.name,
-                    "ETL_JOB_ID": dap_results_etl_job.name,
                 }
             },
             opts=ResourceOptions(parent=self),
@@ -1361,6 +1357,7 @@ class PrivateSwimlane(ScopedSwimlane):
             environment={
                 "variables": {
                     "QUEUE_NAME": self.dap_results_data_queue.name,
+                    "ETL_JOB_ID": dap_results_etl_job.job.name,
                 }
             },
             opts=ResourceOptions(parent=self),
@@ -1389,6 +1386,12 @@ class PrivateSwimlane(ScopedSwimlane):
                 aws.s3.BucketNotificationLambdaFunctionArgs(
                     events=["s3:ObjectCreated:*"],
                     lambda_function_arn=new_object_handler.arn,
+                    # TODO: ISSUE #144 This filter will be affected by how we do
+                    #       this long term. We can filter one prefix, so for now
+                    #       all piplines should write output to sub-prefixes
+                    #       under `pipeline-output/`
+                    filter_prefix="pipeline-output/",
+
                 )
             ],
             opts=ResourceOptions(
