@@ -289,61 +289,67 @@ def get_etl_job_s3_policy(
     )
 
 
-def get_sqs_raw_notifier_policy(
-    queue_name: str, etl_attr_ddb_table_name: str
+# TODO: ISSUE #152 this is now used for a couple of different notifiers, with
+#       and without attributes tables. the param names are a little specific to
+#       one use case only and there is a world in which we need to add other
+#       statements optionally (other than for an dynamodb table). refactor?
+def get_sqs_notifier_policy(
+    queue_name: str, etl_attr_ddb_table_name: str | None = None
 ) -> str:
     """Get a role policy statement for reading dynamodb and writing sqs.
 
-    This policy allows for actions on an sqs queue, a dynamodb table and
-    logging necessary for raw data handlers to place metadata about a new S3
-    object into a specific SQS queue and to read some of the metadata from a
-    dynamodb table.
+    This policy allows for actions on an sqs queue, (optionally) a dynamodb
+    table and logging necessary for raw data handlers to place metadata about
+    a new S3 object into a specific SQS queue (and to read some of the metadata
+    from a dynamodb table if configured).
 
     Args:
         queue_name: the name of the queue to grant access to.
-        etl_attr_ddb_table_name: The name of the DynamoDB table storing the ETL
-                                 attributes.
+        etl_attr_ddb_table_name: The optional name of the DynamoDB table
+                                 storing the ETL attributes.
 
     Returns:
         The policy statement as a dictionary json encoded string.
     """
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "logs:PutLogEvents",
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                ],
+                "Resource": "arn:aws:logs:*:*:*",
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "sqs:GetQueueUrl",
+                    "sqs:SendMessage",
+                ],
+                "Resource": [
+                    f"arn:aws:sqs:*:*:{queue_name}",
+                ],
+            },
+        ],
+    }
 
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "logs:PutLogEvents",
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                    ],
-                    "Resource": "arn:aws:logs:*:*:*",
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "sqs:GetQueueUrl",
-                        "sqs:SendMessage",
-                    ],
-                    "Resource": [
-                        f"arn:aws:sqs:*:*:{queue_name}",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "dynamodb:DescribeTable",
-                        "dynamodb:GetItem",
-                    ],
-                    "Resource": [
-                        f"arn:aws:dynamodb:*:*:table/{etl_attr_ddb_table_name}",
-                    ],
-                },
-            ],
-        },
-    )
+    if etl_attr_ddb_table_name:
+        policy["Statement"].append(
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
+                ],
+                "Resource": [
+                    f"arn:aws:dynamodb:*:*:table/{etl_attr_ddb_table_name}",
+                ],
+            }
+        )
+    return json.dumps(policy)
 
 
 # TODO: ISSUE #61 - may or may not be able to get a single policy for a

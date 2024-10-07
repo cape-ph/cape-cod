@@ -23,6 +23,15 @@ config:
                 - name: etl-gphl-sequencing
                   key: glue/etl/etl_gphl_sequencing_alert.py
                   srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
+                # TODO: ISSUE #144 this is for the initial bactopia results
+                #       handling. it may not be best to have here long term, and
+                #       we don't know yet how were managing these things. so for
+                #       now it's here (we also need to think about how we handle
+                #       pipelines that may have different etl needs for
+                #       different versions)
+                - name: etl-bactopia-results
+                  key: glue/etl/etl_bactopia_results.py
+                  srcpth: ./assets/etl/etl_bactopia_results.py
     cape-cod:swimlanes:
         private:
             # This is the private domain that will setup in the cloud provider
