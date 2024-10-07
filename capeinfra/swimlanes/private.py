@@ -81,7 +81,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
-        # TODO: ISSUE #153 is there a better way to expose the auto assets 
+        # TODO: ISSUE #153 is there a better way to expose the auto assets
         #       bucket since we're now passing it to every client that needs a
         #       lambda script? Same for data catalog (which is passed to the
         #       swimlane base class)
@@ -1190,10 +1190,10 @@ class PrivateSwimlane(ScopedSwimlane):
         """Create an S3 bucket for the data analysis pipeline results.
 
         This method also creates and ETL and crawler for the bucket.
-        
+
         NOTE: This is a temporary implementation. We do not intend for this to
               remain in this format as it's very copy/paste from the tributary
-              setup. 
+              setup.
         """
 
         # NOTE: not adding any of this to the config till we know how we want to
@@ -1291,8 +1291,8 @@ class PrivateSwimlane(ScopedSwimlane):
             code=AssetArchive(
                 {
                     # TODO: ISSUE #150 this script is usable as is for any glue
-                    #       job sqs handler, with the caveat that the glue job 
-                    #       has to support a RAW_BUCKET_NAME and ALERT_OBJ_KEY 
+                    #       job sqs handler, with the caveat that the glue job
+                    #       has to support a RAW_BUCKET_NAME and ALERT_OBJ_KEY
                     #       env var (and the same sqs message format). it might
                     #       be worth changing the job spec to take a
                     #       `SRC_BUCKET_NAME` instead of `RAW` since not all
@@ -1399,7 +1399,6 @@ class PrivateSwimlane(ScopedSwimlane):
                     #       all pipelines should write output to sub-prefixes
                     #       under `pipeline-output/`
                     filter_prefix="pipeline-output/",
-
                 )
             ],
             opts=ResourceOptions(
