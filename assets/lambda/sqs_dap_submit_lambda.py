@@ -168,7 +168,7 @@ def index_handler(event, context):
                 # back to the top of the loop
                 continue
             else:
-                logger.info(
+                print(
                     f"Data analysis pipeline {pipeline_name} (version "
                     f"{pipeline_version} will be scheduled using input path "
                     f"[{input_path}] and output path [{output_path}]. The "
