@@ -81,8 +81,10 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
-        # TODO: is there a better way to expose the auto assets bucket since
-        #       we're now passing it to every client that needs a lambda script?
+        # TODO: ISSUE #153 is there a better way to expose the auto assets 
+        #       bucket since we're now passing it to every client that needs a
+        #       lambda script? Same for data catalog (which is passed to the
+        #       swimlane base class)
         self.auto_assets_bucket = auto_assets_bucket
 
         aws_config = Config("aws")
@@ -1185,7 +1187,14 @@ class PrivateSwimlane(ScopedSwimlane):
 
     # TODO: ISSUE #144
     def create_dap_results_s3(self):
-        """"""
+        """Create an S3 bucket for the data analysis pipeline results.
+
+        This method also creates and ETL and crawler for the bucket.
+        
+        NOTE: This is a temporary implementation. We do not intend for this to
+              remain in this format as it's very copy/paste from the tributary
+              setup. 
+        """
 
         # NOTE: not adding any of this to the config till we know how we want to
         #       handle results/output s3 longer term in ISSUE #145
@@ -1218,14 +1227,16 @@ class PrivateSwimlane(ScopedSwimlane):
                 self.dap_results_bucket.bucket,
                 self.data_catalog.catalog_database,
                 opts=ResourceOptions(parent=self),
-                desc_name=f"{self.desc_name} Temprary DAP Results data crawler",
+                desc_name=(
+                    f"{self.desc_name} Temporary DAP Results data crawler",
+                )
                 # NOTE: this is just made up for this temporary bucket
                 prefix="transformed-results",
                 config=crawler_cfg,
             )
 
         # this queue is where all notifications of new objects added to the
-        # temprary DAP results bucket will go
+        # temporary DAP results bucket will go
         self.dap_results_data_queue = aws.sqs.Queue(
             # TODO: ISSUE #68
             f"{self.basename}-daprsltsq",
@@ -1248,9 +1259,6 @@ class PrivateSwimlane(ScopedSwimlane):
         dap_results_etl_job = EtlJob(
             f"{self.basename}-ETL-{short_name}",
             self.dap_results_bucket.bucket,
-            # TODO: this output path needs a special prefix. consider adding
-            #       this as an optional thing in the ETL config (if not
-            #       specified default to the prefix given)?
             self.dap_results_bucket.bucket,
             self.auto_assets_bucket,
             opts=ResourceOptions(parent=self),
@@ -1282,11 +1290,11 @@ class PrivateSwimlane(ScopedSwimlane):
             role=self.sqs_dap_results_trigger_role.arn,
             code=AssetArchive(
                 {
-                    # TODO: this script is usable as is for any glue job sqs
-                    #       handler, with the caveat that the glue job has to
-                    #       support a RAW_BUCKET_NAME and ALERT_OBJ_KEY env
-                    #       var (and the same sqs message format). it might be
-                    #       worth changing the job spec to take a
+                    # TODO: ISSUE #150 this script is usable as is for any glue
+                    #       job sqs handler, with the caveat that the glue job 
+                    #       has to support a RAW_BUCKET_NAME and ALERT_OBJ_KEY 
+                    #       env var (and the same sqs message format). it might
+                    #       be worth changing the job spec to take a
                     #       `SRC_BUCKET_NAME` instead of `RAW` since not all
                     #       sources will be really raw data.
                     "index.py": FileAsset(
@@ -1388,7 +1396,7 @@ class PrivateSwimlane(ScopedSwimlane):
                     lambda_function_arn=new_object_handler.arn,
                     # TODO: ISSUE #144 This filter will be affected by how we do
                     #       this long term. We can filter one prefix, so for now
-                    #       all piplines should write output to sub-prefixes
+                    #       all pipelines should write output to sub-prefixes
                     #       under `pipeline-output/`
                     filter_prefix="pipeline-output/",
 

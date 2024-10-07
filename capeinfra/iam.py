@@ -289,10 +289,10 @@ def get_etl_job_s3_policy(
     )
 
 
-# TODO: this is now used for a couple of different notifiers, with and without
-#       attributes tables. the param names are a little specific to one use case
-#       only and there is a world in which we need to add other statements
-#       optionally (other than for an dynamodb table). refactor?
+# TODO: ISSUE #152 this is now used for a couple of different notifiers, with
+#       and without attributes tables. the param names are a little specific to
+#       one use case only and there is a world in which we need to add other
+#       statements optionally (other than for an dynamodb table). refactor?
 def get_sqs_notifier_policy(
     queue_name: str, etl_attr_ddb_table_name: str | None = None
 ) -> str:
