@@ -352,18 +352,18 @@ def get_sqs_notifier_policy(
     return json.dumps(policy)
 
 
-# TODO: may or may not be able to get a single policy for a whole api
-#       reasonably. depends how much we do in the api. as it is currently a
-#       single endpoint, one policy is fine
-def get_dap_api_policy(queue_name: str):
-    """Get a role policy statement for the DAP API including writing sqs.
+# TODO: ISSUE #61 - may or may not be able to get a single policy for a
+#       whole api reasonably. depends how much we do in the api. as it
+#       is currently a two endpoints deployed in a non-ideal manner, one policy
+#       is fine
+def get_dap_api_policy(queue_name: str, table_name: str):
+    """Get a role policy statement for the DAP API.
 
-    This policy allows for actions on an sqs queue currently. When a new data
-    analysis pipeline job is submitted, we write the submission data to the
-    queue for later processing. As things progress, this may expand.
+    Currently requires writing to SQS and scanning a DynamoDB table.
 
     Args:
-        queue_name: the name of the queue to grant access to.
+        queue_name: the name of the SQS queue to grant access to.
+        table_name: the name of the DynamoDB table to grant access to.
 
     Returns:
         The policy statement as a dictionary json encoded string.
@@ -390,6 +390,16 @@ def get_dap_api_policy(queue_name: str):
                     ],
                     "Resource": [
                         f"arn:aws:sqs:*:*:{queue_name}",
+                    ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:DescribeTable",
+                        "dynamodb:Scan",
+                    ],
+                    "Resource": [
+                        f"arn:aws:dynamodb:*:*:table/{table_name}",
                     ],
                 },
             ],
