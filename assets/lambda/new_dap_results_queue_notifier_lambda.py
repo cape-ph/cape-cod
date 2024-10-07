@@ -1,6 +1,6 @@
 """Lambda function for sending an SQS message about new DAP results in s3."""
 
-# TODO: We should look at how to minimize DRY between this and the
+# TODO: ISSUE #150 We should look at how to minimize DRY between this and the
 #       `new_s3obj_queue_notifier.py` lambda.
 #       This is very similar to the lambda used for doing this same kind of
 #       thing on new raw data in HAI/EPI. A big difference is that there is
