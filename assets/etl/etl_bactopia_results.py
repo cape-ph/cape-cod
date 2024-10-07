@@ -25,9 +25,10 @@ parameters = getResolvedOptions(
     ],
 )
 
-# TODO: we should change our generic etl concept to not use the words "raw" or
-#       "alert". probably not even "clean". Then we can get to a place where we
-#       can reuse things outside the raw/clean alert etl paradigm.
+# TODO: ISSUE #150 we should change our generic etl concept to not use the
+#       words "raw" or "alert". probably not even "clean". Then we can get
+#       to a place where we can reuse things outside the raw/clean alert
+#       etl paradigm.
 
 raw_bucket_name = parameters["RAW_BUCKET_NAME"]
 alert_obj_key = parameters["ALERT_OBJ_KEY"]
@@ -36,11 +37,12 @@ clean_bucket_name = parameters["CLEAN_BUCKET_NAME"]
 # NOTE: May need some creds here
 s3_client = boto3.client("s3")
 
-# TODO: the `transformed-results` here is for the initial bactopia data handling
-#       only and is by no means something that must be carried forward, but for
-#       now we are writing the trasformed data to the same bucket as the
-#       pre-transform data (in a different prefix) so we want a way to carry
-#       around the prefix to write to (which we don't have currently)
+# TODO: ISSUE #144 the `transformed-results` here is for the initial bactopia
+#       data handling only and is by no means something that must be carried
+#       forward, but for now we are writing the trasformed data to the same
+#       bucket as the pre-transform data (in a different prefix) so we want a
+#       way to carry around the prefix to write to (which we don't have
+#       currently)
 clean_obj_key = os.path.join("transformed-results", alert_obj_key)
 
 # try to get the object from S3 and handle any error that would keep us
@@ -66,13 +68,12 @@ logger.info(f"Obtained object {alert_obj_key} from bucket {raw_bucket_name}.")
 
 # handle the document itself...
 
-# TODO: we don't know what we're doing with these results yet, so for now we'll
-#       just write the input file to the output location
+# TODO: ISSUE #151 we don't know what we're doing with these results yet, so
+#       for now we'll just write the input file to the output location
 
 # write out the transformed data
 with io.StringIO() as sio_buff:
 
-    # TODO: write the body of the input file to `Body`
     response = s3_client.put_object(
         Bucket=clean_bucket_name,
         Key=clean_obj_key,
