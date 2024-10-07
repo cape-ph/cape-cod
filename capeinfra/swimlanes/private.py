@@ -1228,8 +1228,8 @@ class PrivateSwimlane(ScopedSwimlane):
                 self.data_catalog.catalog_database,
                 opts=ResourceOptions(parent=self),
                 desc_name=(
-                    f"{self.desc_name} Temporary DAP Results data crawler",
-                )
+                    f"{self.desc_name} Temporary DAP Results data crawler"
+                ),
                 # NOTE: this is just made up for this temporary bucket
                 prefix="transformed-results",
                 config=crawler_cfg,
