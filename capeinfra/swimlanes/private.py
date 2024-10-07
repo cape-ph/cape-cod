@@ -104,38 +104,7 @@ class PrivateSwimlane(ScopedSwimlane):
     def create_dap_api(self):
         """Create the data analysis pipeline API for the private swimlane."""
 
-        self.api_lambda_role = get_inline_role(
-            f"{self.basename}-dapapi-lmbd-role",
-            f"{self.desc_name} data analysis pipeline lambda role",
-            "lmbd",
-            "lambda.amazonaws.com",
-            self.dap_submit_queue.name.apply(
-                lambda name: get_dap_api_policy(f"{name}")
-            ),
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-        )
-
-        post_new_dap_lambda = aws.lambda_.Function(
-            f"{self.basename}-dapapi-{disemvowel('createpipeline')}-lmbdfn",
-            role=self.api_lambda_role.arn,
-            handler="index.index_handler",
-            runtime="python3.11",
-            code=AssetArchive(
-                {
-                    "index.py": FileAsset(
-                        "./assets/lambda/api-handlers/analysis-pipeline/"
-                        "queue_analysis_pipeline_run.py"
-                    )
-                }
-            ),
-            environment={
-                "variables": {
-                    "DAP_QUEUE_NAME": self.dap_submit_queue.name,
-                }
-            },
-            opts=ResourceOptions(parent=self),
-        )
-
+        # API resource itself
         self.dap_rest_api = aws.apigateway.RestApi(
             f"{self.basename}-dapapi",
             description="CAPE Data Analysis Pipeline API",
@@ -148,51 +117,214 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # permission for rest api to invoke lambda
-        aws.lambda_.Permission(
-            f"{self.basename}-dapapi-{disemvowel('createpipeline')}-allow-lmbd",
-            action="lambda:InvokeFunction",
-            function=post_new_dap_lambda.arn,
-            principal="apigateway.amazonaws.com",
-            source_arn=self.dap_rest_api.execution_arn.apply(
-                # NOTE: this allows lambda on all endpoints and all methods for
-                #       the api. may not be a great idea. or we may want
-                #       different permissions for different parts of the API.
-                #       not sure till we have a really fleshed out API.
-                lambda arn: f"{arn}/*/*"
-            ),
-            opts=ResourceOptions(parent=self),
+        # Role for the lambda handlers of the API.
+        # NOTE: At this time we need one role for all possible operations of the
+        #       API (e.g. if it needs to write to SQS in one function and read
+        #       from DynamoDB in another, this role's policy must have both
+        #       those grants). This may not be the long term implementation.
+        self.api_lambda_role = get_inline_role(
+            f"{self.basename}-dapapi-lmbd-role",
+            f"{self.desc_name} data analysis pipeline lambda role",
+            "lmbd",
+            "lambda.amazonaws.com",
+            Output.all(
+                queue_name=self.dap_submit_queue.name,
+                table_name=self.analysis_pipeline_registry_ddb_table.name,
+            ).apply(lambda kwargs: get_dap_api_policy(**kwargs)),
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
-        # TODO: ISSUE #61 - START manual route/integration (TO BE REMOVED)
-        post_new_dap_resource = aws.apigateway.Resource(
-            f"{self.basename}-dapapi-{disemvowel('createpipeline')}-rsrc",
-            parent_id=self.dap_rest_api.root_resource_id,
-            path_part="analysispipeline",
-            rest_api=self.dap_rest_api.id,
-            opts=ResourceOptions(parent=self),
-        )
+        # NOTE: this is just till we get openapi specs working. Even if we don't
+        #       go that route in the near term, this could use some refactor and
+        #       hooking up to the pulumi config
+        endpoint_specs = [
+            {
+                "name": "createpipeline",
+                "handler": "index.index_handler",
+                "runtime": "python3.11",
+                "handler_src": (
+                    "./assets/lambda/api-handlers/analysis-pipeline/"
+                    "queue_analysis_pipeline_run.py"
+                ),
+                "handler_vars": {"DAP_QUEUE_NAME": self.dap_submit_queue.name},
+                "path_part": "analysispipeline",
+                "method": "POST",
+                "enable_cors": True,
+            },
+            {
+                "name": "listpipelines",
+                "handler": "index.index_handler",
+                "runtime": "python3.11",
+                "handler_src": (
+                    "./assets/lambda/api-handlers/analysis-pipeline/"
+                    "list_analysis_pipelines.py"
+                ),
+                "handler_vars": {
+                    "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name
+                },
+                "path_part": "analysispipelines",
+                "method": "GET",
+                "enable_cors": True,
+            },
+        ]
 
-        post_new_dap_method = aws.apigateway.Method(
-            f"{self.basename}-dapapi-{disemvowel('createpipeline')}-mthd",
-            http_method="POST",
-            # TODO: we need authz
-            authorization="NONE",
-            resource_id=post_new_dap_resource.id,
-            rest_api=self.dap_rest_api.id,
-            opts=ResourceOptions(parent=self),
-        )
+        # tracks the methods and integrations we define below. without this
+        # things were made in the wrong order.
+        # NOTE: when working with api respurces/methods/integrations, it seems
+        #       that we need to specify these dependencies explicitly or pulumi
+        #       may try to make things before stuff they depend on are ready.
+        #       though pulumi usually figures this kind of thing out pretty
+        #       well, this case is mentioned in their docs as something you
+        #       probably want to do.
+        deployment_depends = []
 
-        post_new_dap_integration = aws.apigateway.Integration(
-            f"{self.basename}-dapapi-{disemvowel('createpipeline')}-intg",
-            http_method=post_new_dap_method.http_method,
-            resource_id=post_new_dap_resource.id,
-            rest_api=self.dap_rest_api.id,
-            integration_http_method="POST",
-            type="AWS_PROXY",
-            uri=post_new_dap_lambda.invoke_arn,
-            opts=ResourceOptions(parent=self),
-        )
+        # iterate then endpoint specs and make the endpoints (resources) and
+        # wire up the methods of interest. then add the integration (which in
+        # this case is a lambda handler with perms needed to do its thing)
+        for es in endpoint_specs:
+            short_name = disemvowel(es["name"])
+            handler_lambda = aws.lambda_.Function(
+                f"{self.basename}-dapapi-{short_name}-lmbdfn",
+                role=self.api_lambda_role.arn,
+                handler=es["handler"],
+                runtime=es["runtime"],
+                code=AssetArchive({"index.py": FileAsset(es["handler_src"])}),
+                environment={"variables": es["handler_vars"]},
+                opts=ResourceOptions(parent=self),
+            )
+
+            # permission for rest api to invoke lambda
+            aws.lambda_.Permission(
+                f"{self.basename}-dapapi-{short_name}-allow-lmbd",
+                action="lambda:InvokeFunction",
+                function=handler_lambda.arn,
+                principal="apigateway.amazonaws.com",
+                source_arn=self.dap_rest_api.execution_arn.apply(
+                    # NOTE: this allows lambda on all endpoints and all methods for
+                    #       the api. may not be a great idea. or we may want
+                    #       different permissions for different parts of the API.
+                    #       not sure till we have a really fleshed out API.
+                    lambda arn: f"{arn}/*/*"
+                ),
+                opts=ResourceOptions(parent=self),
+            )
+
+            # TODO: ISSUE #61 - START manual route/integration (TO BE REMOVED)
+            handler_resource = aws.apigateway.Resource(
+                f"{self.basename}-dapapi-{short_name}-rsrc",
+                parent_id=self.dap_rest_api.root_resource_id,
+                path_part=es["path_part"],
+                rest_api=self.dap_rest_api.id,
+                opts=ResourceOptions(parent=self),
+            )
+
+            handler_method = aws.apigateway.Method(
+                f"{self.basename}-dapapi-{short_name}-{es['method']}-mthd",
+                http_method=es["method"],
+                # TODO: we need authz
+                authorization="NONE",
+                resource_id=handler_resource.id,
+                rest_api=self.dap_rest_api.id,
+                opts=ResourceOptions(parent=self),
+            )
+
+            handler_integration = aws.apigateway.Integration(
+                f"{self.basename}-dapapi-{short_name}-{es['method']}-intg",
+                http_method=handler_method.http_method,
+                resource_id=handler_resource.id,
+                rest_api=self.dap_rest_api.id,
+                # NOTE: with lambda backed endpoints, integration http method
+                #       should be POST
+                integration_http_method="POST",
+                type="AWS_PROXY",
+                uri=handler_lambda.invoke_arn,
+                opts=ResourceOptions(parent=self),
+            )
+
+            # TODO: ISSUE #141 this is probably not the best way to do this.
+            #       given we'd like to refactor to using openapi specs anyway,
+            #       not going to spend much time on it right now...
+            if es["enable_cors"]:
+                # If we are enabling CORS, we need:
+                #   - an OPTIONS method handler
+                #   - a method response for OPTIONS that forces the required
+                #     CORS headers to be returned (with a 200 status)
+                #   - a MOCK integration (with a json/200 request template)
+                #   - an OPTIONS integration response that has the correct CORS
+                #     headers
+                options_method = aws.apigateway.Method(
+                    f"{self.basename}-dapapi-{short_name}-options-mthd",
+                    http_method="OPTIONS",
+                    # TODO: we need authz
+                    authorization="NONE",
+                    resource_id=handler_resource.id,
+                    rest_api=self.dap_rest_api.id,
+                    opts=ResourceOptions(parent=self),
+                )
+
+                aws.apigateway.MethodResponse(
+                    f"{self.basename}-dapapi-{short_name}-options-mthdrsp",
+                    rest_api=self.dap_rest_api.id,
+                    resource_id=handler_resource.id,
+                    http_method=options_method.http_method,
+                    status_code="200",
+                    response_parameters={
+                        "method.response.header.Access-Control-Allow-Headers": True,
+                        "method.response.header.Access-Control-Allow-Methods": True,
+                        "method.response.header.Access-Control-Allow-Origin": True,
+                    },
+                    opts=ResourceOptions(
+                        parent=self, depends_on=[options_method]
+                    ),
+                )
+
+                opts_integration = aws.apigateway.Integration(
+                    f"{self.basename}-dapapi-{short_name}-options-intg",
+                    http_method="OPTIONS",
+                    type="MOCK",
+                    resource_id=handler_resource.id,
+                    rest_api=self.dap_rest_api.id,
+                    integration_http_method="OPTIONS",
+                    request_templates={
+                        "application/json": "{'statusCode':200}"
+                    },
+                    opts=ResourceOptions(
+                        parent=self, depends_on=[options_method]
+                    ),
+                )
+
+                aws.apigateway.IntegrationResponse(
+                    f"{self.basename}-dapapi-{short_name}-options-intgrsp",
+                    rest_api=self.dap_rest_api.id,
+                    resource_id=handler_resource.id,
+                    http_method="OPTIONS",
+                    status_code="200",
+                    response_parameters={
+                        "method.response.header.Access-Control-Allow-Headers": (
+                            "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,"
+                            "X-Amz-Security-Token'"
+                        ),
+                        "method.response.header.Access-Control-Allow-Methods": (
+                            f"'OPTIONS,{es['method']}'"
+                        ),
+                        # TODO: ISSUE #141 we should not allow any origin here.
+                        #       if we keep with this CORS stuff and the result
+                        #       of an openapi setup is similar, we'll want a
+                        #       config value for the origins we allow cross
+                        #       requests from (or explicitly limit to whatever
+                        #       to setting is for the swimlane's domain -
+                        #       though that would lock use of the API to the
+                        #       VPN for dev purposes)
+                        "method.response.header.Access-Control-Allow-Origin": (
+                            "'*'"
+                        ),
+                    },
+                    opts=ResourceOptions(
+                        parent=self, depends_on=[opts_integration]
+                    ),
+                )
+
+            deployment_depends.extend([handler_method, handler_integration])
 
         # TODO: ISSUE 61 - END manual route/integration (TO BE REMOVED)
 
@@ -207,7 +339,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 parent=self,
                 # NOTE: not specifying these led to the deployment being
                 #       constructed before things it depends on
-                depends_on=[post_new_dap_method, post_new_dap_integration],
+                depends_on=deployment_depends,
             ),
         )
 
