@@ -20,6 +20,7 @@ from pulumi import (
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
 from capeinfra.pipeline.data import DataCrawler, EtlJob
+from capeinfra.util.config import CapeConfig
 
 from ..iam import (
     get_bucket_reader_policy,
@@ -78,7 +79,6 @@ class PrivateSwimlane(ScopedSwimlane):
     def __init__(
         self, name, auto_assets_bucket: aws.s3.BucketV2, *args, **kwargs
     ):
-
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
         # TODO: ISSUE #153 is there a better way to expose the auto assets
@@ -636,7 +636,7 @@ class PrivateSwimlane(ScopedSwimlane):
             )
 
     # TODO: ISSUE #126
-    def _deploy_static_app(self, sa_cfg: dict):
+    def _deploy_static_app(self, sa_cfg: CapeConfig):
         """Create the S3 bucket for a static app and then deploy app files.
 
         Args:
@@ -644,14 +644,13 @@ class PrivateSwimlane(ScopedSwimlane):
         """
         # Grab the config values of interest so we can check if we should
         # proceed
-        sa_name = sa_cfg.get("name", None)
-        sa_fqdn = sa_cfg.get("fqdn", None)
-        sa_dir = sa_cfg.get("dir", None)
-        sa_files = sa_cfg.get("files", None)
-        tls_cfg = sa_cfg.get("tls", None)
+        sa_name = sa_cfg.get("name", default=None)
+        sa_fqdn = sa_cfg.get("fqdn", default=None)
+        sa_dir = sa_cfg.get("dir", default=None)
+        sa_files = sa_cfg.get("files", default=[])
+        tls_cfg = sa_cfg.get("tls", default=None)
 
         if None in (sa_name, sa_fqdn, sa_dir, sa_files, tls_cfg):
-
             msg = (
                 f"Static App {sa_name or 'UNNAMED'} contains one or more "
                 "invalid configuration values that are required. The "
@@ -922,7 +921,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.static_apps = {}
         for sa_cfg in sa_cfgs:
             try:
-                self._deploy_static_app(sa_cfg)
+                self._deploy_static_app(CapeConfig(sa_cfg))
             except ValueError:
                 # ValueError will be thrown for invalid configuration of a
                 # static app. Logging will have already happened, so we just
