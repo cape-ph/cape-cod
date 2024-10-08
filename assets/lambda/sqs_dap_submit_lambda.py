@@ -221,8 +221,9 @@ def index_handler(event, context):
                 print(
                     f"Data analysis pipeline {pipeline_name} (version "
                     f"{pipeline_version} has been submitted to the head node"
-                    f"using input path [{input_path}] and output path "
-                    f"[{output_path}]. The pipeline is of type "
+                    f"using r1 path [{r1_path}], r2 path [{r2_path}], "
+                    f"sample [{sample}], output path [{output_path}], and EC2 "
+                    f"id [{ec2_id}]. The pipeline is of type "
                     f"{dap_reg_entry['pipeline_type']}. Head Node Command ID: "
                     f"{cmd_id}."
                 )
