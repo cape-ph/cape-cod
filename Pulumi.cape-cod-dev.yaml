@@ -140,7 +140,14 @@ config:
                           - compute
                       resources:
                           # a list of instance types to be able to request
-                          instance_types: ["c4.large"]
+                          instance_types:
+                              [
+                                  "c4.large",
+                                  "c4.xlarge",
+                                  "c4.2xlarge",
+                                  "c4.4xlarge",
+                                  "c4.8xlarge",
+                              ]
                           # the maximum number of vCPUs to have in the environment
                           max_vcpus: 16
                           # (optional) the desired number of vCPUs to have in the environment
