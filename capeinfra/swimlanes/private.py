@@ -549,6 +549,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 }
             ),
             runtime="python3.11",
+            timeout=30,
             # in this case, the zip file for the lambda deployment is
             # being created by this code. and the zip file will be
             # called index. so the handler must be start with `index`
