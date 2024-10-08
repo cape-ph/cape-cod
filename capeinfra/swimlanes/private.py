@@ -1158,6 +1158,12 @@ class PrivateSwimlane(ScopedSwimlane):
             "ec2.amazonaws.com",
             role_policy=get_nextflow_executor_policy(),
         )
+        aws.iam.RolePolicyAttachment(
+            f"{self.basename}-instnc-ssmvcroleatch",
+            role=self.nextflow_role.name,
+            policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+            opts=ResourceOptions(parent=self),
+        )
         self.nextflow_role_profile = get_instance_profile(
             f"{self.basename}-nxtflw-instnc-rl", self.nextflow_role
         )
