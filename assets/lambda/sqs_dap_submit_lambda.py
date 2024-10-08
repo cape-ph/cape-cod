@@ -144,8 +144,11 @@ def index_handler(event, context):
             # TODO: ISSUE #84
             pipeline_name = qmsg["pipeline_name"]
             pipeline_version = qmsg["pipeline_version"]
-            input_path = qmsg["input_path"]
             output_path = qmsg["output_path"]
+            r1_path = qmsg["r1_path"]
+            r2_path = qmsg["r2_path"]
+            sample = qmsg["sample"]
+            ec2_id = qmsg["ec2_id"]
 
             # attempt to get the registry entry from dynamodb. if we can't find
             # an entry, we'll log the error but not add to the batch failures
@@ -169,23 +172,40 @@ def index_handler(event, context):
                 # back to the top of the loop
                 continue
             else:
-                # TODO: ISSUE #TBD this is temporarily hard coded until we have
-                #       the path forward. ec2 instances are manually managed
-                #       for now.
-                ec2_id = "i-0a7ad7b1e97a5c1a3"
+                # cmd = """
+                # BACTOPIA_CACHEDIR=s3://nextflow-s3-bucket-1234/bactopia/cache nextflow \
+                #   run bactopia/bactopia \
+                #   -r dev \
+                #   -work-dir s3://nextflow-s3-bucket-1234/bactopia/workdir \
+                #   -profile test,aws \
+                #   --aws_queue analysis-jobq-9f9048f \
+                #   --aws_region us-east-2 \
+                #   --outdir s3://nextflow-s3-bucket-1234/bactopia/out_tutorial \
+                #   --aws_cli_path /home/ec2-user/miniconda/bin/aws \
+                #   --max_memory 3.GB \
+                #   --max_cpus 2
+                # """
 
-                cmd = """
-                BACTOPIA_CACHEDIR=s3://nextflow-s3-bucket-1234/bactopia/cache nextflow \
-                  run bactopia/bactopia \
-                  -r dev \
-                  -work-dir s3://nextflow-s3-bucket-1234/bactopia/workdir \
-                  -profile test,aws \
-                  --aws_queue analysis-jobq-9f9048f \
-                  --aws_region us-east-2 \
-                  --outdir s3://nextflow-s3-bucket-1234/bactopia/out_tutorial \
-                  --aws_cli_path /home/ec2-user/miniconda/bin/aws \
-                  --max_memory 3.GB \
-                  --max_cpus 2
+                # TODO: this is a (obviously) hard coded bactopia command. we
+                #       don't want that long-term and want a command known via
+                #       some other method outside this handler. Also there's a
+                #       bunch of hard coded items in here (regioin, max cpu,
+                #       etc) that we'll want specified elsewhere
+                cmd = f"""
+                    BACTOPIA_CACHEDIR=s3://nextflow-s3-bucket-1234/bactopia/cache nextflow \
+                    run {pipeline_name} \
+                    -r {pipeline_version} \
+                    -work-dir s3://nextflow-s3-bucket-1234/bactopia/workdir \
+                    -profile aws \
+                    --aws_queue analysis-jobq-9f9048f \
+                    --aws_region us-east-2 \
+                    --outdir {output_path} \
+                    --aws_cli_path /home/ec2-user/miniconda/bin/aws \
+                    --max_memory 24.GB \
+                    --max_cpus 16 \
+                    --r1 {r1_path} \
+                    --r2 {r2_path} \
+                    --sample {sample}
                 """
 
                 # send the command to the nextflow instance
