@@ -470,7 +470,7 @@ class PrivateSwimlane(ScopedSwimlane):
             }
         }
         nextflow_pipelines = {
-            "bactopia/bactopia": ["3.0.1", "dev"],
+            "bactopia/bactopia": ["v3.0.1", "dev"],
         }
         for pipeline in nextflow_pipelines:
             for version in nextflow_pipelines[pipeline]:

@@ -87,19 +87,24 @@ def index_handler(event, context):
     try:
         body = json.loads(event["body"])
 
-        # TODO: ISSUE #84
         pipeline_name = body["pipelineName"]
         pipeline_version = body["pipelineVersion"]
-        input_path = body["inputPath"]
         output_path = body["outputPath"]
+        # TODO: ISSUE #TBD all below fields are specific to bactopia right
+        #       now...
+        r1_path = body["r1Path"]
+        r2_path = body["r2Path"]
+        ec2_id = body["ec2Id"]
+        sample = body["sample"]
 
         msg = (
             f"Data analysis pipeline {pipeline_name} (version "
             f"{pipeline_version}) will be sent to the sumission queue with "
-            f"input path [{input_path}] and output path [{output_path}]"
+            f"r1 path [{r1_path}], r2 path [{r2_path}], sample [{sample}], "
+            f"output path [{output_path}], and EC2 instance [{ec2_id}]."
         )
 
-        logger.info(msg)
+        print(msg)
 
         response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
@@ -111,8 +116,11 @@ def index_handler(event, context):
         qmsg = {
             "pipeline_name": pipeline_name,
             "pipeline_version": pipeline_version,
-            "input_path": input_path,
             "output_path": output_path,
+            "r1_path": r1_path,
+            "r2_path": r2_path,
+            "sample": sample,
+            "ec2_id": ec2_id,
         }
 
         send_submit_dap_message(queue_name, queue_url, qmsg)
