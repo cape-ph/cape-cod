@@ -594,6 +594,33 @@ def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
                         f"arn:aws:dynamodb:*:*:table/{table_name}",
                     ],
                 },
+                {
+                    "Sid": "AllowSSMExecution",
+                    "Effect": "Allow",
+                    "Action": ["ssm:SendCommand", "ssm:GetCommandInvocation"],
+                    # TODO: get this specified via parameter
+                    "Resource": [
+                        # TODO: ISSUE #158 this should be changed to have
+                        #       tag-based pairing down
+                        "arn:aws:ec2:us-east-2:767397883306:instance/*",
+                        # TODO: this isn't tied to our account
+                        "arn:aws:ssm:us-east-2::document/AWS-RunShellScript",
+                        # TODO: how do we lock this down better? this is needed
+                        #       for GetCommandInvocation and came from an error
+                        #       message, but i'm not entirely certain what exact
+                        #       resource it's not allow to access
+                        "arn:aws:ssm:us-east-2:767397883306:*",
+                    ],
+                },
+                {
+                    "Sid": "AllowEC2DescribeInstances",
+                    "Effect": "Allow",
+                    "Action": "ec2:DescribeInstances",
+                    # TODO: ISSUE #158
+                    "Resource": [
+                        "arn:aws:ec2:us-east-2:767397883306:instance/*",
+                    ],
+                },
             ],
         },
     )
