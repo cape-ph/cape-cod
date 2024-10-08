@@ -213,6 +213,8 @@ def index_handler(event, context):
                     --sample {sample}
                 """
 
+                print(f"Submitting head node command: {cmd}")
+
                 # send the command to the nextflow instance
                 resp = ssm.send_command(
                     InstanceIds=[ec2_id],
