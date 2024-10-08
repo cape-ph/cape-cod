@@ -191,6 +191,11 @@ def index_handler(event, context):
                 #       some other method outside this handler. Also there's a
                 #       bunch of hard coded items in here (regioin, max cpu,
                 #       etc) that we'll want specified elsewhere
+                max_mem = "24"
+                if pipeline_version == "dev" or pipeline_version.startswith(
+                    "v3.1"
+                ):
+                    max_mem = f"{max_mem}.GB"
                 cmd = f"""
                     BACTOPIA_CACHEDIR=s3://nextflow-s3-bucket-1234/bactopia/cache nextflow \
                     run {pipeline_name} \
@@ -201,7 +206,7 @@ def index_handler(event, context):
                     --aws_region us-east-2 \
                     --outdir {output_path} \
                     --aws_cli_path /home/ec2-user/miniconda/bin/aws \
-                    --max_memory 24.GB \
+                    --max_memory {max_mem} \
                     --max_cpus 16 \
                     --r1 {r1_path} \
                     --r2 {r2_path} \
