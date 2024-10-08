@@ -436,71 +436,67 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         )
 
-        # TODO: we're hard coding this table for now. longer term we really
-        #       probably want an initial canned setup (for initial deploy) and
-        #       the ability to add these records at runtime so users can extend
-        #       when they need to. right now we're only adding the bactopia
-        #       tutorial as a pipeline
-        # TODO: ISSUE #84
-        bactopia_version = "3.0.1"
-        aws.dynamodb.TableItem(
-            f"{self.basename}-bactp-ttrl-ddbitem",
-            table_name=self.analysis_pipeline_registry_ddb_table.name,
-            hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
-            range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
-                lambda rk: f"{rk}"
-            ),
-            item=Output.json_dumps(
-                {
-                    "pipeline_name": {
-                        "S": (
-                            f"bactopia {bactopia_version} tutorial analysis"
-                            "pipeline"
-                        ),
-                    },
-                    "version": {"S": f"{bactopia_version}"},
-                    "pipeline_type": {"S": "nextflow"},
-                    # TODO: long term it is not tenable for us to have all the
-                    #       config stuff for all the pipeline frameworks
-                    #       specified in this manner. we should consider keeping
-                    #       the default config in common files or something
-                    #       like that and then point to the file in this table
-                    "nextflow_config": {
-                        "M": {
-                            "aws": {
-                                "M": {
-                                    "accessKey": {"S": "<YOUR S3 ACCESS KEY>"},
-                                    "secretKey": {"S": "<YOUR S3 SECRET KEY>"},
-                                    "region": {"S": "us-east-2"},
-                                    "client": {
-                                        "M": {
-                                            "maxConnections": {"N": "20"},
-                                            "connectionTimeout": {"N": "10000"},
-                                            "uploadStorageClass": {
-                                                "S": "INTELLIGENT_TIERING"
-                                            },
-                                            "storageEncryption": {
-                                                "S": "AES256"
-                                            },
-                                        }
-                                    },
-                                    "batch": {
-                                        "M": {
-                                            "cliPath": {"S": "/usr/bin/aws"},
-                                            "maxTransferAttempts": {"N": "3"},
-                                            "delayBetweenAttempts": {
-                                                "S": "5 sec"
-                                            },
-                                        }
-                                    },
-                                }
+        # TODO: long term it is not tenable for us to have all the
+        #       config stuff for all the pipeline frameworks
+        #       specified in this manner. we should consider keeping
+        #       the default config in common files or something
+        #       like that and then point to the file in this table
+        nextflow_config = {
+            "M": {
+                "aws": {
+                    "M": {
+                        "accessKey": {"S": "<YOUR S3 ACCESS KEY>"},
+                        "secretKey": {"S": "<YOUR S3 SECRET KEY>"},
+                        "region": {"S": "us-east-2"},
+                        "client": {
+                            "M": {
+                                "maxConnections": {"N": "20"},
+                                "connectionTimeout": {"N": "10000"},
+                                "uploadStorageClass": {
+                                    "S": "INTELLIGENT_TIERING"
+                                },
+                                "storageEncryption": {"S": "AES256"},
                             }
-                        }
-                    },
+                        },
+                        "batch": {
+                            "M": {
+                                "cliPath": {"S": "/usr/bin/aws"},
+                                "maxTransferAttempts": {"N": "3"},
+                                "delayBetweenAttempts": {"S": "5 sec"},
+                            }
+                        },
+                    }
                 }
-            ),
-            opts=ResourceOptions(parent=self),
-        )
+            }
+        }
+        nextflow_pipelines = {
+            "bactopia/bactopia": ["3.0.1", "dev"],
+        }
+        for pipeline in nextflow_pipelines:
+            for version in nextflow_pipelines[pipeline]:
+                # TODO: we're hard coding this table for now. longer term we really
+                #       probably want an initial canned setup (for initial deploy) and
+                #       the ability to add these records at runtime so users can extend
+                #       when they need to. right now we're only adding the bactopia
+                #       tutorial as a pipeline
+                # TODO: ISSUE #84
+                aws.dynamodb.TableItem(
+                    f"{self.basename}-{disemvowel(pipeline)}-{version}-ddbitem",
+                    table_name=self.analysis_pipeline_registry_ddb_table.name,
+                    hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
+                    range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
+                        lambda rk: f"{rk}"
+                    ),
+                    item=Output.json_dumps(
+                        {
+                            "pipeline_name": {"S": pipeline},
+                            "version": {"S": version},
+                            "pipeline_type": {"S": "nextflow"},
+                            "nextflow_config": nextflow_config,
+                        }
+                    ),
+                    opts=ResourceOptions(parent=self),
+                )
 
     def create_dap_submission_queue(self):
         """Creates and configures the SQS queue where DAP submissions will go.
@@ -553,6 +549,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 }
             ),
             runtime="python3.11",
+            timeout=30,
             # in this case, the zip file for the lambda deployment is
             # being created by this code. and the zip file will be
             # called index. so the handler must be start with `index`
