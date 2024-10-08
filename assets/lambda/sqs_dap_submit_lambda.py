@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 
 import boto3
 from botocore.exceptions import ClientError
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 # TODO: ISSUE #84
 
 ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("DDB_REGION"))
+ssm = boto3.client("ssm")
 
 
 # TODO: ISSUE #86
@@ -168,21 +170,48 @@ def index_handler(event, context):
                 # back to the top of the loop
                 continue
             else:
-                print(
-                    f"Data analysis pipeline {pipeline_name} (version "
-                    f"{pipeline_version} will be scheduled using input path "
-                    f"[{input_path}] and output path [{output_path}]. The "
-                    f"pipeline is of type {dap_reg_entry['pipeline_type']} "
-                    "and will be sent to the appropriate head node."
+                # TODO: ISSUE #TBD this is temporarily hard coded until we have
+                #       the path forward. ec2 instances are manually managed
+                #       for now.
+                ec2_id = "i-0a7ad7b1e97a5c1a3"
+
+                cmd = """
+                BACTOPIA_CACHEDIR=s3://nextflow-s3-bucket-1234/bactopia/cache nextflow \
+                  run bactopia/bactopia \
+                  -r dev \
+                  -work-dir s3://nextflow-s3-bucket-1234/bactopia/workdir \
+                  -profile test,aws \
+                  --aws_queue analysis-jobq-9f9048f \
+                  --aws_region us-east-2 \
+                  --outdir s3://nextflow-s3-bucket-1234/bactopia/out_tutorial \
+                  --aws_cli_path /home/ec2-user/miniconda/bin/aws \
+                  --max_memory 3.GB \
+                  --max_cpus 2
+                """
+
+                # send the command to the nextflow instance
+                resp = ssm.send_command(
+                    InstanceIds=[ec2_id],
+                    DocumentName="AWS-RunShellScript",
+                    Parameters={"commands": [cmd]},
                 )
 
-                # TODO: ISSUE #84 - when we submit the job to the (correct) head
-                #       node, hopefully there is some confirmation from the node
-                #       (with a run id or something) that we can store in
-                #       successful_dap_jobs for our return 200 message. until
-                #       then we'll store a tuple of pipeline name/version just
-                #       so we can get a count
-                successful_dap_jobs.append((pipeline_name, pipeline_version))
+                cmd_id = resp["Command"]["CommandId"]
+
+                # TODO: remove before PR. original test logging message
+                print(
+                    f"Data analysis pipeline {pipeline_name} (version "
+                    f"{pipeline_version} has been submitted to the head node"
+                    f"using input path [{input_path}] and output path "
+                    f"[{output_path}]. The pipeline is of type "
+                    f"{dap_reg_entry['pipeline_type']}. Head Node Command ID: "
+                    f"{cmd_id}."
+                )
+
+                # append to list for 200 response
+                successful_dap_jobs.append(
+                    (pipeline_name, pipeline_version, cmd_id)
+                )
 
         except Exception as e:
             # We are going to requeue the message on *any* exception in
@@ -217,6 +246,7 @@ def index_handler(event, context):
     body = (
         f"Successfully submitted {len(successful_dap_jobs)} data "
         f"analysis pipeline jobs to the head node. "
+        f"Head node command ids: {[i for _,_,i in successful_dap_jobs]}. "
         f"{len(invalid_dap_jobs)} were ignored."
     )
 
