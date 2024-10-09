@@ -402,6 +402,15 @@ def get_dap_api_policy(queue_name: str, table_name: str):
                         f"arn:aws:dynamodb:*:*:table/{table_name}",
                     ],
                 },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:DescribeInstances",
+                    ],
+                    "Resource": [
+                        "*",
+                    ],
+                },
             ],
         },
     )
