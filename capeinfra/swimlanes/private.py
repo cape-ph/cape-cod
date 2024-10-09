@@ -295,7 +295,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
                 opts_integration = aws.apigateway.Integration(
                     f"{self.basename}-dapapi-{short_name}-options-intg",
-                    http_method="OPTIONS",
+                    http_method=options_method.http_method,
                     type="MOCK",
                     resource_id=handler_resource.id,
                     rest_api=self.dap_rest_api.id,
