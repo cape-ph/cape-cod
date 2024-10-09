@@ -181,6 +181,19 @@ class PrivateSwimlane(ScopedSwimlane):
                 "method": "GET",
                 "enable_cors": True,
             },
+            {
+                "name": "listexecutors",
+                "handler": "index.index_handler",
+                "runtime": "python3.11",
+                "handler_src": (
+                    "./assets/lambda/api-handlers/analysis-pipeline/"
+                    "list_pipeline_executors.py"
+                ),
+                "handler_vars": {},
+                "path_part": "pipelineexecutors",
+                "method": "GET",
+                "enable_cors": True,
+            },
         ]
 
         # tracks the methods and integrations we define below. without this
