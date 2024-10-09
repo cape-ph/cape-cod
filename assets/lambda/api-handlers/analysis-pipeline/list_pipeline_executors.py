@@ -59,9 +59,9 @@ def index_handler(event, context):
                 if "Pipeline" in tags:
                     resp_data.append(
                         {
-                            "instanceId": instance["InstanceId"],
-                            "instanceName": tags.get("Name", None),
-                            "pipelineType": tags["Pipeline"],
+                            "instance_id": instance["InstanceId"],
+                            "instance_name": tags.get("Name", None),
+                            "pipeline_type": tags["Pipeline"],
                         }
                     )
 
