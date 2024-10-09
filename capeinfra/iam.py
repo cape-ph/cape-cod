@@ -402,6 +402,15 @@ def get_dap_api_policy(queue_name: str, table_name: str):
                         f"arn:aws:dynamodb:*:*:table/{table_name}",
                     ],
                 },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:DescribeInstances",
+                    ],
+                    "Resource": [
+                        "*",
+                    ],
+                },
             ],
         },
     )
@@ -618,8 +627,11 @@ def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
                     "Action": "ec2:DescribeInstances",
                     # TODO: ISSUE #158
                     "Resource": [
-                        "arn:aws:ec2:us-east-2:767397883306:instance/*",
+                        "arn:aws:ec2:*:*:instance/*",
                     ],
+                    "Condition": {
+                        "Null": {"aws:ResourceTag/Pipeline": "false"}
+                    },
                 },
             ],
         },

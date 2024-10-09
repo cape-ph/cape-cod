@@ -70,7 +70,7 @@ def get_dap_registry_table(table_name: str):
 
 
 def index_handler(event, context):
-    """Handler for the POST of a new analysis pipeline run.
+    """Handler for the GET of all available analysis pipelines.
 
     :param event: The event object that contains the HTTP request and json
                   data.
