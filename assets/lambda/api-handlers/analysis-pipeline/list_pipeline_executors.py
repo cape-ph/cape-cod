@@ -44,7 +44,6 @@ def index_handler(event, context):
         # get all pipeline executor instances
         pipeline_executors = ec2_client.describe_instances(
             Filters=[
-                {"Name": "tag:Pipeline", "Values": ["nextflow"]},
                 {"Name": "instance-state-name", "Values": ["running"]},
             ]
         )
@@ -54,15 +53,17 @@ def index_handler(event, context):
         resp_data = []
         for reservation in pipeline_executors.get("Reservations", []):
             for instance in reservation.get("Instances", []):
-                names = [
-                    tag["Value"]
-                    for tag in instance["Tags"]
-                    if tag["Key"] == "Name"
-                ]
-                name = names[0] if names else None
-                resp_data.append(
-                    {"instanceId": instance["InstanceId"], "instanceName": name}
-                )
+                tags = {
+                    tag["Key"]: tag["Value"] for tag in instance.get("Tags", [])
+                }
+                if "Pipeline" in tags:
+                    resp_data.append(
+                        {
+                            "instanceId": instance["InstanceId"],
+                            "instanceName": tags.get("Name", None),
+                            "pipelineType": tags["Pipeline"],
+                        }
+                    )
 
         # And return our response as a 200
         return {
