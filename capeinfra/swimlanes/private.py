@@ -312,7 +312,6 @@ class PrivateSwimlane(ScopedSwimlane):
                     type="MOCK",
                     resource_id=handler_resource.id,
                     rest_api=self.dap_rest_api.id,
-                    integration_http_method="OPTIONS",
                     request_templates={
                         "application/json": "{'statusCode':200}"
                     },
@@ -325,7 +324,7 @@ class PrivateSwimlane(ScopedSwimlane):
                     f"{self.basename}-dapapi-{short_name}-options-intgrsp",
                     rest_api=self.dap_rest_api.id,
                     resource_id=handler_resource.id,
-                    http_method="OPTIONS",
+                    http_method=options_method.http_method,
                     status_code="200",
                     response_parameters={
                         "method.response.header.Access-Control-Allow-Headers": (
