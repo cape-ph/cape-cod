@@ -74,6 +74,7 @@ if alert_obj_key.endswith(bactrun_keys):
     # and the object name sith suffix. conveniently this means we can just
     # split on "merged-results/"
     prefix, objfull = alert_obj_key.split("merged-results/")
+    _, prefix = prefix.split("bactopia-runs/")
     objname, suffix = objfull.split(".")
 
 # we should have no missing values here
@@ -97,9 +98,7 @@ s3_client = boto3.client("s3")
 # NOTE: f"{prefix}" here is to make the LSP happy. it's convinced prefix could
 #       be None, which would cause us to exit this job prior to here. but
 #       whatevs...
-clean_obj_key = os.path.join(
-    "transformed-results", f"{prefix}", f"{objname}.csv"
-)
+clean_obj_key = os.path.join(f"{prefix}", f"{objname}.csv")
 
 # try to get the object from S3 and handle any error that would keep us
 # from continuing.

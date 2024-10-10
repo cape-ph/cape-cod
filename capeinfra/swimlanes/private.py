@@ -1213,7 +1213,6 @@ class PrivateSwimlane(ScopedSwimlane):
         # NOTE: not adding any of this to the config till we know how we want to
         #       handle results/output s3 longer term in ISSUE #145
         short_name = disemvowel("dapresults")
-        bucket_name = f"{self.basename}-{short_name}-vbkt"
         crawler_cfg = {
             "classifiers": ["cape-csv-standard-classifier"],
         }
@@ -1223,9 +1222,9 @@ class PrivateSwimlane(ScopedSwimlane):
             # TODO: in the case of tributary ETL jobs, the prefix is added to
             #       the dynamo table item for the xform and then is used
             #       manually in the ETL script itself (due to difficulty having
-            #       different jobs run for different overlapping prefixes in 
+            #       different jobs run for different overlapping prefixes in
             #       aws). in this case we're going to add it to the bucket
-            #       notifcation because we only have one etl for pipeline 
+            #       notification because we only have one etl for pipeline
             #       output at this point and we only want the notifications in
             #       that prefix. this will not work long term (if we have one
             #       output location for all pipelines, which probably isn't a
@@ -1236,9 +1235,16 @@ class PrivateSwimlane(ScopedSwimlane):
             # NOTE: no additional pythonmodules at this point
         }
 
-        self.dap_results_bucket = VersionedBucket(
-            bucket_name,
-            desc_name=f"{self.desc_name} Temporary DAP Results Output Bucket",
+        raw_bucket_name = f"{self.basename}-raw-{short_name}-vbkt"
+        self.raw_dap_results_bucket = VersionedBucket(
+            raw_bucket_name,
+            desc_name=f"{self.desc_name} Temporary DAP Results Raw Output Bucket",
+            opts=ResourceOptions(parent=self),
+        )
+        clean_bucket_name = f"{self.basename}-clean-{short_name}-vbkt"
+        self.clean_dap_results_bucket = VersionedBucket(
+            clean_bucket_name,
+            desc_name=f"{self.desc_name} Temporary DAP Results Clean Output Bucket",
             opts=ResourceOptions(parent=self),
         )
 
@@ -1247,8 +1253,8 @@ class PrivateSwimlane(ScopedSwimlane):
         #       this bucket, it'll need to write the results of ETL there
         if self.data_catalog is not None:
             DataCrawler(
-                f"{bucket_name}-crwl",
-                self.dap_results_bucket.bucket,
+                f"{clean_bucket_name}-crwl",
+                self.clean_dap_results_bucket.bucket,
                 self.data_catalog.catalog_database,
                 opts=ResourceOptions(parent=self),
                 desc_name=(
@@ -1282,8 +1288,8 @@ class PrivateSwimlane(ScopedSwimlane):
         #       pipelines, we probably wouldn't need that.
         dap_results_etl_job = EtlJob(
             f"{self.basename}-ETL-{short_name}",
-            self.dap_results_bucket.bucket,
-            self.dap_results_bucket.bucket,
+            self.raw_dap_results_bucket.bucket,
+            self.clean_dap_results_bucket.bucket,
             self.auto_assets_bucket,
             opts=ResourceOptions(parent=self),
             desc_name=(f"{self.desc_name} DAP results ETL job"),
@@ -1407,13 +1413,13 @@ class PrivateSwimlane(ScopedSwimlane):
             action="lambda:InvokeFunction",
             function=new_object_handler.arn,
             principal="s3.amazonaws.com",
-            source_arn=self.dap_results_bucket.bucket.arn,
+            source_arn=self.raw_dap_results_bucket.bucket.arn,
             opts=ResourceOptions(parent=self),
         )
 
         aws.s3.BucketNotification(
             f"{self.basename}-{short_name}-s3ntfn",
-            bucket=self.dap_results_bucket.bucket.id,
+            bucket=self.raw_dap_results_bucket.bucket.id,
             lambda_functions=[
                 aws.s3.BucketNotificationLambdaFunctionArgs(
                     events=["s3:ObjectCreated:*"],
@@ -1424,7 +1430,8 @@ class PrivateSwimlane(ScopedSwimlane):
                     #       under `pipeline-output/`
                     filter_prefix=f"{dap_results_etl_job.config['prefix']}/",
                     filter_suffix=f".{sfx}",
-                ) for sfx in dap_results_etl_job.config["suffixes"]
+                )
+                for sfx in dap_results_etl_job.config["suffixes"]
             ],
             opts=ResourceOptions(
                 depends_on=[new_obj_handler_permission], parent=self
