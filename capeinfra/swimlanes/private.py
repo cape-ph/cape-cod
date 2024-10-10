@@ -1215,8 +1215,7 @@ class PrivateSwimlane(ScopedSwimlane):
         short_name = disemvowel("dapresults")
         bucket_name = f"{self.basename}-{short_name}-vbkt"
         crawler_cfg = {
-            "exclude": "",
-            "classifiers": [],
+            "classifiers": ["cape-csv-standard-classifier"],
         }
         etl_cfg = {
             "name": "dap_results",

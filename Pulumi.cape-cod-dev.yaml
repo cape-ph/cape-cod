@@ -167,7 +167,7 @@ config:
                   clean:
                       name:
                       crawler:
-                          exclude:
+                          excludes:
                           classifiers:
                               - cape-csv-standard-classifier
               pipelines:
