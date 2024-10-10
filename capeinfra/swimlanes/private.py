@@ -1221,8 +1221,19 @@ class PrivateSwimlane(ScopedSwimlane):
         etl_cfg = {
             "name": "dap_results",
             "script": "glue/etl/etl_bactopia_results.py",
-            "prefix": "dap_results",
-            "suffixes": [],
+            # TODO: in the case of tributary ETL jobs, the prefix is added to
+            #       the dynamo table item for the xform and then is used
+            #       manually in the ETL script itself (due to difficulty having
+            #       different jobs run for different overlapping prefixes in 
+            #       aws). in this case we're going to add it to the bucket
+            #       notifcation because we only have one etl for pipeline 
+            #       output at this point and we only want the notifications in
+            #       that prefix. this will not work long term (if we have one
+            #       output location for all pipelines, which probably isn't a
+            #       good idea anyway). Regardless of what we do, the different
+            #       usages of prefix seems complicated and inconsistent.
+            "prefix": "pipeline-output/bactopia-runs",
+            "suffixes": ["tsv"],
             # NOTE: no additional pythonmodules at this point
         }
 
@@ -1412,8 +1423,9 @@ class PrivateSwimlane(ScopedSwimlane):
                     #       this long term. We can filter one prefix, so for now
                     #       all pipelines should write output to sub-prefixes
                     #       under `pipeline-output/`
-                    filter_prefix="pipeline-output/",
-                )
+                    filter_prefix=f"{dap_results_etl_job.config['prefix']}/",
+                    filter_suffix=f".{sfx}",
+                ) for sfx in dap_results_etl_job.config["suffixes"]
             ],
             opts=ResourceOptions(
                 depends_on=[new_obj_handler_permission], parent=self
