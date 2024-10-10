@@ -1248,9 +1248,6 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # NOTE: for this temporary bucket, we'll have a data crawler setup on
-        #       the `transformed-results` prefix. When we do our simple ETL for
-        #       this bucket, it'll need to write the results of ETL there
         if self.data_catalog is not None:
             DataCrawler(
                 f"{clean_bucket_name}-crwl",
@@ -1260,8 +1257,6 @@ class PrivateSwimlane(ScopedSwimlane):
                 desc_name=(
                     f"{self.desc_name} Temporary DAP Results data crawler"
                 ),
-                # NOTE: this is just made up for this temporary bucket
-                prefix="transformed-results",
                 config=crawler_cfg,
             )
 

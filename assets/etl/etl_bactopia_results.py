@@ -87,7 +87,7 @@ if not all([prefix, objfull, objname, suffix]):
 # NOTE: May need some creds here
 s3_client = boto3.client("s3")
 
-# TODO: ISSUE #144 the `transformed-results` here is for the initial bactopia
+# TODO: ISSUE #144 the output here is for the initial bactopia
 #       data handling only and is by no means something that must be carried
 #       forward, but for now we are writing the transformed data to the same
 #       bucket as the pre-transform data (in a different prefix) so we want a
