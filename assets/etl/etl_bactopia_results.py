@@ -143,7 +143,7 @@ with io.StringIO() as sio_buff:
 
     # NOTE: based on file name matching above, we should never end up where an
     #       if/elif is not hit here
-    if objfull == "MLST_OBJ":
+    if objfull == MLST_OBJ:
         # in the mlst.tsv case, we have no header row and need to provide our
         # own
         print(f"Processing MLST file (raw key: {alert_obj_key})")
