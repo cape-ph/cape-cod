@@ -1235,13 +1235,14 @@ class PrivateSwimlane(ScopedSwimlane):
             # NOTE: no additional pythonmodules at this point
         }
 
-        raw_bucket_name = f"{self.basename}-raw-{short_name}-vbkt"
+        base_bucket_name = f"{self.basename}-{short_name}"
+        raw_bucket_name = f"{base_bucket_name}-raw-vbkt"
         self.raw_dap_results_bucket = VersionedBucket(
             raw_bucket_name,
             desc_name=f"{self.desc_name} Temporary DAP Results Raw Output Bucket",
             opts=ResourceOptions(parent=self),
         )
-        clean_bucket_name = f"{self.basename}-clean-{short_name}-vbkt"
+        clean_bucket_name = f"{base_bucket_name}-clean-vbkt"
         self.clean_dap_results_bucket = VersionedBucket(
             clean_bucket_name,
             desc_name=f"{self.desc_name} Temporary DAP Results Clean Output Bucket",
