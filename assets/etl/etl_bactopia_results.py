@@ -42,7 +42,7 @@ MLST_OBJ = "mlst.tsv"
 # the versions of the bactopia toolchain seem to have different names of this
 # file in the output. this could be a bactopia or amrfinder plus reason, but the
 # amrfinderplus file from bactopia version 3.0.1 (and maybe before???) has
-# `-protiens` and later versions (at least 3.1.0+) don't.
+# `-proteins` and later versions (at least 3.1.0+) don't.
 AMRF_OBJ_301 = "amrfinderplus-proteins.tsv"
 AMRF_OBJ_31X = "amrfinderplus.tsv"
 
@@ -84,9 +84,6 @@ if alert_obj_key.endswith(BACTRUN_KEYS):
     # if we have an old named amrfinder plus file, rename the output name to be
     # the asme as the newer ones
     objname, suffix = objfull.split(".")
-    objname = (
-        re.sub(r"-.*", "", objname) if objfull == AMRF_OBJ_301 else objname
-    )
 
 
 # we should have no missing values here
