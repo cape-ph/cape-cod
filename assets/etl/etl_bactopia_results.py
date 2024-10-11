@@ -84,11 +84,11 @@ if alert_obj_key.endswith(BACTRUN_KEYS):
     _, prefix = prefix.split("bactopia-runs/")
     # if we have an old named amrfinder plus file, rename the output name to be
     # the asme as the newer ones
+    objname, suffix = objfull.split(".")
     objname = (
         re.sub(r"-.*", "", objname) if objname == AMRF_OBJ_301 else objname
     )
 
-    objname, suffix = objfull.split(".")
 
 # we should have no missing values here
 if not all([prefix, objfull, objname, suffix]):
@@ -146,6 +146,7 @@ with io.StringIO() as sio_buff:
     if objfull == "MLST_OBJ":
         # in the mlst.tsv case, we have no header row and need to provide our
         # own
+        print(f"Processing MLST file (raw key: {alert_obj_key})")
 
         # TODO: these headers are made up except for the first 3. this will
         #       need to be fixed sometime if we keep processing this file
@@ -160,9 +161,10 @@ with io.StringIO() as sio_buff:
         writer.writerows([row for row in reader])
 
     elif objfull in [AMRF_OBJ_301, AMRF_OBJ_31X]:
+        print(f"Processing AMRFinderPlus file (raw key: {alert_obj_key})")
         # in this case we need to grab the header and modify it to replace
         # spaces and dashes with underscores, and lowercase everything
-        for idx, row in reader:
+        for idx, row in enumerate(reader):
             if idx == 0:
                 # TODO: ISSUE #TBD ETL helper library needs a normalization
                 #       function for column headers to do this...
