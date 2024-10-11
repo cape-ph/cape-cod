@@ -2,7 +2,7 @@
 
 import csv
 import io
-import os.path
+import os
 import re
 import sys
 
@@ -91,7 +91,7 @@ if not all([prefix, objfull, objname, suffix]):
     print(f"Bactopia output ETL ignoring {alert_obj_key} per configuration.")
     # TODO: this shows the job as failed AWS console. need this to still be able
     #       to be considered a success.
-    sys.exit(0)
+    os._exit(0)
 
 print(
     f"Proceeding with bactoipa output processing with prefix [{prefix}], "
