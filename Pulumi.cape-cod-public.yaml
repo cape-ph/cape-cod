@@ -23,8 +23,26 @@ config:
         - name: etl-gphl-sequencing
           key: glue/etl/etl_gphl_sequencing_alert.py
           srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
+        # TODO: ISSUE #144 this is for the initial bactopia results
+        #       handling. it may not be best to have here long term, and
+        #       we don't know yet how were managing these things. so for
+        #       now it's here (we also need to think about how we handle
+        #       pipelines that may have different etl needs for
+        #       different versions)
+        - name: etl-bactopia-results
+          key: glue/etl/etl_bactopia_results.py
+          srcpth: ./assets/etl/etl_bactopia_results.py
   cape-cod:swimlanes:
     private:
+      # This is the private domain that will setup in the cloud provider
+      # private VPC.
+      # At this time, this does not need to be setup with a domain
+      # registrar unless it is also the domain used in a public facing
+      # resource. The domain will need to be able to be used for creation
+      # of TLS cert/key pairs though (in the development case, these are
+      # self-signed and in all cases need to be managed outside this
+      # repo).
+      domain: cape-dev.org
       # TODO: This is huge. way bigger than we need. For growth but also
       # cause we don't really know what address space we need yet. Adjust
       # as needed
@@ -44,6 +62,18 @@ config:
             - "public"
         - name: vpn
           cidr-block: 10.0.3.0/24
+          az: "us-east-2b"
+          routes:
+            - "public"
+        # TODO: ISSUE #118
+        #       We really don't want this kind of name coupling for
+        #       redundancy of subnets (or anything else). we should
+        #       change how these are specified so redundant subnets are
+        #       defined under the same blocks. This is just being done
+        #       for quick demo turn around
+        - name: vpn2
+          cidr-block: 10.0.4.0/24
+          az: "us-east-2c"
           routes:
             - "public"
       # NOTE: the apis section here will likely need to be re-worked as we
@@ -53,10 +83,41 @@ config:
       api:
         dap:
           meta: *depmet
+      # static apps are deployed to s3 as html/js/css bundles and are
+      # exposed through an application load balancer. these may hit API
+      # endpoints (assuming the required permissions/roles are available),
+      # but have no server side functions. they are served as-is
+      static-apps:
+        - name: "dap-ui"
+          fqdn: "analysis-pipelines.cape-dev.org"
+          tls:
+            dir: "./assets-untracked/tls/dap-ui"
+            ca-cert: "ca.crt"
+            # if not specified, the key and cert are expected to be
+            # named following the pattern {fqdn}.[key|crt] where
+            # `{fqdn}` is the value of the fqdn provided in the above
+            # static_app scope
+            server-key: "analysis-pipelines.cape-dev.org.key"
+            server-cert: "analysis-pipelines.cape-dev.org.crt"
+          # repo_dir is the root directory in the repo for this app's
+          # files.
+          # TODO: long-term we will not want to have these apps in the
+          #       repo, but rather follow the pattern we use with ETL
+          #       scripts using separate repos
+          dir: "./assets/web/static/dap-ui"
+          # file paths are relative to `dir`
+          files:
+            - path: "nested/index.html"
+              content-type: "text/html"
+            - path: "nested/request-dap/index.html"
+              content-type: "text/html"
       vpn:
-        # This CIDR block cannot overlap with the VPC nor with the
-        # subnet being assoociated with the VPN endpoint. Additionally
-        # it must be at least a /22 and no more than a /12. More here:
+        # This cidr-block is where vpn client ips will be allocated
+        # from. This is different than the cidr block of the vpn subnet
+        # itself. This CIDR block cannot overlap with the VPC nor with
+        # the subnet being assoociated with the VPN endpoint.
+        # Additionally it must be at least a /22 and no more than /12.
+        # More here:
         # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
         # If not specified, this will default to "10.1.0.0/22"
         cidr-block: "10.1.0.0/22"
@@ -72,14 +133,14 @@ config:
         environments:
           - name: analysis
             # an AMI ID to use for each EC2 instance
-            image: ami-05b2a3fcf0e46a742
+            image: ami-0cfe23bad78a802ea
             # a list of subnets that ec2 instances in the compute
             # environments live on
             subnets:
               - compute
             resources:
               # a list of instance types to be able to request
-              instance_types: ["c4.large"]
+              instance_types: ["c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge", "c4.8xlarge"]
               # the maximum number of vCPUs to have in the environment
               max_vcpus: 16
               # (optional) the desired number of vCPUs to have in the environment
@@ -87,6 +148,8 @@ config:
               # (optional) the minimum number of vCPUs to have in the environment
               # min_vcpus: 8
   cape-cod:datalakehouse:
+    # NOTE: unless specified otherwise in here, all crawlers will run at
+    #       0200 daily
     tributaries:
       - name: hai
         buckets:
@@ -96,8 +159,7 @@ config:
           clean:
             name:
             crawler:
-              exclude:
-              schedule: "0/5 * * * ? *"
+              excludes:
               classifiers:
                 - cape-csv-standard-classifier
         pipelines:
