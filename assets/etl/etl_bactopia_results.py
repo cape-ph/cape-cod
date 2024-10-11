@@ -3,6 +3,7 @@
 import csv
 import io
 import os.path
+import re
 import sys
 
 import boto3 as boto3
@@ -34,41 +35,47 @@ raw_bucket_name = parameters["RAW_BUCKET_NAME"]
 alert_obj_key = parameters["ALERT_OBJ_KEY"]
 clean_bucket_name = parameters["CLEAN_BUCKET_NAME"]
 
+# partition/column name
+BACTRUN_PARTITION = "bactopia_run"
+# the files of interest (needed to handle each differently)
+MLST_OBJ = "mlst.tsv"
+# the versions of the bactopia toolchain seem to have different names of this
+# file in the output. this could be a bactopia or amrfinder plus reason, but the
+# amrfinderplus file from bactopia version 3.0.1 (and maybe before???) has
+# `-protiens` and later versions (at least 3.1.0+) don't.
+AMRF_OBJ_301 = "amrfinderplus-proteins.tsv"
+AMRF_OBJ_31X = "amrfinderplus.tsv"
+
 # TODO: These are the keys we care about matching and processing right now.
 #       this is not exhaustive in the long term and really only supports
 #       our current single run use case of bactopia.
 
 # these names are looked for explicitly if the object is in the bactopia output
 # hierarchy
-bactrun_keys = (
+BACTRUN_KEYS = (
     # different versions of the bactopia tool chainss have different names for
     # the amr finder files it seems
-    "merged-results/amrfinderplus-proteins.tsv",
-    "merged-results/amrfinderplus.tsv",
-    "merged-results/mlst.tsv",
+    f"merged-results/{AMRF_OBJ_301}",
+    f"merged-results/{AMRF_OBJ_31X}",
+    f"merged-results/{MLST_OBJ}",
 )
 
-# TODO:
-# - pair down the input file set. too many jobs
-# - make sure the key matches the bactrun key if in bactopia_runs (and grab the
-#   run id if so)
-# - make sure the key matches the regex if not in bactopia_runs (and grab the
-#   pathogen id if so)
-# - test by copying only those files
-# - if that works, convert each to csv. write to clean are in either
-#   `bactopia-runs/run_id` or `pathogen_id/`
-# - check the crawler is doing its thing
+
+# TODO: ISSUE #144 the output here is for the initial bactopia
+#       data handling only (and is specific to a particular invocation of
+#       bactopia that is not the only way we care about). It is by no means
+#       something that must be carried forward if there is a better way
 
 # before anything else, make sure this object key is one we care about
+# and if so grab all the parts of it we need
 process_object = False
-# TODO: WIP, may not be smartest thing...
 prefix = None
-# TODO: may not actually need this except in filename processing below...
 objfull = None
 objname = None
 suffix = None
 
-if alert_obj_key.endswith(bactrun_keys):
+
+if alert_obj_key.endswith(BACTRUN_KEYS):
     # in the case of bactopia output files, we'll want the first 2 parts of
     # the original prefix (e.g. 'bactopia-runs/bactopia-20241008-183748/')
     # and the object name sith suffix. conveniently this means we can just
@@ -87,18 +94,13 @@ if not all([prefix, objfull, objname, suffix]):
 # NOTE: May need some creds here
 s3_client = boto3.client("s3")
 
-# TODO: ISSUE #144 the output here is for the initial bactopia
-#       data handling only and is by no means something that must be carried
-#       forward, but for now we are writing the transformed data to the same
-#       bucket as the pre-transform data (in a different prefix) so we want a
-#       way to carry around the prefix to write to (which we don't have
-#       currently)
 
-# all output objects will be csv files for now
-# NOTE: f"{prefix}" here is to make the LSP happy. it's convinced prefix could
+# NOTE: f"{var}" here is to make the LSP happy. it's convinced they could
 #       be None, which would cause us to exit this job prior to here. but
 #       whatevs...
-clean_obj_key = os.path.join(f"{prefix}", f"{objname}.csv")
+clean_obj_key = os.path.join(
+    f"{objname}", f"{BACTRUN_PARTITION}={prefix}", f"{objname}.csv"
+)
 
 # try to get the object from S3 and handle any error that would keep us
 # from continuing.
@@ -129,25 +131,40 @@ print(f"Processing new object: {alert_obj_key}")
 #       new path with a new suffix
 with io.StringIO() as sio_buff:
     writer = csv.writer(sio_buff)
-    if objfull == "mlst.tsv":
-        # in the mlst.tsv case, we have not header row and need to provide our
+    reader = csv.reader(
+        io.StringIO(response.get("Body").read().decode("utf-8")), delimiter="\t"
+    )
+
+    # NOTE: based on file name matching above, we should never end up where an
+    #       if/elif is not hit here
+    if objfull == "MLST_OBJ":
+        # in the mlst.tsv case, we have no header row and need to provide our
         # own
 
-        # TODO: these headers are made up except for the first 3. this will need
-        # to be fixed sometime if we keep processing this file
+        # TODO: these headers are made up except for the first 3. this will
+        #       need to be fixed sometime if we keep processing this file
         writer.writerow(
             [
                 "sample",
                 "scheme",
-                "sequence type",
+                "sequence_type",
                 *[f"gene{i}" for i in range(7)],
             ]
         )
+        writer.writerows([row for row in reader])
 
-    reader = csv.reader(
-        io.StringIO(response.get("Body").read().decode("utf-8")), delimiter="\t"
-    )
-    writer.writerows(row for row in reader)
+    elif objfull in [AMRF_OBJ_301, AMRF_OBJ_31X]:
+        # in this case we need to grab the header and modify it to replace
+        # spaces and dashes with underscores, and lowercase everything
+        for idx, row in reader:
+            if idx == 0:
+                # TODO: ISSUE #TBD ETL helper library needs a normalization
+                #       function for column headers to do this...
+
+                # special processing of the columns
+                row = [re.sub(r"[\s-]", "_", c).lower() for c in row]
+
+            writer.writerow(row)
 
     response = s3_client.put_object(
         Bucket=clean_bucket_name, Key=clean_obj_key, Body=sio_buff.getvalue()
