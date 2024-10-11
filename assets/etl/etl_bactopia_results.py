@@ -74,7 +74,6 @@ objfull = None
 objname = None
 suffix = None
 
-
 if alert_obj_key.endswith(BACTRUN_KEYS):
     # in the case of bactopia output files, we'll want the first 2 parts of
     # the original prefix (e.g. 'bactopia-runs/bactopia-20241008-183748/')
@@ -84,10 +83,10 @@ if alert_obj_key.endswith(BACTRUN_KEYS):
     _, prefix = prefix.split("bactopia-runs/")
     # if we have an old named amrfinder plus file, rename the output name to be
     # the asme as the newer ones
-    objname = (
-        re.sub(r"-.*\.", ".", objname) if objfull == AMRF_OBJ_301 else objname
-    )
     objname, suffix = objfull.split(".")
+    objname = (
+        re.sub(r"-.*", "", objname) if objfull == AMRF_OBJ_301 else objname
+    )
 
 
 # we should have no missing values here
