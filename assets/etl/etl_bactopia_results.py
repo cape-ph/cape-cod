@@ -82,6 +82,12 @@ if alert_obj_key.endswith(BACTRUN_KEYS):
     # split on "merged-results/"
     prefix, objfull = alert_obj_key.split("merged-results/")
     _, prefix = prefix.split("bactopia-runs/")
+    # if we have an old named amrfinder plus file, rename the output name to be
+    # the asme as the newer ones
+    objname = (
+        re.sub(r"-.*", "", objname) if objname == AMRF_OBJ_301 else objname
+    )
+
     objname, suffix = objfull.split(".")
 
 # we should have no missing values here
