@@ -97,6 +97,11 @@ if not all([prefix, objfull, objname, suffix]):
     #       to be considered a success.
     sys.exit(0)
 
+print(
+    f"Proceeding with bactoipa output processing with prefix [{prefix}], "
+    f"objfull [{objfull}], objname [{objname}], and suffix [{suffix}] "
+)
+
 # NOTE: May need some creds here
 s3_client = boto3.client("s3")
 
