@@ -17,11 +17,6 @@ from pulumi import (
     warn,
 )
 
-# TODO: ISSUE #145 This import is to support the temporary dap results s3
-#       handling.
-from capeinfra.pipeline.data import DataCrawler, EtlJob
-from capeinfra.util.config import CapeConfig
-
 from ..iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
@@ -33,8 +28,13 @@ from ..iam import (
     get_sqs_lambda_glue_trigger_policy,
     get_sqs_notifier_policy,
 )
-from ..objectstorage import VersionedBucket
+
+# TODO: ISSUE #145 This import is to support the temporary dap results s3
+#       handling.
+from ..pipeline.data import DataCrawler, EtlJob
+from ..resources.objectstorage import VersionedBucket
 from ..swimlane import ScopedSwimlane
+from ..util.config import CapeConfig
 from ..util.file import file_as_string
 from ..util.naming import disemvowel
 
