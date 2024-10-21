@@ -97,6 +97,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_dap_submission_queue()
         self.create_dap_api()
         self.create_static_web_resources()
+        self._create_hosted_domain()
         self.create_vpn()
         self.prepare_nextflow_executor()
         self.create_dap_results_s3()
@@ -685,28 +686,18 @@ class PrivateSwimlane(ScopedSwimlane):
     def _create_static_app_alb(self):
         """Create the application load balancer for static applications."""
 
-        self.app_alb = AppLoadBalancer(
-            f"{self.basename}-alb",
-            self.vpc.id,
-            subnet_ids=[
-                self.private_subnets["vpn"].id,
-                self.private_subnets["vpn2"].id,
+        self.create_alb(
+            "static",
+            [
+                self.private_subnets["vpn"],
+                self.private_subnets["vpn2"],
             ],
-            desc_name=f"{self.desc_name} Application Load Balancer",
+            self.static_apps["dap-ui"]["cert"].acmcert,
         )
 
-        # TODO: need to refactor the config to have one cert for the listener
-        #       instead of one per app. right now just grabbing the dap-ui one,
-        #       which will fail when there are no apps configured or if the name
-        #       changes, etc.
-        self.app_alb.add_listener(
-            443, "HTTPS", acmcert=self.static_apps["dap-ui"]["cert"].acmcert
-        )
-
-        # TODO: this isn't actually part of making the ALB, but more configuring
-        #       it after. separate.
+        # attach the static app targets to the alb
         for sa_name, sa_info in self.static_apps.items():
-            self.app_alb.add_static_app_target(
+            self.albs["static"].add_static_app_target(
                 self.static_app_vpcendpoint,
                 sa_name,
                 sa_info["paths"],
@@ -715,12 +706,8 @@ class PrivateSwimlane(ScopedSwimlane):
             )
 
     # TODO: ISSUES #128
-    # TODO: refactor out elsewhere
     def create_static_web_resources(self):
         """Creates resources related to private swimlane web resources."""
-
-        # private route53 zone
-        rte53_prvt_zone_name = self.config.get("domain", default=None)
 
         sa_cfgs = self.config.get("static-apps", default=None)
         if sa_cfgs is None:
@@ -775,65 +762,28 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self._create_static_app_alb()
 
+    def _create_hosted_domain(self):
+        """Create the private zone for the swimlane.
+
+        This must be done after setting up the ALB.
+        """
+        # private route53 zone
+        rte53_prvt_zone_name = self.config.get("domain", default=None)
+
         # setup the private hosted zone. this is totally inside our private
         # vpc, so it doesn't need to be registered anywhere public unless used
         # for public facing resources as well.
-        self.cape_rt53_private_zone = aws.route53.Zone(
-            f"{self.basename}-cape-rt53-prvtzn",
-            name=rte53_prvt_zone_name,
-            vpcs=[
-                aws.route53.ZoneVpcArgs(vpc_id=self.vpc.id),
-            ],
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Route53 private Zone for "
-                    f"{rte53_prvt_zone_name}"
-                ),
-            },
-        )
+        self.create_hosted_domain(rte53_prvt_zone_name)
 
         # we need a zone record per static app bucket
         for sa_name, sa_info in self.static_apps.items():
-            aws.route53.Record(
-                f"{self.basename}-{sa_name}-rt53rec",
-                zone_id=self.cape_rt53_private_zone.id,
-                name=sa_info["bucket"].bucket.bucket,
-                type=aws.route53.RecordType.A,
-                aliases=[
-                    aws.route53.RecordAliasArgs(
-                        evaluate_target_health=True,
-                        name=self.app_alb.alb.dns_name,
-                        zone_id=self.app_alb.alb.zone_id,
-                    ),
-                ],
-                opts=ResourceOptions(parent=self),
+            self.create_private_domain_alb_record(
+                sa_info["bucket"].bucket.bucket, sa_name, "static"
             )
 
-        self.rte53_dns_endpoint = aws.route53.ResolverEndpoint(
-            f"{self.basename}-rt53-dns",
-            direction="INBOUND",
-            # TODO: ISSUE #112
-            security_group_ids=[self.vpc.default_security_group_id],
-            # TODO: ISSUE #118
-            ip_addresses=[
-                aws.route53.ResolverEndpointIpAddressArgs(
-                    subnet_id=self.private_subnets["vpn"].id
-                ),
-                aws.route53.ResolverEndpointIpAddressArgs(
-                    subnet_id=self.private_subnets["vpn2"].id
-                ),
-            ],
-            protocols=[
-                "Do53",
-            ],
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Route53 DNS Endpoint for "
-                    f"{rte53_prvt_zone_name}"
-                ),
-            },
-            opts=ResourceOptions(parent=self),
+        # and DNS for the zone
+        self.create_private_hosted_dns(
+            [self.private_subnets["vpn"], self.private_subnets["vpn2"]]
         )
 
     # TODO: ISSUE #100
@@ -895,9 +845,8 @@ class PrivateSwimlane(ScopedSwimlane):
                 "cloudwatch_log_group": self.vpn_log_group.name,
                 "cloudwatch_log_stream": self.vpn_log_stream.name,
             },
-            # dns_servers=dns_server_ips,
             dns_servers=Output.all(
-                ipaddrs=self.rte53_dns_endpoint.ip_addresses
+                ipaddrs=self.rte53_dns_ep.ip_addresses
             ).apply(
                 lambda args: [ia["ip"] for ia in args["ipaddrs"]],
             ),
