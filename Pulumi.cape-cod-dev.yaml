@@ -87,6 +87,8 @@ config:
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
             # but have no server side functions. they are served as-is
+            # TODO: ISSUE #128
+            # TODO: ISSUE #166
             static-apps:
                 - name: "dap-ui"
                   fqdn: "analysis-pipelines.cape-dev.org"
