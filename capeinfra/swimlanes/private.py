@@ -17,10 +17,7 @@ from pulumi import (
     warn,
 )
 
-# TODO: ISSUE #145 This import is to support the temporary dap results s3
-#       handling.
-from capeinfra.pipeline.data import DataCrawler, EtlJob
-from capeinfra.util.config import CapeConfig
+from capeinfra.resources.loadbalancer import AppLoadBalancer
 
 from ..iam import (
     get_bucket_reader_policy,
@@ -33,8 +30,14 @@ from ..iam import (
     get_sqs_lambda_glue_trigger_policy,
     get_sqs_notifier_policy,
 )
-from ..objectstorage import VersionedBucket
+
+# TODO: ISSUE #145 This import is to support the temporary dap results s3
+#       handling.
+from ..pipeline.data import DataCrawler, EtlJob
+from ..resources.certs import BYOCert
+from ..resources.objectstorage import VersionedBucket
 from ..swimlane import ScopedSwimlane
+from ..util.config import CapeConfig
 from ..util.file import file_as_string
 from ..util.naming import disemvowel
 
@@ -94,6 +97,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_dap_submission_queue()
         self.create_dap_api()
         self.create_static_web_resources()
+        self._create_hosted_domain()
         self.create_vpn()
         self.prepare_nextflow_executor()
         self.create_dap_results_s3()
@@ -394,9 +398,7 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-    def create_analysis_pipeline_registry(
-        self,
-    ):
+    def create_analysis_pipeline_registry(self):
         """Sets up an analysis pipeline registry database.
 
         Args:
@@ -590,61 +592,8 @@ class PrivateSwimlane(ScopedSwimlane):
             function_response_types=["ReportBatchItemFailures"],
         )
 
-    # TODO:ISSUE #126
-    # TODO:ISSUE #125
-    # TODO:ISSUE #99
-    def create_acm_certificate(self, name: str, tls_cfg: dict):
-        """Create an ACM Certificate resource for the given tls config.
-
-        In the event that the config is not valid or has any bad values
-        (including names of files that cannot be read), a ValueError will be
-        raised.
-
-        Args:
-            name: The name to give the AWS ACM Cert resource.
-            tls_cfg: The configuration dict for the cert being created. It
-                     should have keys for `dir`, `ca-cert`, `server-key`, and
-                     `server-crt`.
-        Returns:
-            The created ACM cert.
-        Raises:
-            ValueError: On missing/invalid configuration options
-        """
-
-        tls_dir = tls_cfg.get("dir")
-        files = [
-            tls_cfg.get("ca-cert"),
-            tls_cfg.get("server-key"),
-            tls_cfg.get("server-cert"),
-        ]
-
-        if tls_dir is None or None in files:
-            raise ValueError(
-                f"TLS configuration for ACM cert resource {name} is invalid. "
-                "One or more expected configuration values are not provided."
-            )
-
-        try:
-            ca_crt_pem, server_key_pem, server_crt_pem = [
-                # join with `f or ""` is to make LSP happy...
-                file_as_string(os.path.join(tls_dir, f or ""))
-                for f in files
-            ]
-
-            return aws.acm.Certificate(
-                name,
-                certificate_chain=ca_crt_pem,
-                private_key=server_key_pem,
-                certificate_body=server_crt_pem,
-                opts=ResourceOptions(parent=self),
-            )
-        except (FileNotFoundError, IsADirectoryError) as err:
-            raise ValueError(
-                f"One or more configured TLS asset files could not be found "
-                f"during ACM Cert ({name}) creation: {err}"
-            )
-
     # TODO: ISSUE #126
+    # TODO: refactor out elsewhere
     def _deploy_static_app(self, sa_cfg: CapeConfig):
         """Create the S3 bucket for a static app and then deploy app files.
 
@@ -726,185 +675,39 @@ class PrivateSwimlane(ScopedSwimlane):
                 content_type=f["content-type"],
             )
 
-        # TODO: ISSUE #125
-        self.static_apps[sa_name]["cert"] = self.create_acm_certificate(
-            f"{self.basename}-{sa_name}-srvracmcert", tls_cfg
+        # NOTE:not handling ecxeption that could be thrown here as we want the
+        #      pulumi operation to fail in that case.
+        self.static_apps[sa_name]["cert"] = BYOCert.from_config(
+            f"{self.basename}-{sa_name}-byoc",
+            tls_cfg,
+            desc_name=f"BYOCert for {sa_name}",
         )
 
     def _create_static_app_alb(self):
         """Create the application load balancer for static applications."""
-        # TODO: ISSUE #112
-        self.sa_alb = aws.lb.LoadBalancer(
-            f"{self.basename}-saalb",
-            internal=True,
-            load_balancer_type="application",
-            # TODO: ISSUE #118
-            # TODO: ISSUE #131
-            subnets=[
-                self.private_subnets["vpn"].id,
-                self.private_subnets["vpn2"].id,
+
+        self.create_alb(
+            "static",
+            [
+                self.private_subnets["vpn"],
+                self.private_subnets["vpn2"],
             ],
-            # TODO: ISSUE #132
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Static Web Application Pipelines UI "
-                    "Load Balancer"
-                ),
-            },
-            opts=ResourceOptions(parent=self),
+            self.static_apps["dap-ui"]["cert"].acmcert,
         )
 
-        # The target group is where traffic is ultimately sent after being
-        # balanced.
-        self.sa_alb_targetgroup = aws.lb.TargetGroup(
-            f"{self.basename}-saalb-trgtgrp",
-            port=443,
-            protocol="HTTPS",
-            protocol_version="HTTP1",
-            target_type="ip",
-            vpc_id=self.vpc.id,
-            health_check=aws.lb.TargetGroupHealthCheckArgs(
-                path="/",
-                port="80",
-                protocol="HTTP",
-                matcher="200,307,405",
-            ),
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} static web application ALB target group"
-                ),
-            },
-        )
-
-        # attach the s3 network interfaces to the target group
-        # NOTE: this is a bit complicated due to resolution order of stuff in
-        #       pulumi. LSS, we're doing our attachments in an Output.all.apply
-        #       call and this helper is used in the lambda for that call. all
-        #       enumeration is needed to get unique resource names
-        def targetgroupattach_helper(args):
-            for idx, nid in enumerate(args["nids"]):
-                eni = aws.ec2.get_network_interface(id=nid)
-                aws.lb.TargetGroupAttachment(
-                    f"{self.basename}-saalb-trgtgrpattch{idx}",
-                    target_group_arn=self.sa_alb_targetgroup.arn,
-                    target_id=eni.private_ip,
-                    port=443,
-                    opts=ResourceOptions(parent=self),
-                )
-
-        Output.all(
-            nids=self.static_app_vpcendpoint.network_interface_ids
-        ).apply(lambda args: targetgroupattach_helper(args))
-
-        # TODO: ISSUE #133
+        # attach the static app targets to the alb
         for sa_name, sa_info in self.static_apps.items():
-            self.sa_alb_redirectlistener = aws.lb.Listener(
-                f"{self.basename}-{sa_name}-alblstnr",
-                load_balancer_arn=self.sa_alb.arn,
-                certificate_arn=sa_info["cert"].arn,
+            self.albs["static"].add_static_app_target(
+                self.static_app_vpcendpoint,
+                sa_name,
+                sa_info["paths"],
                 port=443,
-                protocol="HTTPS",
-                default_actions=[
-                    aws.lb.ListenerDefaultActionArgs(
-                        type="forward",
-                        forward=aws.lb.ListenerDefaultActionForwardArgs(
-                            target_groups=[
-                                aws.lb.ListenerDefaultActionForwardTargetGroupArgs(
-                                    arn=self.sa_alb_targetgroup.arn,
-                                    weight=1,
-                                )
-                            ],
-                        ),
-                    ),
-                ],
-                tags={
-                    "desc_name": (
-                        f"{self.desc_name} {sa_name} ALB HTTPS Listener"
-                    ),
-                },
-                opts=ResourceOptions(parent=self),
+                proto="HTTPS",
             )
-
-            # the following code up some rules around rewriting request paths
-            # where the url ends in a trailing slash or a an application (path)
-            # name. as all of our apps are served as a single `index.html`
-            # file, we need to rewrite the url to actually be for that file.
-            # this is because the default behavior of s3 is to provide a file
-            # listing when given a url ending in a trailing slash. that would
-            # be no bueno
-
-            # first build the list of patterns (for conditions) and
-            # rewrites/redirects (for actions). we will always have a default
-            # that handles paths ending in trailing slashes
-            conditions_actions = [("*/", "/#{path}index.html")]
-
-            # this constant action will work for all of our conditions and so we
-            # only need to define it once
-            actn = "/#{path}/index.html"
-
-            # NOTE: self.static_apps[sa_name]["paths"] is a set. Sets are not
-            #       ordered. So if we do not sort in some way, we will probably
-            #       get a different order every time we iterate over it when we
-            #       make listener rules. This means that the index-based
-            #       listener rules will probably appear different to pulumi
-            #       every deployment. This is an attempt to mitigate that
-            #       somewhat.
-            #       The downside to this (being sorted alphbetically) is that if
-            #       we add a new path that fits somewhere in the middle of the
-            #       sorted list, all listeners after that entry would appear to
-            #       be changed on that deployment...
-            for pth in sorted(self.static_apps[sa_name]["paths"]):
-                # we can ignore "." path here as that is the root of the s3
-                # bucket and would be covered by the default case.
-                if pth != ".":
-                    # pth will look like `a/b/c` relative to the root of the s3
-                    # bucket. the condition for that will look like `/a/b/c` and
-                    # the action will be the constant defined above
-                    conditions_actions.append((f"/{pth}", actn))
-
-            # TODO: ISSUE #133
-            # priorities for these rules are executed lowest to highest (and range
-            # on 1-50000). so have the list here in the order you want them tried
-            # in and the idx will take care of the priority
-            for idx, (ptrn, redir) in enumerate(conditions_actions, start=1):
-                aws.lb.ListenerRule(
-                    f"{self.basename}-saalb-{sa_name}-lstnrrl{idx}",
-                    listener_arn=self.sa_alb_redirectlistener.arn,
-                    conditions=[
-                        aws.lb.ListenerRuleConditionArgs(
-                            path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
-                                values=[ptrn],
-                            ),
-                        ),
-                    ],
-                    actions=[
-                        aws.lb.ListenerRuleActionArgs(
-                            type="redirect",
-                            redirect=aws.lb.ListenerRuleActionRedirectArgs(
-                                path=redir,
-                                protocol="HTTPS",
-                                # Permanent redirect for caching
-                                status_code="HTTP_301",
-                            ),
-                        ),
-                    ],
-                    priority=idx,
-                    opts=ResourceOptions(parent=self),
-                    tags={
-                        "desc_name": (
-                            f"{self.desc_name} {sa_name} ALB HTTPS Listener Rule for "
-                            "trailing slash"
-                        ),
-                    },
-                )
 
     # TODO: ISSUES #128
     def create_static_web_resources(self):
         """Creates resources related to private swimlane web resources."""
-
-        # private route53 zone
-        rte53_prvt_zone_name = self.config.get("domain", default=None)
 
         sa_cfgs = self.config.get("static-apps", default=None)
         if sa_cfgs is None:
@@ -959,65 +762,28 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self._create_static_app_alb()
 
+    def _create_hosted_domain(self):
+        """Create the private zone for the swimlane.
+
+        This must be done after setting up the ALB.
+        """
+        # private route53 zone
+        rte53_prvt_zone_name = self.config.get("domain", default=None)
+
         # setup the private hosted zone. this is totally inside our private
         # vpc, so it doesn't need to be registered anywhere public unless used
         # for public facing resources as well.
-        self.cape_rt53_private_zone = aws.route53.Zone(
-            f"{self.basename}-cape-rt53-prvtzn",
-            name=rte53_prvt_zone_name,
-            vpcs=[
-                aws.route53.ZoneVpcArgs(vpc_id=self.vpc.id),
-            ],
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Route53 private Zone for "
-                    f"{rte53_prvt_zone_name}"
-                ),
-            },
-        )
+        self.create_hosted_domain(rte53_prvt_zone_name)
 
         # we need a zone record per static app bucket
         for sa_name, sa_info in self.static_apps.items():
-            aws.route53.Record(
-                f"{self.basename}-{sa_name}-rt53rec",
-                zone_id=self.cape_rt53_private_zone.id,
-                name=sa_info["bucket"].bucket.bucket,
-                type=aws.route53.RecordType.A,
-                aliases=[
-                    aws.route53.RecordAliasArgs(
-                        evaluate_target_health=True,
-                        name=self.sa_alb.dns_name,
-                        zone_id=self.sa_alb.zone_id,
-                    ),
-                ],
-                opts=ResourceOptions(parent=self),
+            self.create_private_domain_alb_record(
+                sa_info["bucket"].bucket.bucket, sa_name, "static"
             )
 
-        self.rte53_dns_endpoint = aws.route53.ResolverEndpoint(
-            f"{self.basename}-rt53-dns",
-            direction="INBOUND",
-            # TODO: ISSUE #112
-            security_group_ids=[self.vpc.default_security_group_id],
-            # TODO: ISSUE #118
-            ip_addresses=[
-                aws.route53.ResolverEndpointIpAddressArgs(
-                    subnet_id=self.private_subnets["vpn"].id
-                ),
-                aws.route53.ResolverEndpointIpAddressArgs(
-                    subnet_id=self.private_subnets["vpn2"].id
-                ),
-            ],
-            protocols=[
-                "Do53",
-            ],
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Route53 DNS Endpoint for "
-                    f"{rte53_prvt_zone_name}"
-                ),
-            },
-            opts=ResourceOptions(parent=self),
+        # and DNS for the zone
+        self.create_private_hosted_dns(
+            [self.private_subnets["vpn"], self.private_subnets["vpn2"]]
         )
 
     # TODO: ISSUE #100
@@ -1033,8 +799,12 @@ class PrivateSwimlane(ScopedSwimlane):
 
         try:
             tls_cfg = self.config.get("vpn", "tls")
-            self.vpn_server_acm_cert = self.create_acm_certificate(
-                f"{self.basename}-vpn-srvracmcert", tls_cfg
+            # NOTE: not handling exceptions possible here as we want pulumi
+            #       operations to fail in that case
+            self.vpn_byocert = BYOCert.from_config(
+                f"{self.basename}-vpn-byoc",
+                tls_cfg,
+                desc_name=f"CAPE Private Swimlane VPN ACM BYOCert",
             )
         except ValueError as ve:
             warn(
@@ -1062,11 +832,11 @@ class PrivateSwimlane(ScopedSwimlane):
         self.client_vpn_endpoint = aws.ec2clientvpn.Endpoint(
             f"{self.basename}-vpnep",
             description=f"{self.desc_name} Client VPN Endpoint",
-            server_certificate_arn=self.vpn_server_acm_cert.arn,
+            server_certificate_arn=self.vpn_byocert.acmcert.arn,
             authentication_options=[
                 {
                     "type": "certificate-authentication",
-                    "root_certificate_chain_arn": self.vpn_server_acm_cert.arn,
+                    "root_certificate_chain_arn": self.vpn_byocert.acmcert.arn,
                 }
             ],
             client_cidr_block=self.config.get("vpn", "cidr-block"),
@@ -1075,9 +845,8 @@ class PrivateSwimlane(ScopedSwimlane):
                 "cloudwatch_log_group": self.vpn_log_group.name,
                 "cloudwatch_log_stream": self.vpn_log_stream.name,
             },
-            # dns_servers=dns_server_ips,
             dns_servers=Output.all(
-                ipaddrs=self.rte53_dns_endpoint.ip_addresses
+                ipaddrs=self.rte53_dns_ep.ip_addresses
             ).apply(
                 lambda args: [ia["ip"] for ia in args["ipaddrs"]],
             ),

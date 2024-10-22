@@ -14,7 +14,7 @@ class VersionedBucket(CapeComponentResource):
     def __init__(self, name, bucket_name=None, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
-            "capeinfra:objectstorage:S3VersionedBucket",
+            "capeinfra:resources:objectstorage:S3VersionedBucket",
             name,
             **kwargs,
         )

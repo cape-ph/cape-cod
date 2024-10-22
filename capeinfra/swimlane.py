@@ -7,12 +7,12 @@ from pulumi import ResourceOptions
 
 # TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
 #       it should not be here after 145.
-from capeinfra.datalake.datalake import CatalogDatabase
-from capeinfra.pipeline.batch import BatchCompute
-from capeinfra.util.config import CapeConfig
-from capeinfra.util.naming import disemvowel
-
-from .pulumi import CapeComponentResource
+from .datalake.datalake import CatalogDatabase
+from .pipeline.batch import BatchCompute
+from .resources.loadbalancer import AppLoadBalancer
+from .resources.pulumi import CapeComponentResource
+from .util.config import CapeConfig
+from .util.naming import disemvowel
 
 
 class ScopedSwimlane(CapeComponentResource):
@@ -41,6 +41,7 @@ class ScopedSwimlane(CapeComponentResource):
         self.basename = basename
         self.private_subnets = dict[str, aws.ec2.Subnet]()
         self.compute_environments = dict[str, BatchCompute]()
+        self.albs = {}
 
         # TODO: ISSUE #145 this member is only needed for the temporary DAP S3
         #       handling. it should not be here after 145. if it needs to, we
@@ -253,3 +254,117 @@ class ScopedSwimlane(CapeComponentResource):
                 subnets=self.private_subnets,
                 config=env,
             )
+
+    def create_hosted_domain(self, domain_name: str):
+        """Create a private hosted domain for the swimlane.
+
+        NOTE: This is currently specific to AWS Route53 hosted zones.
+
+        Args:
+            domain_name: The name of the domain to register (e.g. cape-dev.org).
+        """
+        self.rte53_private_zone = aws.route53.Zone(
+            f"{self.basename}-cape-rt53-prvtzn",
+            name=domain_name,
+            vpcs=[
+                aws.route53.ZoneVpcArgs(vpc_id=self.vpc.id),
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} Route53 private Zone for "
+                    f"{domain_name}"
+                ),
+            },
+        )
+
+    def create_private_hosted_dns(self, subnets):
+        """Create a DNS endpoint for in the piavte hosted domain.
+
+        The DNS endpoint will be active in the subnets given.
+
+        Args:
+            subnets: A list of subnet objects to enable the DNS endpoint in.
+        """
+        self.rte53_dns_ep = aws.route53.ResolverEndpoint(
+            f"{self.basename}-rt53dns",
+            direction="INBOUND",
+            # TODO: ISSUE #112
+            security_group_ids=[self.vpc.default_security_group_id],
+            # TODO: ISSUE #118
+            ip_addresses=[
+                aws.route53.ResolverEndpointIpAddressArgs(subnet_id=sn.id)
+                for sn in subnets
+            ],
+            protocols=[
+                "Do53",
+            ],
+            tags={
+                "desc_name": self.rte53_private_zone.name.apply(
+                    lambda n: f"{self.desc_name} Route53 DNS Endpoint for {n}"
+                ),
+            },
+            opts=ResourceOptions(parent=self),
+        )
+
+    def create_private_domain_alb_record(
+        self, record_name: str, short_name: str, alb_id: str
+    ):
+        """Create a private domain type A record and attach it to the ALB.
+
+        NOTE: This is currently specific to AWS Route53 hosted zones.
+
+        Args:
+            record_name: The record name (e.g. subdomain.domain.tld).
+            short_name: A short, unique name for the record.
+            alb_id: The identifier string of the ALB to associate the record
+                    with.
+
+        Returns: The new record.
+        """
+        return aws.route53.Record(
+            f"{self.basename}-{short_name}-rt53rec",
+            zone_id=self.rte53_private_zone.id,
+            name=record_name,
+            type=aws.route53.RecordType.A,
+            aliases=[
+                aws.route53.RecordAliasArgs(
+                    evaluate_target_health=True,
+                    name=self.albs[alb_id].alb.dns_name,
+                    zone_id=self.albs[alb_id].alb.zone_id,
+                ),
+            ],
+            opts=ResourceOptions(parent=self),
+        )
+
+    def create_alb(
+        self, alb_id: str, subnets: list, acmcert: aws.acm.Certificate
+    ):
+        """Create an application load balancer with some identifier.
+
+        NOTE: This only currently handles HTTPS traffic over 443.
+
+        Args:
+            id: A string identifier for the ALB (e.g. "static" or "api")
+            subnets: A list of subnets to associate the loadd balancer with.
+            acmcert: The certificate to add to the HTTPS/443 listener for the
+                     ALB.
+        """
+
+        # TODO: ISSUE #TBD - resource name length limitations (again). deferring
+        #                    problem till later by taking just the first 3 chars
+        #                    of the alb_id
+
+        short_alb = f"{alb_id[:2]}alb"
+        self.albs[alb_id] = AppLoadBalancer(
+            f"{self.basename}-{short_alb}",
+            self.vpc.id,
+            subnet_ids=[sn.id for sn in subnets],
+            desc_name=f"{self.desc_name} {alb_id} Application Load Balancer",
+        )
+
+        # TODO: need to refactor the config to have one cert for the listener
+        #       instead of one per app. right now just grabbing the dap-ui one,
+        #       which will fail when there are no apps configured or if the name
+        #       changes, etc.
+        self.albs[alb_id].add_listener(443, "HTTPS", acmcert=acmcert)

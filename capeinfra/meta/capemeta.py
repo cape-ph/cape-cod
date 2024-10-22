@@ -2,8 +2,8 @@
 
 from pulumi import FileAsset, ResourceOptions
 
-from ..objectstorage import VersionedBucket
-from ..pulumi import CapeComponentResource
+from ..resources.objectstorage import VersionedBucket
+from ..resources.pulumi import CapeComponentResource
 
 
 class CapeMeta(CapeComponentResource):

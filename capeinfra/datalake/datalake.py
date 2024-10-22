@@ -8,10 +8,10 @@ from capeinfra.iam import (
     get_sqs_lambda_glue_trigger_policy,
     get_sqs_notifier_policy,
 )
-from capeinfra.objectstorage import VersionedBucket
-from capeinfra.pipeline.data import DataCrawler, EtlJob
 
-from ..pulumi import CapeComponentResource
+from ..pipeline.data import DataCrawler, EtlJob
+from ..resources.objectstorage import VersionedBucket
+from ..resources.pulumi import CapeComponentResource
 
 
 class DatalakeHouse(CapeComponentResource):

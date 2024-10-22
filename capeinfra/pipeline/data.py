@@ -12,7 +12,7 @@ from ..iam import (
     get_start_crawler_policy,
     get_start_etl_job_policy,
 )
-from ..pulumi import CapeComponentResource
+from ..resources.pulumi import CapeComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 

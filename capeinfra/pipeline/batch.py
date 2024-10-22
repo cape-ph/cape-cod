@@ -4,7 +4,7 @@ import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 
 from ..iam import get_inline_role, get_instance_profile
-from ..pulumi import CapeComponentResource
+from ..resources.pulumi import CapeComponentResource
 
 
 class BatchCompute(CapeComponentResource):
