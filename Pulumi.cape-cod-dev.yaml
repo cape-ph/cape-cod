@@ -99,8 +99,8 @@ config:
                       # named following the pattern {fqdn}.[key|crt] where
                       # `{fqdn}` is the value of the fqdn provided in the above
                       # static_app scope
-                      server-key: "analysis-pipelines.cape-dev.org.key"
-                      server-cert: "analysis-pipelines.cape-dev.org.crt"
+                      server-key: "*.cape-dev.org.key"
+                      server-cert: "*.cape-dev.org.crt"
                   # repo_dir is the root directory in the repo for this app's
                   # files.
                   # TODO: long-term we will not want to have these apps in the
