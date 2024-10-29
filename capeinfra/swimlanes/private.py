@@ -883,6 +883,10 @@ class PrivateSwimlane(ScopedSwimlane):
                 sa_info["bucket"].bucket.bucket, sa_name, "static"
             )
 
+        # TODO: need this based on config
+        self.create_private_domain_alb_record(
+            "api.cape-dev.org", "dapapi", "api"
+        )
         # and DNS for the zone
         self.create_private_hosted_dns(
             [self.private_subnets["vpn"], self.private_subnets["vpn2"]]
