@@ -36,15 +36,17 @@ def config_init():
 @pytest.fixture(scope="module")
 def mock_meta(mock_namespace):
     from capeinfra.meta.capemeta import CapeMeta
+    from capeinfra.resources.pulumi import CapeComponentResource
 
-    return CapeMeta(f"{mock_namespace}-meta")
+    meta = CapeMeta(f"{mock_namespace}-meta")
+    CapeComponentResource.meta = meta
+    return meta
 
 
 @pytest.fixture(scope="module")
-def mock_datalake(mock_namespace, mock_meta):
+def mock_datalake(mock_namespace):
     from capeinfra.datalake.datalake import DatalakeHouse
 
     return DatalakeHouse(
         f"{mock_namespace}-datalakehouse",
-        mock_meta.automation_assets_bucket.bucket,
     )
