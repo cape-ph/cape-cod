@@ -95,7 +95,9 @@ class AppLoadBalancer(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-    def _add_target_group(self, group_id: str, ttype: str = "instance"):
+    def _add_target_group(
+        self, group_id: str, ttype: str = "instance"
+    ) -> aws.lb.TargetGroup:
         """Add a target group for the load balancer and return it.
 
         If a target group already exists for the group_id, it will be returned.
@@ -147,8 +149,11 @@ class AppLoadBalancer(CapeComponentResource):
                     f"Target group type {ttype} is invalid for ALB {self.name}."
                 )
 
+        # TODO: ISSUE #167 - putting a count in the resource name instead of
+        #                    group_id due to naming length limits
+        tg_idx = len(self._target_groups)
         self._target_groups[group_id] = aws.lb.TargetGroup(
-            f"{self.name}-tg-{group_id}",
+            f"{self.name}-tg-{tg_idx}",
             port=443,
             protocol="HTTPS",
             protocol_version="HTTP1",
@@ -435,6 +440,94 @@ class AppLoadBalancer(CapeComponentResource):
                 "desc_name": (
                     f"{self.desc_name} {sa_name} ALB 443 HTTPS Listener "
                     f"Rule for forward to {sa_name} target group"
+                ),
+            },
+        )
+
+    # TODO: a lot of shared boilerplate here with static app stuff
+    def add_api_target(
+        self,
+        vpc_ep: aws.ec2.VpcEndpoint,
+        api_stage_name: str,
+        api_stage_id: Output[str],
+        port: int | None = 443,
+        proto: str | None = "HTTPS",
+    ):
+        """Set an API gateway behind a VPC endpoint as a target for the ALB.
+
+        This method adds a target group, target group attachments, a listener
+        (if not added already), and listener rules for the api. The listener
+        will forward all requests to the provided VPC endpoint
+
+
+        Args:
+            vpc_ep: The VPC endpoint to associate with this static app.
+            api_stage_name: The unique name of the api being setup with this
+                            ALB. This will be the path after the alb hostname
+                            that will be used to route to the stage identified
+                            by api_stage_id. The API path after the alb
+                            hostname must match the name of the deployed stage
+                            in API gateway.
+            api_stage_id: The API gateway stage id that will be routed to for
+                          this target.
+            port: The port the of the listener the app will be associated with.
+                  Defaults to 443
+            proto: The protocol of the listener the app will be associated with.
+                   Defaults to HTTPS
+        """
+
+        listener = self._get_listener(port, proto)
+
+        # All APIs will be routed to IP target groups
+        api_tg = self._add_target_group(f"{api_stage_name}", ttype="ip")
+
+        # the vpc endpoint for the api gateway has a list of network
+        # interfaces. we need to associate the ip addrs of those interfaces
+        # with new target group attachments for the target group so we can
+        # forward traffic there. as the list of interfaces is a list of
+        # Outputs, need to apply on it to get the value and use that to get the
+        # ip string to pass on the that attachment helper.
+
+        vpc_ep.network_interface_ids.apply(
+            lambda l: self._add_target_group_attachments(
+                api_tg, [get_network_interface(id=i).private_ip for i in l]
+            )
+        )
+
+        # add the rule for forwarding a seemingly well formatted api request.
+        # TODO: at this time we do not handle rewrite of request paths to remove
+        #       trailing slashes. this would be nice, but certainly not a
+        #       non-starter since the apis are private
+        aws.lb.ListenerRule(
+            f"{self.name}-{api_stage_name}-lstnrrl1",
+            listener_arn=listener.arn,
+            conditions=[
+                aws.lb.ListenerRuleConditionArgs(
+                    path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
+                        values=[f"/{api_stage_name}/*"],
+                    ),
+                ),
+            ],
+            actions=[
+                aws.lb.ListenerRuleActionArgs(
+                    type="forward",
+                    forward=aws.lb.ListenerRuleActionForwardArgs(
+                        target_groups=[
+                            aws.lb.ListenerRuleActionForwardTargetGroupArgs(
+                                arn=api_tg.arn,
+                                weight=1,
+                            )
+                        ],
+                    ),
+                ),
+            ],
+            priority=1,
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} {api_stage_name} ALB 443 HTTPS "
+                    f"Listener Rule for forward to {api_stage_name} target "
+                    "group"
                 ),
             },
         )
