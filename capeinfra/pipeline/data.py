@@ -270,6 +270,17 @@ class EtlJob(CapeComponentResource):
             default_args["--additional-python-modules"] = ",".join(
                 self.config["pymodules"]
             )
+        # Make sure `capepy` is always added as an additional python module for
+        # ETL Jobs
+        default_args["--additional-python-modules"] = (
+            self.meta.capepy.uri.apply(
+                lambda capepy: (
+                    f"{default_args['--additional-python-modules']},{capepy}"
+                    if "--additional-python-modules" in default_args
+                    else capepy
+                )
+            )
+        )
         default_args["--CLEAN_BUCKET_NAME"] = self.clean_bucket.bucket
 
         self.job = aws.glue.Job(
