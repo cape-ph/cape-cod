@@ -82,16 +82,13 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         }
 
-    def __init__(
-        self, name, auto_assets_bucket: aws.s3.BucketV2, *args, **kwargs
-    ):
+    def __init__(self, name, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
         # TODO: ISSUE #153 is there a better way to expose the auto assets
         #       bucket since we're now passing it to every client that needs a
         #       lambda script? Same for data catalog (which is passed to the
         #       swimlane base class)
-        self.auto_assets_bucket = auto_assets_bucket
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
@@ -1245,7 +1242,7 @@ class PrivateSwimlane(ScopedSwimlane):
             f"{self.basename}-ETL-{short_name}",
             self.raw_dap_results_bucket.bucket,
             self.clean_dap_results_bucket.bucket,
-            self.auto_assets_bucket,
+            self.meta.automation_assets_bucket.bucket,
             opts=ResourceOptions(parent=self),
             desc_name=(f"{self.desc_name} DAP results ETL job"),
             config=etl_cfg,

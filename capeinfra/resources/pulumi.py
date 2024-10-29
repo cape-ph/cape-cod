@@ -4,12 +4,18 @@ from abc import abstractmethod
 
 from pulumi import ComponentResource
 
+from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.util.config import CapeConfig
 
 
 class CapeComponentResource(ComponentResource):
     """Extension of ComponentResource that takes a descriptive name and sets up
     configuration."""
+
+    # HACK: set the type to CapeMeta but value to None to add it later
+    # have pyright ignore this error because we will make sure we set it
+    # immediately in our code.
+    meta: CapeMeta = None  # pyright: ignore
 
     def __init__(
         self,

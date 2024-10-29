@@ -20,7 +20,6 @@ class DatalakeHouse(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        auto_assets_bucket: aws.s3.BucketV2,
         *args,
         **kwargs,
     ):
@@ -43,7 +42,7 @@ class DatalakeHouse(CapeComponentResource):
 
         # setup the tributary ETL attributes database and all tributaries for
         # the lakehouse
-        self.configure_tributaries(auto_assets_bucket)
+        self.configure_tributaries()
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -99,14 +98,8 @@ class DatalakeHouse(CapeComponentResource):
 
     def configure_tributaries(
         self,
-        auto_assets_bucket: aws.s3.BucketV2,
     ):
-        """Sets up an ETL attributes database and the configured Tributaries.
-
-        Args:
-            auto_assets_bucket: The BucketV2 object for the automation assets
-                                object storage.
-        """
+        """Sets up an ETL attributes database and the configured Tributaries."""
         # setup a DynamoDB table to hold the prefix/suffix/etl job attributes
         # for all tributaries. Each tributary will add its own configured ETL
         # attributes information to this table.
@@ -152,7 +145,6 @@ class DatalakeHouse(CapeComponentResource):
                 Tributary(
                     f"{self.name}-T-{trib_name}",
                     self.catalog.catalog_database,
-                    auto_assets_bucket,
                     self.etl_attr_ddb_table,
                     self.aws_region,
                     config=trib_config,
@@ -213,7 +205,6 @@ class Tributary(CapeComponentResource):
         self,
         name: str,
         db: aws.glue.CatalogDatabase,
-        auto_assets_bucket: aws.s3.BucketV2,
         etl_attrs_ddb_table: aws.dynamodb.Table,
         aws_region: str,
         *args,
@@ -244,7 +235,7 @@ class Tributary(CapeComponentResource):
         )
 
         # setup all configured ETL jobs and add items to the DDB table for each.
-        jobs = self.configure_etl(auto_assets_bucket, etl_attrs_ddb_table)
+        jobs = self.configure_etl(etl_attrs_ddb_table)
 
         # Lambda SQS Target setup
         self.configure_sqs_lambda_target(jobs)
@@ -285,17 +276,11 @@ class Tributary(CapeComponentResource):
                 config=bucket_config["crawler"],
             )
 
-    def configure_etl(
-        self,
-        auto_assets_bucket: aws.s3.BucketV2,
-        etl_attrs_ddb_table: aws.dynamodb.Table,
-    ):
+    def configure_etl(self, etl_attrs_ddb_table: aws.dynamodb.Table):
         """Configure all ETL jobs for the tributary.
 
         Args:
             etl_cfgs: The list of ETL configuration dicts from the pulumi config.
-            auto_assets_bucket: The BucketV2 instance that contains the
-                                automation assets.
             etl_attrs_ddb_table: A reference to the NOSQL table holding the ETL
                                  attributes.
         Returns:
@@ -308,7 +293,7 @@ class Tributary(CapeComponentResource):
                 f"{self.name}-ETL-{cfg['name']}",
                 self.buckets[Tributary.RAW].bucket,
                 self.buckets[Tributary.CLEAN].bucket,
-                auto_assets_bucket,
+                self.meta.automation_assets_bucket.bucket,
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} raw to clean ETL job"),
                 config=cfg,
