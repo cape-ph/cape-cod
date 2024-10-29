@@ -1,7 +1,7 @@
 """Contains resources used by the whole CAPE infra deployment."""
 
 import pulumi_aws as aws
-from pulumi import FileAsset, Output, ResourceOptions
+from pulumi import AssetArchive, FileArchive, FileAsset, Output, ResourceOptions
 
 from ..resources.objectstorage import VersionedBucket
 from ..resources.pulumi import CapeComponentResource
@@ -58,7 +58,7 @@ class CapePy(CapeComponentResource):
         self.object = self.bucket.add_object(
             f"{self.name}-object",
             key="capepy.whl",
-            source=FileAsset("./assets/capepy-0.1.0-py3-none-any.whl"),
+            source=FileAsset("./assets/capepy/capepy-0.1.0-py3-none-any.whl"),
         )
 
         self.uri = Output.all(bucket=self.bucket, key=self.object).apply(
@@ -71,7 +71,6 @@ class CapePy(CapeComponentResource):
             description="This layer provides the capepy Python library",
             license_info=" Apache-2.0",
             compatible_runtimes=["python3.11"],
-            s3_bucket=assets_bucket.bucket.bucket,
-            s3_key=self.object.key,
+            code=FileArchive("./assets/capepy/capepy_layer.zip"),
             opts=ResourceOptions(parent=self),
         )
