@@ -127,6 +127,47 @@ def get_bucket_web_host_policy(
     )
 
 
+# TODO: this allows invoke access to *all* apis in the VPC as long as traffic
+# comes through the VPC endpoint. W probably want to lock this down to specific
+# APIs as an argument here.
+def get_vpce_api_invoke_policy(
+    vpce_id: Input[str] | None = None,
+) -> Output[str]:
+    """Get a role policy statement for VPC endpoint limited execute-api:Invoke.
+
+    NOTE: At present, this allows invoke access to *all* APIs in the VPC if
+    coming from the given endpoint.
+
+    Args:
+        vpce_id: A VPC Endpoint id to limit invoke access to.
+
+    Returns:
+        The policy statement as a json encoded string.
+    """
+    return Output.json_dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "execute-api:Invoke",
+                    "Resource": ["arn:aws:execute-api:*:*:execute-api/*"],
+                },
+                {
+                    "Effect": "Deny",
+                    "Principal": "*",
+                    "Action": "execute-api:Invoke",
+                    "Resource": ["arn:aws:execute-api:*:*:execute-api:/*"],
+                    "Condition": {
+                        "StringNotEquals": {"aws:SourceVpce": vpce_id}
+                    },
+                },
+            ],
+        }
+    )
+
+
 def get_start_crawler_policy(crawler: str) -> str:
     """Get a role policy statement for starting a crawler.
 
