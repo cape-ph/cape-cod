@@ -151,6 +151,7 @@ class DataCrawler(CapeComponentResource):
         self.trigger_function = aws.lambda_.Function(
             f"{self.name}-lmbdfnct",
             role=self.trigger_role.arn,
+            layers=[self.meta.capepy.lambda_layer.arn],
             # NOTE: Lambdas want a zip file as opposed to an s3 script location
             code=AssetArchive(
                 {
@@ -325,6 +326,7 @@ class EtlJob(CapeComponentResource):
         etl_function = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
             role=self.trigger_role.arn,
+            layers=[self.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(

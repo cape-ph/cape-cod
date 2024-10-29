@@ -285,6 +285,7 @@ class PrivateSwimlane(ScopedSwimlane):
             handler_lambda = aws.lambda_.Function(
                 f"{res_prefix}-{short_name}-lmbdfn",
                 role=api_lambda_role.arn,
+                layers=[self.meta.capepy.lambda_layer.arn],
                 handler=es["handler"],
                 runtime=es["runtime"],
                 code=AssetArchive({"index.py": FileAsset(es["handler_src"])}),
@@ -657,6 +658,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.dap_submit_qmsg_handler = aws.lambda_.Function(
             f"{self.basename}-dapq-sqslmbdtrgfnct",
             role=self.dap_submit_sqs_trigger_role.arn,
+            layers=[self.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
@@ -1270,6 +1272,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.dap_results_qmsg_handler = aws.lambda_.Function(
             f"{self.basename}-{short_name}-sqslmbdtrgfnct",
             role=self.sqs_dap_results_trigger_role.arn,
+            layers=[self.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     # TODO: ISSUE #150 this script is usable as is for any glue
@@ -1330,6 +1333,7 @@ class PrivateSwimlane(ScopedSwimlane):
         new_object_handler = aws.lambda_.Function(
             f"{self.basename}-{short_name}-lmbdtrgfnct",
             role=self.dap_results_bucket_trigger_role.arn,
+            layers=[self.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(

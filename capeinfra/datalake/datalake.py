@@ -360,6 +360,7 @@ class Tributary(CapeComponentResource):
         self.qmsg_handler = aws.lambda_.Function(
             f"{self.name}-sqslmbdtrgfnct",
             role=self.sqs_trigger_role.arn,
+            layers=[self.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
@@ -424,6 +425,7 @@ class Tributary(CapeComponentResource):
         new_object_handler = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
             role=self.raw_bucket_trigger_role.arn,
+            layers=[self.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
