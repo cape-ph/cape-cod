@@ -4,36 +4,10 @@ import csv
 import io
 import os
 import re
-import sys
 
-import boto3 as boto3
-from awsglue.context import GlueContext
-from awsglue.utils import getResolvedOptions
-from pyspark.sql import SparkSession
+from capepy.aws.glue import ETLJob
 
-# for our purposes here, the spark and glue context are only (currently) needed
-# to get the logger.
-spark_ctx = SparkSession.builder.getOrCreate()  # pyright: ignore
-glue_ctx = GlueContext(spark_ctx)
-logger = glue_ctx.get_logger()
-
-parameters = getResolvedOptions(
-    sys.argv,
-    [
-        "RAW_BUCKET_NAME",
-        "ALERT_OBJ_KEY",
-        "CLEAN_BUCKET_NAME",
-    ],
-)
-
-# TODO: ISSUE #150 we should change our generic etl concept to not use the
-#       words "raw" or "alert". probably not even "clean". Then we can get
-#       to a place where we can reuse things outside the raw/clean alert
-#       etl paradigm.
-
-raw_bucket_name = parameters["RAW_BUCKET_NAME"]
-alert_obj_key = parameters["ALERT_OBJ_KEY"]
-clean_bucket_name = parameters["CLEAN_BUCKET_NAME"]
+etl_job = ETLJob()
 
 # partition/column name
 BACTRUN_PARTITION = "bactopia_run"
@@ -74,6 +48,7 @@ objfull = None
 objname = None
 suffix = None
 
+alert_obj_key = etl_job.parameters["ALERT_OBJ_KEY"]
 if alert_obj_key.endswith(BACTRUN_KEYS):
     # in the case of bactopia output files, we'll want the first 2 parts of
     # the original prefix (e.g. 'bactopia-runs/bactopia-20241008-183748/')
@@ -98,37 +73,9 @@ print(
     f"objfull [{objfull}], objname [{objname}], and suffix [{suffix}] "
 )
 
-# NOTE: May need some creds here
-s3_client = boto3.client("s3")
-
-
-# NOTE: f"{var}" here is to make the LSP happy. it's convinced they could
-#       be None, which would cause us to exit this job prior to here. but
-#       whatevs...
 clean_obj_key = os.path.join(
     f"{objname}", f"{BACTRUN_PARTITION}={prefix}", f"{objname}.csv"
 )
-
-# try to get the object from S3 and handle any error that would keep us
-# from continuing.
-response = s3_client.get_object(Bucket=raw_bucket_name, Key=alert_obj_key)
-
-status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-
-if status != 200:
-    err = (
-        f"ERROR - Could not get object {alert_obj_key} from bucket "
-        f"{raw_bucket_name}. ETL Cannot continue."
-    )
-
-    logger.error(err)
-
-    # NOTE: need to properly handle exception stuff here, and we probably want
-    #       this going somewhere very visible (e.g. SNS topic or a perpetual log
-    #       as someone will need to be made aware)
-    raise Exception(err)
-
-logger.info(f"Obtained object {alert_obj_key} from bucket {raw_bucket_name}.")
 
 # handle the document itself...
 print(f"Processing new object: {alert_obj_key}")
@@ -139,7 +86,7 @@ print(f"Processing new object: {alert_obj_key}")
 with io.StringIO() as sio_buff:
     writer = csv.writer(sio_buff)
     reader = csv.reader(
-        io.StringIO(response.get("Body").read().decode("utf-8")), delimiter="\t"
+        io.StringIO(etl_job.get_raw_file().decode("utf-8")), delimiter="\t"
     )
 
     # NOTE: based on file name matching above, we should never end up where an
@@ -175,26 +122,4 @@ with io.StringIO() as sio_buff:
 
             writer.writerow(row)
 
-    response = s3_client.put_object(
-        Bucket=clean_bucket_name, Key=clean_obj_key, Body=sio_buff.getvalue()
-    )
-
-    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-
-    if status != 200:
-        err = (
-            f"ERROR - Could not write transformed data object {clean_obj_key} "
-            f"to bucket {clean_bucket_name}. ETL Cannot continue."
-        )
-
-        logger.error(err)
-
-        # NOTE: need to properly handle exception stuff here, and we probably
-        #       want this going somewhere very visible (e.g. SNS topic or a
-        #       perpetual log as someone will need to be made aware)
-        raise Exception(err)
-
-    logger.info(
-        f"Transformed {raw_bucket_name}/{alert_obj_key} and wrote result "
-        f"to {clean_bucket_name}/{clean_obj_key}"
-    )
+    etl_job.write_clean_file(sio_buff.getvalue(), clean_obj_key)
