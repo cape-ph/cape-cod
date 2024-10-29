@@ -29,6 +29,7 @@ from ..iam import (
     get_sqs_lambda_dap_submit_policy,
     get_sqs_lambda_glue_trigger_policy,
     get_sqs_notifier_policy,
+    get_vpce_api_invoke_policy,
 )
 
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
@@ -95,8 +96,11 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
+        # TODO: probably want to wrap all this up in the private api resources
+        #       like deploying the static apps is in static resources
         self.create_dap_api()
         self.create_static_web_resources()
+        self.create_private_api_resources()
         self._create_hosted_domain()
         self.create_vpn()
         self.prepare_nextflow_executor()
@@ -374,10 +378,20 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
-        # NOTE: our stage name is in the config file, and if it is not defined
-        #       we rally want the deployment to fail. so we'll let the KeyError
-        #       happen and not try to do anything about it
-        stage_name = self.config.get("api", "dap", "meta", "stage-name")
+        # NOTE: our stage name suffix (e.g. `dev` vs `prod`) is in the config
+        #       file, and if it is not defined we really want the deployment
+        #       to fail. so we'll let the KeyError happen and not try to do
+        #       anything about it
+        # TODO:as we only have one api right now, we're storing the stage name
+        #      explicitly. we will need this for a resource name later, which
+        #      means we cannot use any Output property of the stage (i.e.
+        #      stage_name, which is really what we want) due to pulumi
+        #      limitations. What we really need to to move toward is a
+        #      collection of apis (like we have for albs and such) with a name
+        #      per entry in the collection.
+        self.dap_api_stage_name = (
+            f"dapapi-{self.config.get('api', 'dap', 'meta', 'stage-name')}"
+        )
 
         # make a stage for the deployment manually.
         # NOTE: we could make this implicitly by just setting stage_name on the
@@ -387,10 +401,10 @@ class PrivateSwimlane(ScopedSwimlane):
         #       service interruption.
         self.dap_api_deployment_stage = aws.apigateway.Stage(
             f"{self.basename}-dapapi-dplymntstg",
-            stage_name=stage_name,
+            stage_name=self.dap_api_stage_name,
             description=(
-                f"CAPE data analysis pipeline API {stage_name} deployment "
-                "stage"
+                f"CAPE data analysis pipeline API {self.dap_api_stage_name} "
+                "deployment stage"
             ),
             deployment=self.dap_api_deployment.id,
             rest_api=self.dap_rest_api.id,
@@ -705,6 +719,37 @@ class PrivateSwimlane(ScopedSwimlane):
                 proto="HTTPS",
             )
 
+    # TODO: very similar to _create_static_app_alb
+    def _create_api_alb(self):
+        """Create the application load balancer for private apis."""
+
+        self.create_alb(
+            "api",
+            [
+                self.private_subnets["vpn"],
+                self.private_subnets["vpn2"],
+            ],
+            self.static_apps["dap-ui"]["cert"].acmcert,
+        )
+
+        # attach the api gateway targets to the alb
+        self.albs["api"].add_api_target(
+            self.api_vpcendpoint,
+            self.dap_api_stage_name,
+            self.dap_api_deployment_stage.id,
+            port=443,
+            proto="HTTPS",
+        )
+        # TODO: api gateway targets...
+        # for sa_name, sa_info in self.static_apps.items():
+        #     self.albs["static"].add_static_app_target(
+        #         self.static_app_vpcendpoint,
+        #         sa_name,
+        #         sa_info["paths"],
+        #         port=443,
+        #         proto="HTTPS",
+        #     )
+
     # TODO: ISSUES #128
     def create_static_web_resources(self):
         """Creates resources related to private swimlane web resources."""
@@ -761,6 +806,63 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
         self._create_static_app_alb()
+
+    # TODO: very similar to create_static_web_resources. DRY
+    def create_private_api_resources(self):
+        """Creates resources related to private swimlane apis."""
+
+        # TODO: config for private apis
+
+        # sa_cfgs = self.config.get("static-apps", default=None)
+        # if sa_cfgs is None:
+        #     warn(f"No static apps configured for swimlane {self.basename}")
+        #     return
+
+        # NOTE: our private DNS will send *all* api gateway traffic through
+        #       this endpoint. at the time of this comment, this means we would
+        #       not be able to route to public aws dns entries as those are
+        #       only  available to public dns endpoints. if we ever end up need
+        #       public (aws api gateway) apis as well, they will need something
+        #       like a custom (public) domain name that we can route to instead
+        self.api_vpcendpoint = aws.ec2.VpcEndpoint(
+            f"{self.basename}-apivpcep",
+            vpc_id=self.vpc.id,
+            service_name=f"com.amazonaws.{aws.get_region().name}.execute-api",
+            vpc_endpoint_type="Interface",
+            private_dns_enabled=True,
+            # TODO: ISSUE #131
+            subnet_ids=[
+                self.private_subnets["vpn"].id,
+                self.private_subnets["vpn2"].id,
+            ],
+            # TODO: ISSUE #112
+            tags={
+                "desc_name": f"{self.desc_name} private api VPC endpoint",
+            },
+        )
+
+        # self.static_apps = {}
+        # for sa_cfg in sa_cfgs:
+        #     try:
+        #         self._deploy_static_app(CapeConfig(sa_cfg))
+        #     except ValueError:
+        #         # ValueError will be thrown for invalid configuration of a
+        #         # static app. Logging will have already happened, so we just
+        #         # need to halt the deployment of that app and move on
+        #         continue
+
+        # TODO: Need endpoint policy for api endpoints. Should include limit to
+        #       this VPC only
+
+        aws.ec2.VpcEndpointPolicy(
+            f"{self.basename}-api-vpcepplcy",
+            vpc_endpoint_id=self.api_vpcendpoint.id,
+            # TODO: ISSUE #135
+            policy=get_vpce_api_invoke_policy(self.api_vpcendpoint.id),
+            opts=ResourceOptions(parent=self),
+        )
+
+        self._create_api_alb()
 
     def _create_hosted_domain(self):
         """Create the private zone for the swimlane.
