@@ -16,22 +16,11 @@ import urllib.parse
 
 import boto3
 from botocore.exceptions import ClientError
+from capepy.aws.utils import decode_error
 
 logger = logging.getLogger(__name__)
 
 sqs_client = boto3.client("sqs")
-
-
-# TODO: ISSUE #86
-def decode_error(err: ClientError):
-    code, message = "Unknown", "Unknown"
-    if "Error" in err.response:
-        error = err.response["Error"]
-        if "Code" in error:
-            code = error["Code"]
-        if "Message" in error:
-            message = error["Message"]
-    return code, message
 
 
 # TODO: ISSUE #86
