@@ -5,7 +5,7 @@ import os
 import pulumi_aws as aws
 from pulumi import ResourceOptions, warn
 
-from capeinfra.resources.pulumi import CapeComponentResource
+from capepulumi import CapeComponentResource
 
 from ..util.file import file_as_string
 

@@ -16,7 +16,8 @@ from pulumi import (
 )
 from pulumi_synced_folder import S3BucketFolder
 
-from ..iam import (
+import capeinfra
+from capeinfra.iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
     get_dap_api_policy,
@@ -31,12 +32,12 @@ from ..iam import (
 
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
-from ..pipeline.data import DataCrawler, EtlJob
-from ..resources.certs import BYOCert
-from ..resources.objectstorage import VersionedBucket
-from ..swimlane import ScopedSwimlane
-from ..util.config import CapeConfig
-from ..util.naming import disemvowel
+from capeinfra.pipeline.data import DataCrawler, EtlJob
+from capeinfra.resources.certs import BYOCert
+from capeinfra.resources.objectstorage import VersionedBucket
+from capeinfra.swimlane import ScopedSwimlane
+from capeinfra.util.naming import disemvowel
+from capepulumi import CapeConfig
 
 
 class PrivateSwimlane(ScopedSwimlane):
@@ -285,7 +286,7 @@ class PrivateSwimlane(ScopedSwimlane):
             handler_lambda = aws.lambda_.Function(
                 f"{res_prefix}-{short_name}-lmbdfn",
                 role=api_lambda_role.arn,
-                layers=[self.meta.capepy.lambda_layer.arn],
+                layers=[capeinfra.meta.capepy.lambda_layer.arn],
                 handler=es["handler"],
                 runtime=es["runtime"],
                 code=AssetArchive({"index.py": FileAsset(es["handler_src"])}),
@@ -658,7 +659,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.dap_submit_qmsg_handler = aws.lambda_.Function(
             f"{self.basename}-dapq-sqslmbdtrgfnct",
             role=self.dap_submit_sqs_trigger_role.arn,
-            layers=[self.meta.capepy.lambda_layer.arn],
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
@@ -1244,7 +1245,7 @@ class PrivateSwimlane(ScopedSwimlane):
             f"{self.basename}-ETL-{short_name}",
             self.raw_dap_results_bucket.bucket,
             self.clean_dap_results_bucket.bucket,
-            self.meta.automation_assets_bucket.bucket,
+            capeinfra.meta.automation_assets_bucket.bucket,
             opts=ResourceOptions(parent=self),
             desc_name=(f"{self.desc_name} DAP results ETL job"),
             config=etl_cfg,
@@ -1272,7 +1273,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.dap_results_qmsg_handler = aws.lambda_.Function(
             f"{self.basename}-{short_name}-sqslmbdtrgfnct",
             role=self.sqs_dap_results_trigger_role.arn,
-            layers=[self.meta.capepy.lambda_layer.arn],
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     # TODO: ISSUE #150 this script is usable as is for any glue
@@ -1333,7 +1334,7 @@ class PrivateSwimlane(ScopedSwimlane):
         new_object_handler = aws.lambda_.Function(
             f"{self.basename}-{short_name}-lmbdtrgfnct",
             role=self.dap_results_bucket_trigger_role.arn,
-            layers=[self.meta.capepy.lambda_layer.arn],
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(

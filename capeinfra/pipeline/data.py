@@ -5,14 +5,15 @@ from copy import deepcopy
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
-from ..iam import (
+import capeinfra
+from capeinfra.iam import (
     get_bucket_reader_policy,
     get_etl_job_s3_policy,
     get_inline_role,
     get_start_crawler_policy,
     get_start_etl_job_policy,
 )
-from ..resources.pulumi import CapeComponentResource
+from capepulumi import CapeComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
@@ -151,7 +152,7 @@ class DataCrawler(CapeComponentResource):
         self.trigger_function = aws.lambda_.Function(
             f"{self.name}-lmbdfnct",
             role=self.trigger_role.arn,
-            layers=[self.meta.capepy.lambda_layer.arn],
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             # NOTE: Lambdas want a zip file as opposed to an s3 script location
             code=AssetArchive(
                 {
@@ -274,7 +275,7 @@ class EtlJob(CapeComponentResource):
         # Make sure `capepy` is always added as an additional python module for
         # ETL Jobs
         default_args["--additional-python-modules"] = (
-            self.meta.capepy.uri.apply(
+            capeinfra.meta.capepy.uri.apply(
                 lambda capepy: (
                     f"{default_args['--additional-python-modules']},{capepy}"
                     if "--additional-python-modules" in default_args
@@ -326,7 +327,7 @@ class EtlJob(CapeComponentResource):
         etl_function = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
             role=self.trigger_role.arn,
-            layers=[self.meta.capepy.lambda_layer.arn],
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(

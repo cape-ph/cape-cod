@@ -3,15 +3,15 @@
 import pulumi_aws as aws
 from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions
 
+import capeinfra
 from capeinfra.iam import (
     get_inline_role,
     get_sqs_lambda_glue_trigger_policy,
     get_sqs_notifier_policy,
 )
-
-from ..pipeline.data import DataCrawler, EtlJob
-from ..resources.objectstorage import VersionedBucket
-from ..resources.pulumi import CapeComponentResource
+from capeinfra.pipeline.data import DataCrawler, EtlJob
+from capeinfra.resources.objectstorage import VersionedBucket
+from capepulumi import CapeComponentResource
 
 
 class DatalakeHouse(CapeComponentResource):
@@ -293,7 +293,7 @@ class Tributary(CapeComponentResource):
                 f"{self.name}-ETL-{cfg['name']}",
                 self.buckets[Tributary.RAW].bucket,
                 self.buckets[Tributary.CLEAN].bucket,
-                self.meta.automation_assets_bucket.bucket,
+                capeinfra.meta.automation_assets_bucket.bucket,
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} raw to clean ETL job"),
                 config=cfg,
@@ -360,7 +360,7 @@ class Tributary(CapeComponentResource):
         self.qmsg_handler = aws.lambda_.Function(
             f"{self.name}-sqslmbdtrgfnct",
             role=self.sqs_trigger_role.arn,
-            layers=[self.meta.capepy.lambda_layer.arn],
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
@@ -425,7 +425,7 @@ class Tributary(CapeComponentResource):
         new_object_handler = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
             role=self.raw_bucket_trigger_role.arn,
-            layers=[self.meta.capepy.lambda_layer.arn],
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(

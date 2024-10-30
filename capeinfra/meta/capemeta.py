@@ -1,10 +1,10 @@
 """Contains resources used by the whole CAPE infra deployment."""
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileArchive, FileAsset, Output, ResourceOptions
+from pulumi import FileArchive, FileAsset, Output, ResourceOptions
 
-from ..resources.objectstorage import VersionedBucket
-from ..resources.pulumi import CapeComponentResource
+from capeinfra.resources.objectstorage import VersionedBucket
+from capepulumi import CapeComponentResource
 
 
 class CapeMeta(CapeComponentResource):
