@@ -2,10 +2,10 @@
 
 import json
 import os
-import urllib.parse
 
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import EtlTable
+from capepy.aws.lambda_ import BucketNotificationRecord
 from capepy.aws.meta import Boto3Object
 from capepy.aws.utils import decode_error
 
@@ -70,21 +70,6 @@ def index_handler(event, context):
         )
         return {"statusCode": 500, "body": msg}
 
-    # grab all the info we care about for the new s3 object from the event
-    # object.
-    # NOTE: the event structure for notifications can contain many records.
-    #       grabbing them all to handle potential of multiple uploads in a
-    #       batch. a new message will be inserted for each record
-    object_info = [
-        {
-            "bucket": rec["s3"]["bucket"]["name"],
-            "key": urllib.parse.unquote_plus(
-                rec["s3"]["object"]["key"], encoding="utf-8"
-            ),
-        }
-        for rec in event["Records"]
-    ]
-
     # get a reference to the etl attributes table
     ddb_table = EtlTable(etl_attrs_ddb_name)
 
@@ -101,9 +86,10 @@ def index_handler(event, context):
         )
         queue_url = response["QueueUrl"]
 
-        for oi in object_info:
+        for rec in event["Records"]:
+            bucket_notif = BucketNotificationRecord(rec)
             # deconstruct the key (s3 name, prefix, suffix)
-            prefix, _, objname = oi["key"].rpartition("/")
+            prefix, _, objname = bucket_notif.key.rpartition("/")
             if not objname:
                 # if we didn't get an objname, the separator "/" was not found,
                 # meaning there is no prefix. so do some rearranging of
@@ -118,22 +104,24 @@ def index_handler(event, context):
 
             # grab the filtering criteria from dynamodb and see if we care about
             # this object
-            etl_attrs = ddb_table.get_etls(oi["bucket"], prefix)
+            etl_attrs = ddb_table.get_etls(bucket_notif.bucket, prefix)
 
             if etl_attrs:
                 # if the file passes criteria, add message to queue_name
                 if suffix in etl_attrs["suffixes"]:
                     # we care about this object. go ahead and queue a message
-                    qmsg = {}
-                    qmsg.update(oi)
+                    qmsg = {
+                        "bucket": bucket_notif.bucket,
+                        "key": bucket_notif.key,
+                    }
                     qmsg.setdefault("etl_job", etl_attrs.get("etl_job"))
 
                     send_etl_message(ddb_table, queue_name, queue_url, qmsg)
-                    processed_oi.append(oi)
+                    processed_oi.append(bucket_notif)
                 else:
-                    ignored_oi.append(oi)
+                    ignored_oi.append(bucket_notif)
             else:
-                ignored_oi.append(oi)
+                ignored_oi.append(bucket_notif)
 
         # Make our return message containing info about the processed and
         # ignored objects
@@ -146,7 +134,7 @@ def index_handler(event, context):
             )
 
             for poi in processed_oi:
-                body = f"{body}({poi['bucket']}, {poi['key']}), "
+                body = f"{body}({poi.bucket}, {poi.key}), "
 
             body = f"{body}]. "
 
@@ -157,7 +145,7 @@ def index_handler(event, context):
             )
 
             for ioi in ignored_oi:
-                body = f"{body}({ioi['bucket']}, {ioi['key']}), "
+                body = f"{body}({ioi.bucket}, {ioi.key}), "
 
             body = f"{body}]. "
 

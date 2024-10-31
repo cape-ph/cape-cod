@@ -2,11 +2,8 @@
 
 import os
 
-import boto3
 from capepy.aws.dynamodb import PipelineTable
 from capepy.aws.lambda_ import PipelineRecord
-
-ssm = boto3.client("ssm")
 
 
 def index_handler(event, context):
@@ -34,19 +31,19 @@ def index_handler(event, context):
 
     for rec in event["Records"]:
         # grab items from the incoming event needed later
-        pipeline_record = PipelineRecord(rec)
+        pipeline = PipelineRecord(rec)
 
         try:
             # TODO: ISSUE #84
-            pipeline_name = pipeline_record.name
-            pipeline_version = pipeline_record.version
+            pipeline_name = pipeline.name
+            pipeline_version = pipeline.version
 
             # TODO: update parameters to be an actual part of PipelineRecord
-            output_path = pipeline_record.body["output_path"]
-            r1_path = pipeline_record.body["r1_path"]
-            r2_path = pipeline_record.body["r2_path"]
-            sample = pipeline_record.body["sample"]
-            ec2_id = pipeline_record.body["ec2_id"]
+            output_path = pipeline.body["output_path"]
+            r1_path = pipeline.body["r1_path"]
+            r2_path = pipeline.body["r2_path"]
+            sample = pipeline.body["sample"]
+            ec2_id = pipeline.body["ec2_id"]
 
             # attempt to get the registry entry from dynamodb. if we can't find
             # an entry, we'll log the error but not add to the batch failures
@@ -114,7 +111,7 @@ def index_handler(event, context):
                 print(f"Submitting head node command: {cmd}")
 
                 # send the command to the nextflow instance
-                resp = ssm.send_command(
+                resp = ddb_table.get_client("ssm").send_command(
                     InstanceIds=[ec2_id],
                     DocumentName="AWS-RunShellScript",
                     Parameters={"commands": [cmd]},
@@ -151,7 +148,7 @@ def index_handler(event, context):
             # we caught an exception that means we're not going to space today, but
             # could sometime in the future. so requeue the message hoping that day
             # will come.
-            batch_item_failures.append({"itemIdentifier": rec["messageId"]})
+            batch_item_failures.append({"itemIdentifier": pipeline.id})
 
     # check if we had any failures so we can update the queue as needed for
     # re-trigger
