@@ -3,11 +3,11 @@
 import io
 from datetime import datetime
 
-from capepy.aws.glue import ETLJob
+from capepy.aws.glue import EtlJob
 from pypdf import PdfReader
 from tabula.io import read_pdf
 
-etl_job = ETLJob()
+etl_job = EtlJob()
 
 # NOTE: for now we'll take the alert object key and change out the file
 #       extension for the clean data (leaving all namespacing and such). this

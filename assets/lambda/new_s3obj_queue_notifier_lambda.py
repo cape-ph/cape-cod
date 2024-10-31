@@ -56,22 +56,14 @@ def index_handler(event, context):
     """
 
     queue_name = os.getenv("QUEUE_NAME")
-    etl_attrs_ddb_name = os.getenv("ETL_ATTRS_DDB_TABLE")
 
     # obligatory data validation
     if queue_name is None:
         msg = "No queue name provided. Cannot insert notification message."
         return {"statusCode": 500, "body": msg}
 
-    if etl_attrs_ddb_name is None:
-        msg = (
-            "No ETL attributes DynamoDB table name provided. Cannot insert "
-            "notification message."
-        )
-        return {"statusCode": 500, "body": msg}
-
     # get a reference to the etl attributes table
-    ddb_table = EtlTable(etl_attrs_ddb_name)
+    ddb_table = EtlTable()
 
     try:
         # we'll bucket the incoming object infos and use them to send our

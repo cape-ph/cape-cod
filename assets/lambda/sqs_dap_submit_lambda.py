@@ -13,21 +13,12 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
-    dap_registry_ddb_name = os.getenv("DAP_REG_DDB_TABLE")
-
-    if dap_registry_ddb_name is None:
-        msg = (
-            "No DAP registry DynamoDB table name provided. Cannot submit DAP "
-            "job to head node."
-        )
-        return {"statusCode": 500, "body": msg}
-
     batch_item_failures = []
     successful_dap_jobs = []
     invalid_dap_jobs = []
 
     # get a reference to the etl attributes table
-    ddb_table = PipelineTable(dap_registry_ddb_name)
+    ddb_table = PipelineTable()
 
     for rec in event["Records"]:
         # grab items from the incoming event needed later

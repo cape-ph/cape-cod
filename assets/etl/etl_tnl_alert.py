@@ -4,10 +4,10 @@ import io
 import re
 
 import pandas as pd
-from capepy.aws.glue import ETLJob
+from capepy.aws.glue import EtlJob
 
 # Instantiate the ETL Job using capepy
-etl_job = ETLJob()
+etl_job = EtlJob()
 
 # TODO:
 #   - add error handling for the format of the document being incorrect

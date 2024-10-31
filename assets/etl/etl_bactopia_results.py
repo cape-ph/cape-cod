@@ -5,9 +5,9 @@ import io
 import os
 import re
 
-from capepy.aws.glue import ETLJob
+from capepy.aws.glue import EtlJob
 
-etl_job = ETLJob()
+etl_job = EtlJob()
 
 # partition/column name
 BACTRUN_PARTITION = "bactopia_run"

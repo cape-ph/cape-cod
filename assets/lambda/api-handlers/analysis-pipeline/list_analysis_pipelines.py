@@ -1,7 +1,6 @@
 """Lambda function for handling a post of a new analysis pipeline run."""
 
 import json
-import os
 
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import PipelineTable
@@ -16,18 +15,9 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
-    dap_registry_ddb_name = os.getenv("DAP_REG_DDB_TABLE")
-
-    if dap_registry_ddb_name is None:
-        msg = (
-            "No DAP registry DynamoDB table name provided. Cannot list "
-            "available data analysis pipelines."
-        )
-        return {"statusCode": 500, "body": msg}
-
     try:
         # get a reference to the registry table
-        ddb_table = PipelineTable(os.getenv("DAP_REG_DDB_TABLE"))
+        ddb_table = PipelineTable()
 
         # as we're returning all available pipelines in the registry, we need to
         # scan the whole table. scan is limited to 1MB return data, which won't be a

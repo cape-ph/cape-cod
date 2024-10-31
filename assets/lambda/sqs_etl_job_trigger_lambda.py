@@ -1,9 +1,7 @@
 """Lambda function for kicking off Glue Jobs triggered from an SQS queue."""
 
-import json
-
 import boto3
-from capepy.aws.lambda_ import ETLRecord
+from capepy.aws.lambda_ import EtlRecord
 
 glue_client = boto3.client("glue")
 
@@ -21,7 +19,7 @@ def index_handler(event, context):
 
     for rec in event["Records"]:
         # grab items from the incoming event needed later
-        etl = ETLRecord(rec)
+        etl = EtlRecord(rec)
 
         try:
             print(
