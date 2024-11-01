@@ -131,39 +131,71 @@ def get_bucket_web_host_policy(
 # comes through the VPC endpoint. W probably want to lock this down to specific
 # APIs as an argument here.
 def get_vpce_api_invoke_policy(
+    vpc_id: Input[str] | None = None,
     vpce_id: Input[str] | None = None,
 ) -> Output[str]:
     """Get a role policy statement for VPC endpoint limited execute-api:Invoke.
 
-    NOTE: At present, this allows invoke access to *all* APIs in the VPC if
-    coming from the given endpoint.
+    NOTE:
+        - At present, this allows invoke access to *all* APIs in the VPC if
+          coming from the given VPC or VPC endpoint.
+        - Do not specify both vpc_id and vpce_id. This will raise a ValueError.
 
     Args:
-        vpce_id: A VPC Endpoint id to limit invoke access to.
+        vpc_id: An optional VPC id to limit invoke access to. This is
+                appropriate for setting up invoke access policies for a vpc
+                endpoint.
+        vpce_id: An optional VPC Endpoint id to limit invoke access to. This is
+                 appropriate for setting up invoke access policies for things
+                 that should only be accessed through a VPC endpoint.
 
     Returns:
         The policy statement as a json encoded string.
+
+    Raises:
+        ValueError: If both vpc_id and vpce_id are specified.
     """
+    if None not in (vpc_id, vpce_id):
+        raise ValueError(
+            "Cannot specify both a VPC id and a VPCE id for an api invoke "
+            "policy"
+        )
+
+    stmnts = [
+        {
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "execute-api:Invoke",
+            "Resource": ["arn:aws:execute-api:*:*:*"],
+        }
+    ]
+
+    if vpc_id is not None:
+        stmnts.append(
+            {
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": "execute-api:Invoke",
+                "Resource": ["arn:aws:execute-api:*:*:*"],
+                "Condition": {"StringNotEquals": {"aws:SourceVpc": vpc_id}},
+            }
+        )
+
+    if vpce_id is not None:
+        stmnts.append(
+            {
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": "execute-api:Invoke",
+                "Resource": ["arn:aws:execute-api:*:*:*"],
+                "Condition": {"StringNotEquals": {"aws:SourceVpce": vpce_id}},
+            }
+        )
+
     return Output.json_dumps(
         {
             "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": "execute-api:Invoke",
-                    "Resource": ["arn:aws:execute-api:*:*:execute-api/*"],
-                },
-                {
-                    "Effect": "Deny",
-                    "Principal": "*",
-                    "Action": "execute-api:Invoke",
-                    "Resource": ["arn:aws:execute-api:*:*:execute-api:/*"],
-                    "Condition": {
-                        "StringNotEquals": {"aws:SourceVpce": vpce_id}
-                    },
-                },
-            ],
+            "Statement": stmnts,
         }
     )
 
