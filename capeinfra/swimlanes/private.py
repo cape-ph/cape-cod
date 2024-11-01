@@ -17,8 +17,6 @@ from pulumi import (
     warn,
 )
 
-from capeinfra.resources.loadbalancer import AppLoadBalancer
-
 from ..iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
@@ -39,7 +37,6 @@ from ..resources.certs import BYOCert
 from ..resources.objectstorage import VersionedBucket
 from ..swimlane import ScopedSwimlane
 from ..util.config import CapeConfig
-from ..util.file import file_as_string
 from ..util.naming import disemvowel
 
 
@@ -96,9 +93,6 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
-        # TODO: probably want to wrap all this up in the private api resources
-        #       like deploying the static apps is in static resources
-        self.create_dap_api()
         self.create_static_web_resources()
         self.create_private_api_resources()
         self._create_hosted_domain()
@@ -124,13 +118,23 @@ class PrivateSwimlane(ScopedSwimlane):
         """
         return "private"
 
-    def create_dap_api(self):
+    def _create_dap_api(self):
         """Create the data analysis pipeline API for the private swimlane."""
 
         # API resource itself
+        # TODO: potentially use disable_execute_api_endpoint (force api to go
+        #       through our custom domain in all cases). Leaving on for now as
+        #       it's useful for testing.
         self.dap_rest_api = aws.apigateway.RestApi(
             f"{self.basename}-dapapi",
             description="CAPE Data Analysis Pipeline API",
+            endpoint_configuration=aws.apigateway.RestApiEndpointConfigurationArgs(
+                types="PRIVATE",
+                vpc_endpoint_ids=(
+                    self.api_vpcendpoint.id.apply(lambda i: [f"{i}"])
+                ),
+            ),
+            policy=get_vpce_api_invoke_policy(vpce_id=self.api_vpcendpoint.id),
             # TODO: ISSUE #61
             # NOTE: no pulumi Asset/Archive stuff here. we need the contents as
             #       a string.
@@ -155,6 +159,32 @@ class PrivateSwimlane(ScopedSwimlane):
                 table_name=self.analysis_pipeline_registry_ddb_table.name,
             ).apply(lambda kwargs: get_dap_api_policy(**kwargs)),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        )
+
+        # TODO: cleanup logging
+        self.api_log_group = aws.cloudwatch.LogGroup(
+            # TODO: ISSUE #175
+            f"{self.basename}-api-loggrp",
+        )
+
+        # Create an IAM role that API Gateway can assume to write logs
+        # NOTE: This does not set up the API to do logging. Nor does the
+        #       configuration of the logging for the Stage at the end of this
+        #       method. These only give permission to do logging and set the
+        #       format and log group. Turning on logging seems to only be
+        #       doable in the AWS console. Go to the stage in API gateway, find
+        #       "Logging and Tracing", select "Edit" and then flip the
+        #       CloudWatch logs toggle to "Errors Only" or "Errors and info
+        #       logs" as needed. The "Access Log Destination ARN" should be set
+        #       by this method, as should the format.
+        self.api_logging_role = get_inline_role(
+            f"{self.basename}-api-logrl",
+            f"{self.desc_name} API Logging Role",
+            "apigw",
+            "apigateway.amazonaws.com",
+            None,
+            "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs",
+            opts=ResourceOptions(parent=self),
         )
 
         # NOTE: this is just till we get openapi specs working. Even if we don't
@@ -390,7 +420,7 @@ class PrivateSwimlane(ScopedSwimlane):
         #      collection of apis (like we have for albs and such) with a name
         #      per entry in the collection.
         self.dap_api_stage_name = (
-            f"dapapi-{self.config.get('api', 'dap', 'meta', 'stage-name')}"
+            f"dap-{self.config.get('api', 'dap', 'meta', 'stage-name')}"
         )
 
         # make a stage for the deployment manually.
@@ -408,8 +438,39 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
             deployment=self.dap_api_deployment.id,
             rest_api=self.dap_rest_api.id,
+            # NOTE: See note in this method when setting up the log group. This
+            #       does not turn on logging, just setups up to allow logging.
+            access_log_settings=aws.apigateway.StageAccessLogSettingsArgs(
+                destination_arn=self.api_log_group.arn,
+                format=json.dumps(
+                    {
+                        "requestId": "$context.requestId",
+                        "ip": "$context.identity.sourceIp",
+                        "caller": "$context.identity.caller",
+                        "user": "$context.identity.user",
+                        "requestTime": "$context.requestTime",
+                        "httpMethod": "$context.httpMethod",
+                        "resourcePath": "$context.resourcePath",
+                        "status": "$context.status",
+                        "protocol": "$context.protocol",
+                        "responseLength": "$context.responseLength",
+                    }
+                ),
+            ),
+            variables={"cloudWatchRoleArn": self.api_logging_role.arn},
             # TODO: ISSUE #67
             opts=ResourceOptions(parent=self),
+        )
+
+        self.apigw_dapapi_bpm = aws.apigateway.BasePathMapping(
+            f"{self.basename}-dapapi-bpm",
+            domain_name=self.apigw_domainname.domain_name,
+            rest_api=self.dap_rest_api.id,
+            # base_path is part of the ultimate URL that will be used in,
+            # hitting the API. stage_name is the stage name of the API the
+            # request is sent to (and is not part of the URL)
+            base_path=self.dap_api_deployment_stage.stage_name,
+            stage_name=self.dap_api_deployment_stage.stage_name,
         )
 
     def create_analysis_pipeline_registry(self):
@@ -697,6 +758,7 @@ class PrivateSwimlane(ScopedSwimlane):
             desc_name=f"BYOCert for {sa_name}",
         )
 
+    # TODO:refactor the 2 similar alb methods
     def _create_static_app_alb(self):
         """Create the application load balancer for static applications."""
 
@@ -740,15 +802,6 @@ class PrivateSwimlane(ScopedSwimlane):
             port=443,
             proto="HTTPS",
         )
-        # TODO: api gateway targets...
-        # for sa_name, sa_info in self.static_apps.items():
-        #     self.albs["static"].add_static_app_target(
-        #         self.static_app_vpcendpoint,
-        #         sa_name,
-        #         sa_info["paths"],
-        #         port=443,
-        #         proto="HTTPS",
-        #     )
 
     # TODO: ISSUES #128
     def create_static_web_resources(self):
@@ -813,11 +866,6 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # TODO: config for private apis
 
-        # sa_cfgs = self.config.get("static-apps", default=None)
-        # if sa_cfgs is None:
-        #     warn(f"No static apps configured for swimlane {self.basename}")
-        #     return
-
         # NOTE: our private DNS will send *all* api gateway traffic through
         #       this endpoint. at the time of this comment, this means we would
         #       not be able to route to public aws dns entries as those are
@@ -841,26 +889,28 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         )
 
-        # self.static_apps = {}
-        # for sa_cfg in sa_cfgs:
-        #     try:
-        #         self._deploy_static_app(CapeConfig(sa_cfg))
-        #     except ValueError:
-        #         # ValueError will be thrown for invalid configuration of a
-        #         # static app. Logging will have already happened, so we just
-        #         # need to halt the deployment of that app and move on
-        #         continue
-
-        # TODO: Need endpoint policy for api endpoints. Should include limit to
-        #       this VPC only
-
         aws.ec2.VpcEndpointPolicy(
             f"{self.basename}-api-vpcepplcy",
             vpc_endpoint_id=self.api_vpcendpoint.id,
             # TODO: ISSUE #135
-            policy=get_vpce_api_invoke_policy(self.api_vpcendpoint.id),
+            policy=get_vpce_api_invoke_policy(vpc_id=self.vpc.id),
             opts=ResourceOptions(parent=self),
         )
+
+        self.apigw_domainname = aws.apigateway.DomainName(
+            f"{self.basename}-apigw-dn",
+            domain_name="api.cape-dev.org",
+            regional_certificate_arn=(
+                self.static_apps["dap-ui"]["cert"].acmcert.arn
+            ),
+            endpoint_configuration={
+                "types": "REGIONAL",
+            },
+        )
+
+        # TODO: we'll really want this to create all private apis in a generic
+        #       method based on config eventually
+        self._create_dap_api()
 
         self._create_api_alb()
 
@@ -879,14 +929,18 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # we need a zone record per static app bucket
         for sa_name, sa_info in self.static_apps.items():
+
             self.create_private_domain_alb_record(
                 sa_info["bucket"].bucket.bucket, sa_name, "static"
             )
 
         # TODO: need this based on config
         self.create_private_domain_alb_record(
-            "api.cape-dev.org", "dapapi", "api"
+            "api.cape-dev.org",
+            "dapapi",
+            "api",
         )
+
         # and DNS for the zone
         self.create_private_hosted_dns(
             [self.private_subnets["vpn"], self.private_subnets["vpn2"]]
@@ -991,7 +1045,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # end up with more/fewer rules. :shrug: we can refactor when that
         # becomes clear
 
-        auth_rule_vpn = aws.ec2clientvpn.AuthorizationRule(
+        aws.ec2clientvpn.AuthorizationRule(
             f"{self.basename}-vpn-authzrl",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
             # access vpn subnet only
