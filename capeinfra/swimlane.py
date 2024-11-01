@@ -3,7 +3,7 @@
 from abc import abstractmethod
 
 import pulumi_aws as aws
-from pulumi import ResourceOptions
+from pulumi import ResourceOptions, warn
 
 # TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
 #       it should not be here after 145.
@@ -308,7 +308,11 @@ class ScopedSwimlane(CapeComponentResource):
         )
 
     def create_private_domain_alb_record(
-        self, record_name: str, short_name: str, alb_id: str
+        self,
+        record_name: str,
+        short_name: str,
+        alb_id: str,
+        aliases: list[dict] | None = None,
     ):
         """Create a private domain type A record and attach it to the ALB.
 
@@ -319,21 +323,33 @@ class ScopedSwimlane(CapeComponentResource):
             short_name: A short, unique name for the record.
             alb_id: The identifier string of the ALB to associate the record
                     with.
+            aliases: A list of dicts containing alias args for the record. The
+                     dict keys must match the expected arg names of
+                     RecordAliasArgs
 
         Returns: The new record.
         """
+        # warn(f"Creating route53 record for {record_name}")
+
+        raa = []
+        if aliases:
+            for alias in aliases:
+                raa.append(aws.route53.RecordAliasArgs(**alias))
+        else:
+            raa.append(
+                aws.route53.RecordAliasArgs(
+                    evaluate_target_health=True,
+                    name=self.albs[alb_id].alb.dns_name,
+                    zone_id=self.albs[alb_id].alb.zone_id,
+                )
+            )
+
         return aws.route53.Record(
             f"{self.basename}-{short_name}-rt53rec",
             zone_id=self.rte53_private_zone.id,
             name=record_name,
             type=aws.route53.RecordType.A,
-            aliases=[
-                aws.route53.RecordAliasArgs(
-                    evaluate_target_health=True,
-                    name=self.albs[alb_id].alb.dns_name,
-                    zone_id=self.albs[alb_id].alb.zone_id,
-                ),
-            ],
+            aliases=raa,
             opts=ResourceOptions(parent=self),
         )
 
