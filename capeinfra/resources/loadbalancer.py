@@ -96,7 +96,10 @@ class AppLoadBalancer(CapeComponentResource):
         )
 
     def _add_target_group(
-        self, group_id: str, ttype: str = "instance"
+        self,
+        group_id: str,
+        ttype: str = "instance",
+        healthcheck_args: dict | None = None,
     ) -> aws.lb.TargetGroup:
         """Add a target group for the load balancer and return it.
 
@@ -107,59 +110,59 @@ class AppLoadBalancer(CapeComponentResource):
                       all of this load balancer's target groups.
             ttype: The target type for the group. One of `ip`, `instance`, or
                    `lambda`. Defaults to `instance`
+            healthchaeck_args: An optional dict of health check args. If not
+                               provided, the health check will default to a
+                               ping on the traffic port.
 
         Returns:
             The new target group if created or the existing one for the
             group_id.
         """
+        # make sure we were given a valid target type
+        if ttype not in ("ip", "instance", "lambda"):
+            raise ValueError(
+                f"Target group type {ttype} is invalid for ALB {self.name}."
+            )
+
+        # NOTE: at this time we only support HTTPS or 443 for target groups
+        tg_port = 443
+        tg_proto = "HTTPS"
+        # NOTE: these all seem sensible defaults for now. The one exception is a
+        #       lambda target group, which we give a longer interval. the lambda
+        #       interval must be longer than the runtime of the lambda, so this
+        #       value is not guaranteed to work for all lambda targets and if
+        #       not, the healthcheck_args arg for this method needs to be
+        #       overridden.
+        default_hc_args = {
+            "path": "/ping",
+            "port": "traffic-port",
+            "protocol": "HTTPS",
+            "matcher": "200",
+            "interval": 45 if ttype == "lambda" else 30,
+        }
+
         if group_id in self._target_groups:
             return self._target_groups[group_id]
 
-        # TODO: these all seem sensible defaults for now. May need to consider
-        #       different values, especially when we add something other than
-        #       static apps.
-        match ttype:
-            case "ip":
-                hc_args = aws.lb.TargetGroupHealthCheckArgs(
-                    path="/",
-                    port="80",
-                    protocol="HTTP",
-                    matcher="200,307,405",
-                )
-            case "instance":
-                hc_args = aws.lb.TargetGroupHealthCheckArgs(
-                    path="/",
-                    port="80",
-                    protocol="HTTP",
-                    matcher="200,307,405",
-                )
-            case "lambda":
-                hc_args = aws.lb.TargetGroupHealthCheckArgs(
-                    path="/",
-                    port="80",
-                    # TODO: this actually need to be greater than the timeout of
-                    #       the lambda being proxied or it will potentiall show
-                    #       unhealthy while the lambda is running. MAKE ME A
-                    #       SETTING OR SOMETHING
-                    interval=45,
-                    matcher="200,307,405",
-                )
-            case _:
-                raise ValueError(
-                    f"Target group type {ttype} is invalid for ALB {self.name}."
-                )
+        hc_args = (
+            healthcheck_args
+            if healthcheck_args is not None
+            else default_hc_args
+        )
+
+        tghc_args = aws.lb.TargetGroupHealthCheckArgs(**hc_args)
 
         # TODO: ISSUE #167 - putting a count in the resource name instead of
         #                    group_id due to naming length limits
         tg_idx = len(self._target_groups)
         self._target_groups[group_id] = aws.lb.TargetGroup(
             f"{self.name}-tg-{tg_idx}",
-            port=443,
-            protocol="HTTPS",
+            port=tg_port,
+            protocol=tg_proto,
             protocol_version="HTTP1",
-            target_type="ip",
+            target_type=ttype,
             vpc_id=self._vpc_id,
-            health_check=hc_args,
+            health_check=tghc_args,
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (
@@ -198,7 +201,7 @@ class AppLoadBalancer(CapeComponentResource):
                 target_group_arn=target_group.arn,
                 target_id=tval,
                 port=443,
-                opts=ResourceOptions(parent=self),
+                opts=ResourceOptions(parent=self, depends_on=[target_group]),
             )
 
     def _get_listener(self, port, proto):
@@ -309,8 +312,22 @@ class AppLoadBalancer(CapeComponentResource):
 
         listener = self._get_listener(port, proto)
 
-        # All static sites will be routed to IP target groups
-        sa_tg = self._add_target_group(f"{sa_name}", ttype="ip")
+        # All static sites will be routed to IP target groups.
+        # NOTE: at this time all target group healtch checks for static apps
+        #       will be checking for a HTTP GET on port 80 returning a 200, 307
+        #       or 405. This is probably sufficient for a general health check
+        #       of s3 static sites, but may need to be tweaked for some stuff
+        #       down the line
+        sa_tg = self._add_target_group(
+            f"{sa_name}",
+            ttype="ip",
+            healthcheck_args={
+                "path": "/",
+                "port": "80",
+                "protocol": "HTTP",
+                "matcher": "200,307,405",
+            },
+        )
 
         # the vpc endpoint for s3 has a list of network interfaces. we need to
         # associate the ip addrs of those interfaces with new target group
@@ -449,7 +466,7 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         vpc_ep: aws.ec2.VpcEndpoint,
         api_stage_name: str,
-        api_stage_id: Output[str],
+        # TODO: remove stage id
         port: int | None = 443,
         proto: str | None = "HTTPS",
     ):
@@ -468,8 +485,6 @@ class AppLoadBalancer(CapeComponentResource):
                             by api_stage_id. The API path after the alb
                             hostname must match the name of the deployed stage
                             in API gateway.
-            api_stage_id: The API gateway stage id that will be routed to for
-                          this target.
             port: The port the of the listener the app will be associated with.
                   Defaults to 443
             proto: The protocol of the listener the app will be associated with.
