@@ -74,7 +74,7 @@ class PrivateSwimlane(ScopedSwimlane):
                         "stage-suffix": "dev",
                     },
                 },
-                "apis": [],
+                "apis": {},
             },
             "compute": {},
             "vpn": {
@@ -139,7 +139,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # TODO: ISSUE #61 - until we handle open api specs, we're manually
         #                   building the DAP API here. as such we will warn
         #                   about any other apis and ignore them otherwise.
-        if api_name != "dapapi":
+        if api_name != "dap":
             warn(f"Unexpected API {api_name} cannot be deployed.")
             return
 
@@ -151,7 +151,7 @@ class PrivateSwimlane(ScopedSwimlane):
         api_spec = self.apis[api_name]["spec"]
 
         # this is used a ton in resource names below. do it once...
-        res_prefix = f"{self.basename}-{api_name}"
+        res_prefix = f"{self.basename}-{api_name}-api"
 
         # API resource itself
         # TODO: potentially use disable_execute_api_endpoint (force api to go
@@ -449,9 +449,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # this ends up being the path after the fqdn for the subdomain to reach
         # this api
-        api_deploy_info["stage_name"] = (
-            f"{api_spec['stage_name']}-{self.api_stage_suffix}"
-        )
+        api_deploy_info["stage_name"] = f"{api_name}-{self.api_stage_suffix}"
 
         # make a stage for the deployment manually.
         # NOTE: we could make this implicitly by just setting stage_name on the
@@ -822,7 +820,7 @@ class PrivateSwimlane(ScopedSwimlane):
         #       config items
 
         # attach the api gateway targets to the alb
-        for _, api_info in self.apis.items():
+        for api_info in self.apis.values():
             self.albs["api"].add_api_target(
                 self.api_vpcendpoint,
                 api_info["deploy"]["stage_name"],
@@ -912,8 +910,8 @@ class PrivateSwimlane(ScopedSwimlane):
         # deployment info in "deploy" key
         self.apis = {}
 
-        for spec in self.config.get("api", "apis"):
-            self.apis.setdefault(spec["name"], {"spec": spec})
+        for name, spec in self.config.get("api", "apis").items():
+            self.apis.setdefault(name, {"spec": spec})
 
         # NOTE: our private DNS will send *all* api gateway traffic through
         #       this endpoint. at the time of this comment, this means we would
@@ -1013,7 +1011,7 @@ class PrivateSwimlane(ScopedSwimlane):
             self.vpn_byocert = BYOCert.from_config(
                 f"{self.basename}-vpn-byoc",
                 tls_cfg,
-                desc_name=f"CAPE Private Swimlane VPN ACM BYOCert",
+                desc_name="CAPE Private Swimlane VPN ACM BYOCert",
             )
         except ValueError as ve:
             warn(
