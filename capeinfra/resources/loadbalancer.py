@@ -466,7 +466,6 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         vpc_ep: aws.ec2.VpcEndpoint,
         api_stage_name: str,
-        # TODO: remove stage id
         port: int | None = 443,
         proto: str | None = "HTTPS",
     ):
