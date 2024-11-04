@@ -3,12 +3,13 @@
 from abc import abstractmethod
 
 import pulumi_aws as aws
-from pulumi import ResourceOptions
+from pulumi import ResourceOptions, warn
 
 # TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
 #       it should not be here after 145.
 from .datalake.datalake import CatalogDatabase
 from .pipeline.batch import BatchCompute
+from .resources.certs import BYOCert
 from .resources.loadbalancer import AppLoadBalancer
 from .resources.pulumi import CapeComponentResource
 from .util.config import CapeConfig
@@ -42,12 +43,15 @@ class ScopedSwimlane(CapeComponentResource):
         self.private_subnets = dict[str, aws.ec2.Subnet]()
         self.compute_environments = dict[str, BatchCompute]()
         self.albs = {}
+        self.domain_name = self.config.get("domain")
 
         # TODO: ISSUE #145 this member is only needed for the temporary DAP S3
         #       handling. it should not be here after 145. if it needs to, we
         #       should probably rethink how we expose the catalog to
         #       non-datalake clients
         self.data_catalog = data_catalog
+
+        self.create_domain_cert()
         self.create_vpc()
         self.create_public_subnet()
         self.create_private_subnets()
@@ -97,6 +101,16 @@ class ScopedSwimlane(CapeComponentResource):
             )
 
         return self._inet_gw
+
+    def create_domain_cert(self):
+        """Create the domain wildcard cert for the swimlane."""
+        # NOTE:not handling exception that could be thrown here as we want the
+        #      pulumi operation to fail in that case.
+        self.domain_cert = BYOCert.from_config(
+            f"{self.basename}-byoc",
+            self.config.get("tls", default=None),
+            desc_name=f"BYOCert for {self.basename}",
+        )
 
     def create_vpc(self):
         """Create the VPC for the swimlane."""
@@ -308,7 +322,11 @@ class ScopedSwimlane(CapeComponentResource):
         )
 
     def create_private_domain_alb_record(
-        self, record_name: str, short_name: str, alb_id: str
+        self,
+        record_name: str,
+        short_name: str,
+        alb_id: str,
+        aliases: list[dict] | None = None,
     ):
         """Create a private domain type A record and attach it to the ALB.
 
@@ -316,24 +334,35 @@ class ScopedSwimlane(CapeComponentResource):
 
         Args:
             record_name: The record name (e.g. subdomain.domain.tld).
-            short_name: A short, unique name for the record.
+            short_name: A short, unique name for the record. This is only used
+                        in the resource name.
             alb_id: The identifier string of the ALB to associate the record
                     with.
+            aliases: A list of dicts containing alias args for the record. The
+                     dict keys must match the expected arg names of
+                     RecordAliasArgs
 
         Returns: The new record.
         """
+        raa = []
+        if aliases:
+            for alias in aliases:
+                raa.append(aws.route53.RecordAliasArgs(**alias))
+        else:
+            raa.append(
+                aws.route53.RecordAliasArgs(
+                    evaluate_target_health=True,
+                    name=self.albs[alb_id].alb.dns_name,
+                    zone_id=self.albs[alb_id].alb.zone_id,
+                )
+            )
+
         return aws.route53.Record(
             f"{self.basename}-{short_name}-rt53rec",
             zone_id=self.rte53_private_zone.id,
             name=record_name,
             type=aws.route53.RecordType.A,
-            aliases=[
-                aws.route53.RecordAliasArgs(
-                    evaluate_target_health=True,
-                    name=self.albs[alb_id].alb.dns_name,
-                    zone_id=self.albs[alb_id].alb.zone_id,
-                ),
-            ],
+            aliases=raa,
             opts=ResourceOptions(parent=self),
         )
 
@@ -351,9 +380,9 @@ class ScopedSwimlane(CapeComponentResource):
                      ALB.
         """
 
-        # TODO: ISSUE #TBD - resource name length limitations (again). deferring
-        #                    problem till later by taking just the first 3 chars
-        #                    of the alb_id
+        # TODO: ISSUE #167 - resource name length limitations (again).
+        #                    deferring problem till later by taking just the
+        #                    first 3 chars of the alb_id
 
         short_alb = f"{alb_id[:2]}alb"
         self.albs[alb_id] = AppLoadBalancer(
@@ -363,8 +392,4 @@ class ScopedSwimlane(CapeComponentResource):
             desc_name=f"{self.desc_name} {alb_id} Application Load Balancer",
         )
 
-        # TODO: need to refactor the config to have one cert for the listener
-        #       instead of one per app. right now just grabbing the dap-ui one,
-        #       which will fail when there are no apps configured or if the name
-        #       changes, etc.
         self.albs[alb_id].add_listener(443, "HTTPS", acmcert=acmcert)

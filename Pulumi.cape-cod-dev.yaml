@@ -3,10 +3,10 @@ config:
     # This block is for meta about the deployment itself that may be reused in
     # later config settings.
     deployment:meta: &depmet
-        # stage-name is used anywhere we need the deployment stage name and
+        # stage-suffix is used anywhere we need the deployment stage name and
         # should be values like "dev", "prod", etc. There is exact no exact
         # enumeration of values yet.
-        stage-name: "dev"
+        stage-suffix: "dev"
     aws:region: us-east-2
     cape-cod:meta:
         glue:
@@ -34,8 +34,8 @@ config:
                   srcpth: ./assets/etl/etl_bactopia_results.py
     cape-cod:swimlanes:
         private:
-            # This is the private domain that will setup in the cloud provider
-            # private VPC.
+            # This is the private domain that will be setup in the cloud
+            # provider private VPC.
             # At this time, this does not need to be setup with a domain
             # registrar unless it is also the domain used in a public facing
             # resource. The domain will need to be able to be used for creation
@@ -43,9 +43,17 @@ config:
             # self-signed and in all cases need to be managed outside this
             # repo).
             domain: cape-dev.org
-            # TODO: This is huge. way bigger than we need. For growth but also
-            # cause we don't really know what address space we need yet. Adjust
-            # as needed
+            # NOTE: at this time we support a single (wildcard) cert per
+            #       swimlane for non-vpn tls/ssl (vpn has its own cert). this
+            #       may change in the future
+            tls:
+                dir: "./assets-untracked/tls/private-swimlane"
+                ca-cert: "ca.crt"
+                # if not specified, the key and cert are expected to be
+                # named following the pattern {fqdn}.[key|crt] where
+                # `{fqdn}` is the value of the domain key provided above
+                server-key: "*.cape-dev.org.key"
+                server-cert: "*.cape-dev.org.crt"
             cidr-block: 10.0.0.0/16
             public-subnet:
                 # public subnet is special and there will be one (for now) per
@@ -81,8 +89,28 @@ config:
             #       things. for now just trying to get the stage name
             #       configurable from the root deployment:meta section
             api:
-                dap:
+                # all apis will go in the same subdomain, and will be
+                # differentiated based on the path component of each individual
+                # api in the list below. e.g. for a domain of cape-dev.org and a
+                # subdomain value of "api", all apis will be rooted at
+                # api.cape-dev.org. for an api named `api1` and a stage-name of
+                # `dev`, that specific api can be found at
+                # api.cape-dev.org/api1-dev
+                subdomain: "api"
+                # this item needs to exist as-is. we have a common stage suffix
+                # used for all apis in the dpeloyment at present, and this is
+                # how we access it
+                stage:
                     meta: *depmet
+                apis:
+                    # Every element in this object will specify an individual
+                    # api to be deployed. Where the key is the api name and
+                    # each item should have:
+                    #   - desc: A description for the api. Will be used in
+                    #           description tags.
+                    # TODO: ISSUE #61 - openapi spec file would go here
+                    dap:
+                        desc: "Data Analysis Pipeline API"
             # static apps are deployed to s3 as html/js/css bundles and are
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
@@ -92,15 +120,6 @@ config:
             static-apps:
                 - name: "dap-ui"
                   fqdn: "analysis-pipelines.cape-dev.org"
-                  tls:
-                      dir: "./assets-untracked/tls/dap-ui"
-                      ca-cert: "ca.crt"
-                      # if not specified, the key and cert are expected to be
-                      # named following the pattern {fqdn}.[key|crt] where
-                      # `{fqdn}` is the value of the fqdn provided in the above
-                      # static_app scope
-                      server-key: "*.cape-dev.org.key"
-                      server-cert: "*.cape-dev.org.crt"
                   # repo_dir is the root directory in the repo for this app's
                   # files.
                   # TODO: long-term we will not want to have these apps in the

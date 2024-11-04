@@ -95,7 +95,12 @@ class AppLoadBalancer(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-    def _add_target_group(self, group_id: str, ttype: str = "instance"):
+    def _add_target_group(
+        self,
+        group_id: str,
+        ttype: str = "instance",
+        healthcheck_args: dict | None = None,
+    ) -> aws.lb.TargetGroup:
         """Add a target group for the load balancer and return it.
 
         If a target group already exists for the group_id, it will be returned.
@@ -105,56 +110,59 @@ class AppLoadBalancer(CapeComponentResource):
                       all of this load balancer's target groups.
             ttype: The target type for the group. One of `ip`, `instance`, or
                    `lambda`. Defaults to `instance`
+            healthchaeck_args: An optional dict of health check args. If not
+                               provided, the health check will default to a
+                               ping on the traffic port.
 
         Returns:
             The new target group if created or the existing one for the
             group_id.
         """
+        # make sure we were given a valid target type
+        if ttype not in ("ip", "instance", "lambda"):
+            raise ValueError(
+                f"Target group type {ttype} is invalid for ALB {self.name}."
+            )
+
+        # NOTE: at this time we only support HTTPS or 443 for target groups
+        tg_port = 443
+        tg_proto = "HTTPS"
+        # NOTE: these all seem sensible defaults for now. The one exception is a
+        #       lambda target group, which we give a longer interval. the lambda
+        #       interval must be longer than the runtime of the lambda, so this
+        #       value is not guaranteed to work for all lambda targets and if
+        #       not, the healthcheck_args arg for this method needs to be
+        #       overridden.
+        default_hc_args = {
+            "path": "/ping",
+            "port": "traffic-port",
+            "protocol": "HTTPS",
+            "matcher": "200",
+            "interval": 45 if ttype == "lambda" else 30,
+        }
+
         if group_id in self._target_groups:
             return self._target_groups[group_id]
 
-        # TODO: these all seem sensible defaults for now. May need to consider
-        #       different values, especially when we add something other than
-        #       static apps.
-        match ttype:
-            case "ip":
-                hc_args = aws.lb.TargetGroupHealthCheckArgs(
-                    path="/",
-                    port="80",
-                    protocol="HTTP",
-                    matcher="200,307,405",
-                )
-            case "instance":
-                hc_args = aws.lb.TargetGroupHealthCheckArgs(
-                    path="/",
-                    port="80",
-                    protocol="HTTP",
-                    matcher="200,307,405",
-                )
-            case "lambda":
-                hc_args = aws.lb.TargetGroupHealthCheckArgs(
-                    path="/",
-                    port="80",
-                    # TODO: this actually need to be greater than the timeout of
-                    #       the lambda being proxied or it will potentiall show
-                    #       unhealthy while the lambda is running. MAKE ME A
-                    #       SETTING OR SOMETHING
-                    interval=45,
-                    matcher="200,307,405",
-                )
-            case _:
-                raise ValueError(
-                    f"Target group type {ttype} is invalid for ALB {self.name}."
-                )
+        hc_args = (
+            healthcheck_args
+            if healthcheck_args is not None
+            else default_hc_args
+        )
 
+        tghc_args = aws.lb.TargetGroupHealthCheckArgs(**hc_args)
+
+        # TODO: ISSUE #167 - putting a count in the resource name instead of
+        #                    group_id due to naming length limits
+        tg_idx = len(self._target_groups)
         self._target_groups[group_id] = aws.lb.TargetGroup(
-            f"{self.name}-tg-{group_id}",
-            port=443,
-            protocol="HTTPS",
+            f"{self.name}-tg-{tg_idx}",
+            port=tg_port,
+            protocol=tg_proto,
             protocol_version="HTTP1",
-            target_type="ip",
+            target_type=ttype,
             vpc_id=self._vpc_id,
-            health_check=hc_args,
+            health_check=tghc_args,
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (
@@ -193,7 +201,7 @@ class AppLoadBalancer(CapeComponentResource):
                 target_group_arn=target_group.arn,
                 target_id=tval,
                 port=443,
-                opts=ResourceOptions(parent=self),
+                opts=ResourceOptions(parent=self, depends_on=[target_group]),
             )
 
     def _get_listener(self, port, proto):
@@ -304,8 +312,22 @@ class AppLoadBalancer(CapeComponentResource):
 
         listener = self._get_listener(port, proto)
 
-        # All static sites will be routed to IP target groups
-        sa_tg = self._add_target_group(f"{sa_name}", ttype="ip")
+        # All static sites will be routed to IP target groups.
+        # NOTE: at this time all target group healtch checks for static apps
+        #       will be checking for a HTTP GET on port 80 returning a 200, 307
+        #       or 405. This is probably sufficient for a general health check
+        #       of s3 static sites, but may need to be tweaked for some stuff
+        #       down the line
+        sa_tg = self._add_target_group(
+            f"{sa_name}",
+            ttype="ip",
+            healthcheck_args={
+                "path": "/",
+                "port": "80",
+                "protocol": "HTTP",
+                "matcher": "200,307,405",
+            },
+        )
 
         # the vpc endpoint for s3 has a list of network interfaces. we need to
         # associate the ip addrs of those interfaces with new target group
@@ -435,6 +457,91 @@ class AppLoadBalancer(CapeComponentResource):
                 "desc_name": (
                     f"{self.desc_name} {sa_name} ALB 443 HTTPS Listener "
                     f"Rule for forward to {sa_name} target group"
+                ),
+            },
+        )
+
+    # TODO: a lot of shared boilerplate here with static app stuff
+    def add_api_target(
+        self,
+        vpc_ep: aws.ec2.VpcEndpoint,
+        api_stage_name: str,
+        port: int | None = 443,
+        proto: str | None = "HTTPS",
+    ):
+        """Set an API gateway behind a VPC endpoint as a target for the ALB.
+
+        This method adds a target group, target group attachments, a listener
+        (if not added already), and listener rules for the api. The listener
+        will forward all requests to the provided VPC endpoint
+
+
+        Args:
+            vpc_ep: The VPC endpoint to associate with this static app.
+            api_stage_name: The unique name of the api being setup with this
+                            ALB. This will be the path after the alb hostname
+                            that will be used to route to the stage identified
+                            by api_stage_id. The API path after the alb
+                            hostname must match the name of the deployed stage
+                            in API gateway.
+            port: The port the of the listener the app will be associated with.
+                  Defaults to 443
+            proto: The protocol of the listener the app will be associated with.
+                   Defaults to HTTPS
+        """
+
+        listener = self._get_listener(port, proto)
+
+        # All APIs will be routed to IP target groups
+        api_tg = self._add_target_group(f"{api_stage_name}", ttype="ip")
+
+        # the vpc endpoint for the api gateway has a list of network
+        # interfaces. we need to associate the ip addrs of those interfaces
+        # with new target group attachments for the target group so we can
+        # forward traffic there. as the list of interfaces is a list of
+        # Outputs, need to apply on it to get the value and use that to get the
+        # ip string to pass on the that attachment helper.
+
+        vpc_ep.network_interface_ids.apply(
+            lambda l: self._add_target_group_attachments(
+                api_tg, [get_network_interface(id=i).private_ip for i in l]
+            )
+        )
+
+        # add the rule for forwarding a seemingly well formatted api request.
+        # TODO: at this time we do not handle rewrite of request paths to remove
+        #       trailing slashes. this would be nice, but certainly not a
+        #       non-starter since the apis are private
+        aws.lb.ListenerRule(
+            f"{self.name}-{api_stage_name}-lstnrrl1",
+            listener_arn=listener.arn,
+            conditions=[
+                aws.lb.ListenerRuleConditionArgs(
+                    path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
+                        values=[f"/{api_stage_name}/*"],
+                    ),
+                ),
+            ],
+            actions=[
+                aws.lb.ListenerRuleActionArgs(
+                    type="forward",
+                    forward=aws.lb.ListenerRuleActionForwardArgs(
+                        target_groups=[
+                            aws.lb.ListenerRuleActionForwardTargetGroupArgs(
+                                arn=api_tg.arn,
+                                weight=1,
+                            )
+                        ],
+                    ),
+                ),
+            ],
+            priority=1,
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} {api_stage_name} ALB 443 HTTPS "
+                    f"Listener Rule for forward to {api_stage_name} target "
+                    "group"
                 ),
             },
         )
