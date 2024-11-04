@@ -68,11 +68,13 @@ class PrivateSwimlane(ScopedSwimlane):
             "private-subnets": [],
             "static-apps": [],
             "api": {
-                "dap": {
+                "subdomain": "api",
+                "stage": {
                     "meta": {
-                        "stage-name": "dev",
+                        "stage-suffix": "dev",
                     },
                 },
+                "apis": [],
             },
             "compute": {},
             "vpn": {
@@ -122,16 +124,42 @@ class PrivateSwimlane(ScopedSwimlane):
         """
         return "private"
 
-    def _create_dap_api(self):
-        """Create the data analysis pipeline API for the private swimlane."""
+    # TODO: ISSUE #61
+    def _deploy_api(self, api_name):
+        """Deploy an API for the private swimlane.
+
+        NOTE: At this time only one API is expected and supported. All others
+              will be be logged as a warning during pulumi operations until this
+              changes.
+
+        Args:
+            api_name: The name of the API as configured.
+        """
+
+        # TODO: ISSUE #61 - until we handle open api specs, we're manually
+        #                   building the DAP API here. as such we will warn
+        #                   about any other apis and ignore them otherwise.
+        if api_name != "dapapi":
+            warn(f"Unexpected API {api_name} cannot be deployed.")
+            return
+
+        # setup bookkeeping for the api deployment info
+        # NOTE: we only need to put stuff in here that is needed after
+        #       execution of this method. which at this time includes
+        #   - deployed stage name
+        api_deploy_info = {}
+        api_spec = self.apis[api_name]["spec"]
+
+        # this is used a ton in resource names below. do it once...
+        res_prefix = f"{self.basename}-{api_name}"
 
         # API resource itself
         # TODO: potentially use disable_execute_api_endpoint (force api to go
         #       through our custom domain in all cases). Leaving on for now as
         #       it's useful for testing.
-        self.dap_rest_api = aws.apigateway.RestApi(
-            f"{self.basename}-dapapi",
-            description="CAPE Data Analysis Pipeline API",
+        restapi = aws.apigateway.RestApi(
+            f"{res_prefix}-restapi",
+            description=f"CAPE {api_spec['desc']}",
             endpoint_configuration=aws.apigateway.RestApiEndpointConfigurationArgs(
                 types="PRIVATE",
                 vpc_endpoint_ids=(
@@ -153,9 +181,9 @@ class PrivateSwimlane(ScopedSwimlane):
         #       API (e.g. if it needs to write to SQS in one function and read
         #       from DynamoDB in another, this role's policy must have both
         #       those grants). This may not be the long term implementation.
-        self.api_lambda_role = get_inline_role(
-            f"{self.basename}-dapapi-lmbd-role",
-            f"{self.desc_name} data analysis pipeline lambda role",
+        api_lambda_role = get_inline_role(
+            f"{res_prefix}-lmbd-role",
+            f"{self.desc_name} {api_spec['desc']} lambda role",
             "lmbd",
             "lambda.amazonaws.com",
             Output.all(
@@ -175,18 +203,24 @@ class PrivateSwimlane(ScopedSwimlane):
         #       CloudWatch logs toggle to "Errors Only" or "Errors and info
         #       logs" as needed. The "Access Log Destination ARN" should be set
         #       by this method, as should the format.
-        self.api_log_group = aws.cloudwatch.LogGroup(
+        # TODO: can maybe get away with one log setup for all APIs? or because
+        #       they are so verbose and manually enabled, should we have one
+        #       per?
+        api_log_group = aws.cloudwatch.LogGroup(
             # TODO: ISSUE #175
-            f"{self.basename}-api-loggrp",
+            f"{res_prefix}-loggrp",
         )
 
-        self.api_logging_role = get_inline_role(
-            f"{self.basename}-api-logrl",
+        api_log_role = get_inline_role(
+            f"{res_prefix}-logrl",
             f"{self.desc_name} API Logging Role",
             "apigw",
             "apigateway.amazonaws.com",
             None,
-            "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs",
+            (
+                "arn:aws:iam::aws:policy/service-role/"
+                "AmazonAPIGatewayPushToCloudWatchLogs"
+            ),
             opts=ResourceOptions(parent=self),
         )
 
@@ -253,8 +287,8 @@ class PrivateSwimlane(ScopedSwimlane):
         for es in endpoint_specs:
             short_name = disemvowel(es["name"])
             handler_lambda = aws.lambda_.Function(
-                f"{self.basename}-dapapi-{short_name}-lmbdfn",
-                role=self.api_lambda_role.arn,
+                f"{res_prefix}-{short_name}-lmbdfn",
+                role=api_lambda_role.arn,
                 handler=es["handler"],
                 runtime=es["runtime"],
                 code=AssetArchive({"index.py": FileAsset(es["handler_src"])}),
@@ -264,15 +298,16 @@ class PrivateSwimlane(ScopedSwimlane):
 
             # permission for rest api to invoke lambda
             aws.lambda_.Permission(
-                f"{self.basename}-dapapi-{short_name}-allow-lmbd",
+                f"{res_prefix}-{short_name}-allow-lmbd",
                 action="lambda:InvokeFunction",
                 function=handler_lambda.arn,
                 principal="apigateway.amazonaws.com",
-                source_arn=self.dap_rest_api.execution_arn.apply(
-                    # NOTE: this allows lambda on all endpoints and all methods for
-                    #       the api. may not be a great idea. or we may want
-                    #       different permissions for different parts of the API.
-                    #       not sure till we have a really fleshed out API.
+                source_arn=restapi.execution_arn.apply(
+                    # NOTE: this allows lambda on all endpoints and all methods
+                    #       for the api. may not be a great idea. or we may
+                    #       want different permissions for different parts of
+                    #       the API. not sure till we have a really fleshed out
+                    #       API.
                     lambda arn: f"{arn}/*/*"
                 ),
                 opts=ResourceOptions(parent=self),
@@ -280,28 +315,28 @@ class PrivateSwimlane(ScopedSwimlane):
 
             # TODO: ISSUE #61 - START manual route/integration (TO BE REMOVED)
             handler_resource = aws.apigateway.Resource(
-                f"{self.basename}-dapapi-{short_name}-rsrc",
-                parent_id=self.dap_rest_api.root_resource_id,
+                f"{res_prefix}-{short_name}-rsrc",
+                parent_id=restapi.root_resource_id,
                 path_part=es["path_part"],
-                rest_api=self.dap_rest_api.id,
+                rest_api=restapi.id,
                 opts=ResourceOptions(parent=self),
             )
 
             handler_method = aws.apigateway.Method(
-                f"{self.basename}-dapapi-{short_name}-{es['method']}-mthd",
+                f"{res_prefix}-{short_name}-{es['method']}-mthd",
                 http_method=es["method"],
                 # TODO: we need authz
                 authorization="NONE",
                 resource_id=handler_resource.id,
-                rest_api=self.dap_rest_api.id,
+                rest_api=restapi.id,
                 opts=ResourceOptions(parent=self),
             )
 
             handler_integration = aws.apigateway.Integration(
-                f"{self.basename}-dapapi-{short_name}-{es['method']}-intg",
+                f"{res_prefix}-{short_name}-{es['method']}-intg",
                 http_method=handler_method.http_method,
                 resource_id=handler_resource.id,
-                rest_api=self.dap_rest_api.id,
+                rest_api=restapi.id,
                 # NOTE: with lambda backed endpoints, integration http method
                 #       should be POST
                 integration_http_method="POST",
@@ -319,28 +354,31 @@ class PrivateSwimlane(ScopedSwimlane):
                 #   - a method response for OPTIONS that forces the required
                 #     CORS headers to be returned (with a 200 status)
                 #   - a MOCK integration (with a json/200 request template)
-                #   - an OPTIONS integration response that has the correct CORS
-                #     headers
+                #   - an OPTIONS integration response that has the correct
+                #     CORS headers
                 options_method = aws.apigateway.Method(
-                    f"{self.basename}-dapapi-{short_name}-options-mthd",
+                    f"{res_prefix}-{short_name}-options-mthd",
                     http_method="OPTIONS",
                     # TODO: we need authz
                     authorization="NONE",
                     resource_id=handler_resource.id,
-                    rest_api=self.dap_rest_api.id,
+                    rest_api=restapi.id,
                     opts=ResourceOptions(parent=self),
                 )
 
+                # this is repeated a bunch below
+                cors_hdr_prefix = "method.response.header.Access-Control-Allow"
+
                 aws.apigateway.MethodResponse(
-                    f"{self.basename}-dapapi-{short_name}-options-mthdrsp",
-                    rest_api=self.dap_rest_api.id,
+                    f"{res_prefix}-{short_name}-options-mthdrsp",
+                    rest_api=restapi.id,
                     resource_id=handler_resource.id,
                     http_method=options_method.http_method,
                     status_code="200",
                     response_parameters={
-                        "method.response.header.Access-Control-Allow-Headers": True,
-                        "method.response.header.Access-Control-Allow-Methods": True,
-                        "method.response.header.Access-Control-Allow-Origin": True,
+                        f"{cors_hdr_prefix}-Headers": True,
+                        f"{cors_hdr_prefix}-Methods": True,
+                        f"{cors_hdr_prefix}-Origin": True,
                     },
                     opts=ResourceOptions(
                         parent=self, depends_on=[options_method]
@@ -348,11 +386,11 @@ class PrivateSwimlane(ScopedSwimlane):
                 )
 
                 opts_integration = aws.apigateway.Integration(
-                    f"{self.basename}-dapapi-{short_name}-options-intg",
+                    f"{res_prefix}-{short_name}-options-intg",
                     http_method=options_method.http_method,
                     type="MOCK",
                     resource_id=handler_resource.id,
-                    rest_api=self.dap_rest_api.id,
+                    rest_api=restapi.id,
                     request_templates={
                         "application/json": "{'statusCode':200}"
                     },
@@ -362,17 +400,17 @@ class PrivateSwimlane(ScopedSwimlane):
                 )
 
                 aws.apigateway.IntegrationResponse(
-                    f"{self.basename}-dapapi-{short_name}-options-intgrsp",
-                    rest_api=self.dap_rest_api.id,
+                    f"{res_prefix}-{short_name}-options-intgrsp",
+                    rest_api=restapi.id,
                     resource_id=handler_resource.id,
                     http_method=options_method.http_method,
                     status_code="200",
                     response_parameters={
-                        "method.response.header.Access-Control-Allow-Headers": (
+                        f"{cors_hdr_prefix}-Headers": (
                             "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,"
                             "X-Amz-Security-Token'"
                         ),
-                        "method.response.header.Access-Control-Allow-Methods": (
+                        f"{cors_hdr_prefix}-Methods": (
                             f"'OPTIONS,{es['method']}'"
                         ),
                         # TODO: ISSUE #141 we should not allow any origin here.
@@ -383,9 +421,7 @@ class PrivateSwimlane(ScopedSwimlane):
                         #       to setting is for the swimlane's domain -
                         #       though that would lock use of the API to the
                         #       VPN for dev purposes)
-                        "method.response.header.Access-Control-Allow-Origin": (
-                            "'*'"
-                        ),
+                        f"{cors_hdr_prefix}-Origin": ("'*'"),
                     },
                     opts=ResourceOptions(
                         parent=self, depends_on=[opts_integration]
@@ -399,9 +435,9 @@ class PrivateSwimlane(ScopedSwimlane):
         # Deployments and stages are needed to make APIs accessible. Another
         # reason we may wanna go with an API class to manage all of this in one
         # place
-        self.dap_api_deployment = aws.apigateway.Deployment(
-            f"{self.basename}-dapapi-dplymnt",
-            rest_api=self.dap_rest_api.id,
+        api_deployment = aws.apigateway.Deployment(
+            f"{res_prefix}-dplymnt",
+            rest_api=restapi.id,
             # TODO: ISSUE #65
             opts=ResourceOptions(
                 parent=self,
@@ -411,19 +447,10 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
-        # NOTE: our stage name suffix (e.g. `dev` vs `prod`) is in the config
-        #       file, and if it is not defined we really want the deployment
-        #       to fail. so we'll let the KeyError happen and not try to do
-        #       anything about it
-        # TODO:as we only have one api right now, we're storing the stage name
-        #      explicitly. we will need this for a resource name later, which
-        #      means we cannot use any Output property of the stage (i.e.
-        #      stage_name, which is really what we want) due to pulumi
-        #      limitations. What we really need to to move toward is a
-        #      collection of apis (like we have for albs and such) with a name
-        #      per entry in the collection.
-        self.dap_api_stage_name = (
-            f"dap-{self.config.get('api', 'dap', 'meta', 'stage-name')}"
+        # this ends up being the path after the fqdn for the subdomain to reach
+        # this api
+        api_deploy_info["stage_name"] = (
+            f"{api_spec['stage_name']}-{self.api_stage_suffix}"
         )
 
         # make a stage for the deployment manually.
@@ -432,19 +459,19 @@ class PrivateSwimlane(ScopedSwimlane):
         #       about weedy things that lead to deletion and addition of stages
         #       on redeployments if done this way, which ultimately leads to a
         #       service interruption.
-        self.dap_api_deployment_stage = aws.apigateway.Stage(
-            f"{self.basename}-dapapi-dplymntstg",
-            stage_name=self.dap_api_stage_name,
+        api_deployment_stage = aws.apigateway.Stage(
+            f"{res_prefix}-dplymntstg",
+            stage_name=api_deploy_info["stage_name"],
             description=(
-                f"CAPE data analysis pipeline API {self.dap_api_stage_name} "
+                f"CAPE {api_spec['desc']} {api_deploy_info['stage_name']} "
                 "deployment stage"
             ),
-            deployment=self.dap_api_deployment.id,
-            rest_api=self.dap_rest_api.id,
+            deployment=api_deployment.id,
+            rest_api=restapi.id,
             # NOTE: See note in this method when setting up the log group. This
             #       does not turn on logging, just setups up to allow logging.
             access_log_settings=aws.apigateway.StageAccessLogSettingsArgs(
-                destination_arn=self.api_log_group.arn,
+                destination_arn=api_log_group.arn,
                 format=json.dumps(
                     {
                         "requestId": "$context.requestId",
@@ -460,21 +487,24 @@ class PrivateSwimlane(ScopedSwimlane):
                     }
                 ),
             ),
-            variables={"cloudWatchRoleArn": self.api_logging_role.arn},
+            variables={"cloudWatchRoleArn": api_log_role.arn},
             # TODO: ISSUE #67
             opts=ResourceOptions(parent=self),
         )
 
-        self.apigw_dapapi_bpm = aws.apigateway.BasePathMapping(
-            f"{self.basename}-dapapi-bpm",
+        aws.apigateway.BasePathMapping(
+            f"{res_prefix}-bpm",
             domain_name=self.apigw_domainname.domain_name,
-            rest_api=self.dap_rest_api.id,
+            rest_api=restapi.id,
             # base_path is part of the ultimate URL that will be used in,
             # hitting the API. stage_name is the stage name of the API the
             # request is sent to (and is not part of the URL)
-            base_path=self.dap_api_deployment_stage.stage_name,
-            stage_name=self.dap_api_deployment_stage.stage_name,
+            # NOTE: we require both to be the same
+            base_path=api_deployment_stage.stage_name,
+            stage_name=api_deployment_stage.stage_name,
         )
+
+        self.apis[api_name]["deploy"] = api_deploy_info
 
     def create_analysis_pipeline_registry(self):
         """Sets up an analysis pipeline registry database.
@@ -792,12 +822,13 @@ class PrivateSwimlane(ScopedSwimlane):
         #       config items
 
         # attach the api gateway targets to the alb
-        self.albs["api"].add_api_target(
-            self.api_vpcendpoint,
-            self.dap_api_stage_name,
-            port=443,
-            proto="HTTPS",
-        )
+        for _, api_info in self.apis.items():
+            self.albs["api"].add_api_target(
+                self.api_vpcendpoint,
+                api_info["deploy"]["stage_name"],
+                port=443,
+                proto="HTTPS",
+            )
 
     # TODO: ISSUE #128
     # TODO: ISSUE #176
@@ -861,7 +892,28 @@ class PrivateSwimlane(ScopedSwimlane):
     def create_private_api_resources(self):
         """Creates resources related to private swimlane apis."""
 
-        # TODO: config for private apis
+        # name of the api subdomain (not the full sub hostname)
+        self.api_subdomain = self.config.get("api", "subdomain", default=None)
+        # suffix for apis (e.g. `dev`, `prod`, etc)
+        self.api_stage_suffix = self.config.get(
+            "api", "stage", "meta", "stage-suffix"
+        )
+
+        # fail if we don't have an api subdomain or suffix configured
+        if None in (self.api_subdomain, self.api_stage_suffix):
+            raise ValueError(
+                "One or both of the API subdomain/API stage suffix are not "
+                "defined."
+            )
+
+        self.api_fqdn = f"{self.api_subdomain}.{self.domain_name}"
+
+        # this will hold api specifications (config info) in "specs" key and
+        # deployment info in "deploy" key
+        self.apis = {}
+
+        for spec in self.config.get("api", "apis"):
+            self.apis.setdefault(spec["name"], {"spec": spec})
 
         # NOTE: our private DNS will send *all* api gateway traffic through
         #       this endpoint. at the time of this comment, this means we would
@@ -896,7 +948,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.apigw_domainname = aws.apigateway.DomainName(
             f"{self.basename}-apigw-dn",
-            domain_name="api.cape-dev.org",
+            domain_name=self.api_fqdn,
             regional_certificate_arn=(self.domain_cert.acmcert.arn),
             endpoint_configuration={
                 "types": "REGIONAL",
@@ -905,7 +957,8 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # TODO: we'll really want this to create all private apis in a generic
         #       method based on config eventually
-        self._create_dap_api()
+        for api_name in self.apis.keys():
+            self._deploy_api(api_name)
 
         self._create_api_alb()
 
@@ -927,10 +980,13 @@ class PrivateSwimlane(ScopedSwimlane):
                 sa_info["bucket"].bucket.bucket, sa_name, "static"
             )
 
-        # TODO: need this based on config
+        # all apis are at the same subdomain with different paths off of that
+        # sub. we only need to create a single record in route53 for this (just
+        # for the subdomain itself).
+
         self.create_private_domain_alb_record(
-            "api.cape-dev.org",
-            "dapapi",
+            self.api_fqdn,
+            "api",
             "api",
         )
 
