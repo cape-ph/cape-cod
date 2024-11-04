@@ -58,6 +58,10 @@ class PrivateSwimlane(ScopedSwimlane):
             # 10.0.0.0-255
             "cidr-block": "10.0.0.0/24",
             "domain": "cape-dev.org",
+            # NOTE: we do not include a default cert setup other than None here
+            #       as we do not provide default certs in this repo. we want
+            #       pulumi to fail if this is not provided.
+            "tls": None,
             "public-subnet": {
                 "cidr-block": "10.0.0.0/24",
             },
@@ -161,12 +165,6 @@ class PrivateSwimlane(ScopedSwimlane):
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
-        # TODO: cleanup logging
-        self.api_log_group = aws.cloudwatch.LogGroup(
-            # TODO: ISSUE #175
-            f"{self.basename}-api-loggrp",
-        )
-
         # Create an IAM role that API Gateway can assume to write logs
         # NOTE: This does not set up the API to do logging. Nor does the
         #       configuration of the logging for the Stage at the end of this
@@ -177,6 +175,11 @@ class PrivateSwimlane(ScopedSwimlane):
         #       CloudWatch logs toggle to "Errors Only" or "Errors and info
         #       logs" as needed. The "Access Log Destination ARN" should be set
         #       by this method, as should the format.
+        self.api_log_group = aws.cloudwatch.LogGroup(
+            # TODO: ISSUE #175
+            f"{self.basename}-api-loggrp",
+        )
+
         self.api_logging_role = get_inline_role(
             f"{self.basename}-api-logrl",
             f"{self.desc_name} API Logging Role",
@@ -236,7 +239,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # tracks the methods and integrations we define below. without this
         # things were made in the wrong order.
-        # NOTE: when working with api respurces/methods/integrations, it seems
+        # NOTE: when working with api resources/methods/integrations, it seems
         #       that we need to specify these dependencies explicitly or pulumi
         #       may try to make things before stuff they depend on are ready.
         #       though pulumi usually figures this kind of thing out pretty
@@ -681,9 +684,8 @@ class PrivateSwimlane(ScopedSwimlane):
         sa_fqdn = sa_cfg.get("fqdn", default=None)
         sa_dir = sa_cfg.get("dir", default=None)
         sa_files = sa_cfg.get("files", default=[])
-        tls_cfg = sa_cfg.get("tls", default=None)
 
-        if None in (sa_name, sa_fqdn, sa_dir, sa_files, tls_cfg):
+        if None in (sa_name, sa_fqdn, sa_dir, sa_files):
             msg = (
                 f"Static App {sa_name or 'UNNAMED'} contains one or more "
                 "invalid configuration values that are required. The "
@@ -750,15 +752,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 content_type=f["content-type"],
             )
 
-        # NOTE:not handling ecxeption that could be thrown here as we want the
-        #      pulumi operation to fail in that case.
-        self.static_apps[sa_name]["cert"] = BYOCert.from_config(
-            f"{self.basename}-{sa_name}-byoc",
-            tls_cfg,
-            desc_name=f"BYOCert for {sa_name}",
-        )
-
-    # TODO:refactor the 2 similar alb methods
+    # TODO: ISSUE #176
     def _create_static_app_alb(self):
         """Create the application load balancer for static applications."""
 
@@ -768,7 +762,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 self.private_subnets["vpn"],
                 self.private_subnets["vpn2"],
             ],
-            self.static_apps["dap-ui"]["cert"].acmcert,
+            self.domain_cert.acmcert,
         )
 
         # attach the static app targets to the alb
@@ -781,7 +775,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 proto="HTTPS",
             )
 
-    # TODO: very similar to _create_static_app_alb
+    # TODO: ISSUE #176
     def _create_api_alb(self):
         """Create the application load balancer for private apis."""
 
@@ -791,19 +785,22 @@ class PrivateSwimlane(ScopedSwimlane):
                 self.private_subnets["vpn"],
                 self.private_subnets["vpn2"],
             ],
-            self.static_apps["dap-ui"]["cert"].acmcert,
+            self.domain_cert.acmcert,
         )
+
+        # TODO: similar to the static apps, this should operate on a loop of
+        #       config items
 
         # attach the api gateway targets to the alb
         self.albs["api"].add_api_target(
             self.api_vpcendpoint,
             self.dap_api_stage_name,
-            self.dap_api_deployment_stage.id,
             port=443,
             proto="HTTPS",
         )
 
-    # TODO: ISSUES #128
+    # TODO: ISSUE #128
+    # TODO: ISSUE #176
     def create_static_web_resources(self):
         """Creates resources related to private swimlane web resources."""
 
@@ -860,7 +857,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self._create_static_app_alb()
 
-    # TODO: very similar to create_static_web_resources. DRY
+    # TODO: ISSUE #176
     def create_private_api_resources(self):
         """Creates resources related to private swimlane apis."""
 
@@ -900,9 +897,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.apigw_domainname = aws.apigateway.DomainName(
             f"{self.basename}-apigw-dn",
             domain_name="api.cape-dev.org",
-            regional_certificate_arn=(
-                self.static_apps["dap-ui"]["cert"].acmcert.arn
-            ),
+            regional_certificate_arn=(self.domain_cert.acmcert.arn),
             endpoint_configuration={
                 "types": "REGIONAL",
             },
@@ -919,13 +914,11 @@ class PrivateSwimlane(ScopedSwimlane):
 
         This must be done after setting up the ALB.
         """
-        # private route53 zone
-        rte53_prvt_zone_name = self.config.get("domain", default=None)
 
         # setup the private hosted zone. this is totally inside our private
         # vpc, so it doesn't need to be registered anywhere public unless used
         # for public facing resources as well.
-        self.create_hosted_domain(rte53_prvt_zone_name)
+        self.create_hosted_domain(self.domain_name)
 
         # we need a zone record per static app bucket
         for sa_name, sa_info in self.static_apps.items():
