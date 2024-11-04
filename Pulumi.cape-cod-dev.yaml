@@ -3,10 +3,10 @@ config:
     # This block is for meta about the deployment itself that may be reused in
     # later config settings.
     deployment:meta: &depmet
-        # stage-name is used anywhere we need the deployment stage name and
+        # stage-suffix is used anywhere we need the deployment stage name and
         # should be values like "dev", "prod", etc. There is exact no exact
         # enumeration of values yet.
-        stage-name: "dev"
+        stage-suffix: "dev"
     aws:region: us-east-2
     cape-cod:meta:
         glue:
@@ -89,8 +89,34 @@ config:
             #       things. for now just trying to get the stage name
             #       configurable from the root deployment:meta section
             api:
-                dap:
+                # all apis will go in the same subdomain, and will be
+                # differentiated based on the path component of each individual
+                # api in the list below. e.g. for a domain of cape-dev.org and a
+                # subdomain value of "api", all apis will be rooted at
+                # api.cape-dev.org. for an api named `api1` and a stage-name of
+                # `dev`, that specific api can be found at
+                # api.cape-dev.org/api1-dev
+                subdomain: "api"
+                # this item needs to exist as-is. we have a common stage suffix
+                # used for all apis in the dpeloyment at present, and this is
+                # how we access it
+                stage:
                     meta: *depmet
+                apis:
+                    # for every item in this list will specify an individual
+                    # api to be deployed. each item should have:
+                    #   - name: a short, unique identifier for this api that
+                    #           will be used in resource names and descriptions
+                    #   - stage_name: the stage name that the api will be
+                    #                 deployed to. NOTE: this *does not*
+                    #                 include the stage suffix, but will
+                    #                 include it once deployed.
+                    #   - desc: A description for the api. Will be used in
+                    #           description tags.
+                    # TODO: ISSUE #61 - openapi spec file would go here
+                    - name: "dapapi"
+                      stage_name: "dap"
+                      desc: "Data Analysis Pipeline API"
             # static apps are deployed to s3 as html/js/css bundles and are
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
