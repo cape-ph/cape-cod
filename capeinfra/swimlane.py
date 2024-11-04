@@ -334,7 +334,8 @@ class ScopedSwimlane(CapeComponentResource):
 
         Args:
             record_name: The record name (e.g. subdomain.domain.tld).
-            short_name: A short, unique name for the record.
+            short_name: A short, unique name for the record. This is only used
+                        in the resource name.
             alb_id: The identifier string of the ALB to associate the record
                     with.
             aliases: A list of dicts containing alias args for the record. The
