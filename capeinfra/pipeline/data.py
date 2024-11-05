@@ -274,18 +274,18 @@ class EtlJob(CapeComponentResource):
             default_args["--additional-python-modules"] = ",".join(
                 self.config["pymodules"]
             )
-        # Make sure `capepy` is always added as an additional python module for
-        # ETL Jobs
-        default_args["--additional-python-modules"] = (
-            capeinfra.meta.capepy.uri.apply(
-                lambda capepy: (
-                    f"{default_args['--additional-python-modules']},{capepy}"
-                    if "--additional-python-modules" in default_args
-                    else capepy
-                )
-            )
-        )
+
         default_args["--CLEAN_BUCKET_NAME"] = self.clean_bucket.bucket
+
+        # FIXME: FIGURE OUT HOW TO DEAL WITH OUTPUT[str] WITH ADDITIONAL PYTHON
+        # MODULES, CURRENTLY BREAKS THE INSTALLATION OF THE WHEEL
+        def add_to_python_modules(capepy):
+            default_args["--additional-python-modules"] = (
+                f"{default_args['--additional-python-modules']},{capepy}"
+                if "--additional-python-modules" in default_args
+                else capepy
+            )
+            return default_args
 
         self.job = aws.glue.Job(
             self.name,
@@ -296,7 +296,9 @@ class EtlJob(CapeComponentResource):
                 ),
                 python_version="3",
             ),
-            default_arguments=default_args,
+            default_arguments=capeinfra.meta.capepy.uri.apply(
+                add_to_python_modules
+            ),
             execution_property=aws.glue.JobExecutionPropertyArgs(
                 max_concurrent_runs=self.config.get("max_concurrent_runs"),
             ),
