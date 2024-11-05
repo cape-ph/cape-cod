@@ -252,12 +252,14 @@ class EtlJob(CapeComponentResource):
                 raw_bucket=raw_bucket.bucket,
                 clean_bucket=clean_bucket.bucket,
                 script_bucket=script_bucket.bucket,
+                assets_bucket=capeinfra.meta.automation_assets_bucket.bucket.bucket,
             ).apply(
                 lambda args: get_etl_job_s3_policy(
                     args["raw_bucket"],
                     args["clean_bucket"],
                     args["script_bucket"],
                     self.config["script"],
+                    args["assets_bucket"],
                 )
             ),
             srvc_policy_attach=None,
