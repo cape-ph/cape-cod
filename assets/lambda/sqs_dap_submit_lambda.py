@@ -30,11 +30,11 @@ def index_handler(event, context):
             pipeline_version = pipeline.version
 
             # TODO: update parameters to be an actual part of PipelineRecord
-            output_path = pipeline.body["output_path"]
-            r1_path = pipeline.body["r1_path"]
-            r2_path = pipeline.body["r2_path"]
-            sample = pipeline.body["sample"]
-            ec2_id = pipeline.body["ec2_id"]
+            output_path = pipeline.parameters["output_path"]
+            r1_path = pipeline.parameters["r1_path"]
+            r2_path = pipeline.parameters["r2_path"]
+            sample = pipeline.parameters["sample"]
+            ec2_id = pipeline.parameters["ec2_id"]
 
             # attempt to get the registry entry from dynamodb. if we can't find
             # an entry, we'll log the error but not add to the batch failures

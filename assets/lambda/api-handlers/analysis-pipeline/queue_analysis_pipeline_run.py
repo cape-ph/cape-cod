@@ -94,14 +94,24 @@ def index_handler(event, context):
         #       invalid values (e.g. a pipeline name that doesn't exist) will
         #       happen in the processing of the message from the queue in a
         #       different lambda.
+        # TODO: Feels we should add a DAPipelineSpec class or something to
+        #       capepy lib that can be reused across lambdas instead of a hard
+        #       coded dict here. would understand outermost keys, and be able
+        #       to be constructed with a collection of pipeline param keys
+        #       (maybe with some validation meta as well). deferring that for a
+        #       bit tho. could also just mod the PipelineRecord class for the
+        #       same purpose and have it be able to serialize/deserialize
+        #       to/from dicts for jsoning.
         qmsg = {
             "pipeline_name": pipeline_name,
             "pipeline_version": pipeline_version,
-            "output_path": output_path,
-            "r1_path": r1_path,
-            "r2_path": r2_path,
-            "sample": sample,
-            "ec2_id": ec2_id,
+            "pipeline_parameters": {
+                "output_path": output_path,
+                "r1_path": r1_path,
+                "r2_path": r2_path,
+                "sample": sample,
+                "ec2_id": ec2_id,
+            },
         }
 
         send_submit_dap_message(queue_name, queue_url, qmsg)
