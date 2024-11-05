@@ -45,7 +45,7 @@ def handle_fasta(fname):
         fname: The file/object name portion of the full key.
 
     Returns:
-        A dict containing info for the fasta file that will be writtent to the
+        A dict containing info for the fasta file that will be written to the
         "clean" json file.
     """
     fa = pyfastx.Fasta(fname)
@@ -71,7 +71,7 @@ def handle_fastq(fname):
         fname: The file/object name portion of the full key.
 
     Returns:
-        A dict containing info for the fastq file that will be writtent to the
+        A dict containing info for the fastq file that will be written to the
         "clean" json file.
     """
     fq = pyfastx.Fastq(fname)
