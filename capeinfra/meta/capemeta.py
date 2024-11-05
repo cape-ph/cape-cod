@@ -61,9 +61,9 @@ class CapePy(CapeComponentResource):
             source=FileAsset("./assets/capepy/capepy-0.1.0-py3-none-any.whl"),
         )
 
-        self.uri = Output.all(bucket=self.bucket, key=self.object).apply(
-            lambda args: f"s3://{args['bucket']}/{args['key']}"
-        )
+        self.uri = Output.all(
+            bucket=self.bucket.bucket.bucket, key=self.object.key
+        ).apply(lambda args: f"s3://{args['bucket']}/{args['key']}")
 
         self.lambda_layer = aws.lambda_.LayerVersion(
             f"{self.name}-lmbd-lyr",
