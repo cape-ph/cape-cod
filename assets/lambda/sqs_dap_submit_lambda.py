@@ -1,9 +1,10 @@
 """Lambda function for kicking off DAPs triggered from an SQS queue."""
 
-import os
-
+import boto3
 from capepy.aws.dynamodb import PipelineTable
 from capepy.aws.lambda_ import PipelineRecord
+
+ssm = boto3.client("ssm")
 
 
 def index_handler(event, context):
@@ -102,7 +103,7 @@ def index_handler(event, context):
                 print(f"Submitting head node command: {cmd}")
 
                 # send the command to the nextflow instance
-                resp = ddb_table.get_client("ssm").send_command(
+                resp = ssm.send_command(
                     InstanceIds=[ec2_id],
                     DocumentName="AWS-RunShellScript",
                     Parameters={"commands": [cmd]},

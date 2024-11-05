@@ -113,8 +113,7 @@ def index_handler(event, context):
             send_etl_message(queue_name, queue_url, qmsg)
             processed_oi.append(bucket_notif)
 
-        # Make our return message containing info about the processed and
-        # ignored objects
+        # Make our return message containing info about the processed objects
         body = ""
 
         if processed_oi:

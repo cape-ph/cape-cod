@@ -3,11 +3,14 @@
 import json
 import os
 
+import boto3
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import EtlTable
 from capepy.aws.lambda_ import BucketNotificationRecord
 from capepy.aws.meta import Boto3Object
 from capepy.aws.utils import decode_error
+
+sqs_client = boto3.client("sqs")
 
 
 def send_etl_message(
@@ -27,7 +30,7 @@ def send_etl_message(
     """
     body = json.dumps(qmsg)
     try:
-        boto3_object.get_client("sqs").send_message(
+        sqs_client.send_message(
             QueueUrl=queue_url,
             MessageBody=body,
             MessageGroupId=f"{queue_name}-raw-data-msg",
@@ -73,9 +76,7 @@ def index_handler(event, context):
 
         # TODO: any other error checking here? we should get an exception if
         #       the response isn't valid...
-        response = ddb_table.get_client("sqs").get_queue_url(
-            QueueName=queue_name
-        )
+        response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
 
         for rec in event["Records"]:

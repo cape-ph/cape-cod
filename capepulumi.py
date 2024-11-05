@@ -1,4 +1,12 @@
-"""Module of subclasses of pulumi constructs."""
+"""Module of subclasses of pulumi constructs that are useful in constructing the
+CAPE infrastructure.
+
+The tooling here is core to building all of `capeinfra` which is why this is a
+separate module. Before there were issues of circular dependencies if there
+wanted to be anything static or top level in this module it would be impossible
+to instantiate because every other modules includes this module and therefore
+you cannot modify any state of the module without it importing itself.
+"""
 
 from abc import abstractmethod
 from collections.abc import Mapping

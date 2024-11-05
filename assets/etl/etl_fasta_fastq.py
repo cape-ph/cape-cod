@@ -15,6 +15,7 @@ class FastxTypes(enum.Enum):
     FASTQ = "fastq"
 
 
+# TODO: maybe should live in `capepy` if it is generally useful in any way
 def extract_objname_from_objkey():
     """Extract the object name from a full s3 object key.
 
