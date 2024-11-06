@@ -55,10 +55,11 @@ class CapePy(CapeComponentResource):
         )
 
         self.bucket = assets_bucket
+        capepy_whl = "capepy-0.1.0-py3-none-any.whl"
         self.object = self.bucket.add_object(
             f"{self.name}-object",
-            key="capepy.whl",
-            source=FileAsset("./assets/capepy/capepy-0.1.0-py3-none-any.whl"),
+            key=capepy_whl,
+            source=FileAsset(f"./assets/capepy/{capepy_whl}"),
         )
 
         self.uri = Output.all(
