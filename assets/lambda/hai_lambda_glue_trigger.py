@@ -38,7 +38,7 @@ def index_handler(event, context):
                 #       always run with
                 Arguments={
                     "--RAW_BUCKET_NAME": raw_bucket_name,
-                    "--ALERT_OBJ_KEY": BucketNotificationRecord(rec).key,
+                    "--OBJECT_KEY": BucketNotificationRecord(rec).key,
                 },
             )
             status = glue_client.get_job_run(

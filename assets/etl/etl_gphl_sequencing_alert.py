@@ -12,7 +12,7 @@ etl_job = EtlJob()
 # NOTE: for now we'll take the alert object key and change out the file
 #       extension for the clean data (leaving all namespacing and such). this
 #       will probably need to change
-clean_obj_key = etl_job.parameters["ALERT_OBJ_KEY"].replace(".pdf", ".csv")
+clean_obj_key = etl_job.parameters["OBJECT_KEY"].replace(".pdf", ".csv")
 
 # the response should contain a StreamingBody object that needs to be converted
 # to a file like object to make the pdf libraries happy

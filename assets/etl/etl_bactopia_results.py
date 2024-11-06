@@ -48,7 +48,7 @@ objfull = None
 objname = None
 suffix = None
 
-alert_obj_key = etl_job.parameters["ALERT_OBJ_KEY"]
+alert_obj_key = etl_job.parameters["OBJECT_KEY"]
 if alert_obj_key.endswith(BACTRUN_KEYS):
     # in the case of bactopia output files, we'll want the first 2 parts of
     # the original prefix (e.g. 'bactopia-runs/bactopia-20241008-183748/')

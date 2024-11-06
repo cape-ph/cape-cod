@@ -1278,7 +1278,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 {
                     # TODO: ISSUE #150 this script is usable as is for any glue
                     #       job sqs handler, with the caveat that the glue job
-                    #       has to support a RAW_BUCKET_NAME and ALERT_OBJ_KEY
+                    #       has to support a RAW_BUCKET_NAME and OBJECT_KEY
                     #       env var (and the same sqs message format). it might
                     #       be worth changing the job spec to take a
                     #       `SRC_BUCKET_NAME` instead of `RAW` since not all

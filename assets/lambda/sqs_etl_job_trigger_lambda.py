@@ -31,7 +31,7 @@ def index_handler(event, context):
                 JobName=etl.job,
                 Arguments={
                     "--RAW_BUCKET_NAME": etl.bucket,
-                    "--ALERT_OBJ_KEY": etl.key,
+                    "--OBJECT_KEY": etl.key,
                 },
             )
             status = glue_client.get_job_run(

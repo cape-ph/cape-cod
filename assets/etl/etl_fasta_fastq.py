@@ -7,7 +7,7 @@ from capepy.aws.glue import EtlJob
 from pyfastxcli import fastx_format_check
 
 etl_job = EtlJob()
-alert_obj_key = etl_job.parameters["ALERT_OBJ_KEY"]
+alert_obj_key = etl_job.parameters["OBJECT_KEY"]
 
 
 class FastxTypes(enum.Enum):

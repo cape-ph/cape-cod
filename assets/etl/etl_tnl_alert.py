@@ -120,5 +120,5 @@ with io.StringIO() as csv_buff:
     interim.to_csv(csv_buff, index=False)
     etl_job.write_clean_file(
         csv_buff.getvalue(),
-        etl_job.parameters["ALERT_OBJ_KEY"].replace(".xlsx", ".csv"),
+        etl_job.parameters["OBJECT_KEY"].replace(".xlsx", ".csv"),
     )
