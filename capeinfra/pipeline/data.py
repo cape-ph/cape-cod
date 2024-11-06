@@ -161,7 +161,7 @@ class DataCrawler(CapeComponentResource):
                     )
                 }
             ),
-            runtime="python3.11",
+            runtime="python3.10",
             # in this case, the zip file for the lambda deployment is
             # being created by this code. and the zip file will be
             # called index. so the handler must be start with `index`
@@ -339,7 +339,7 @@ class EtlJob(CapeComponentResource):
                     )
                 }
             ),
-            runtime="python3.11",
+            runtime="python3.10",
             # in this case, the zip file for the lambda deployment is
             # being created by this code. and the zip file will be
             # called index. so the handler must be start with `index`

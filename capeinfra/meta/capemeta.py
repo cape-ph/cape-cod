@@ -71,7 +71,7 @@ class CapePy(CapeComponentResource):
             layer_name=self.name,
             description="This layer provides the capepy Python library",
             license_info=" Apache-2.0",
-            compatible_runtimes=["python3.11"],
+            compatible_runtimes=["python3.10"],
             code=FileArchive("./assets/capepy/capepy_layer.zip"),
             opts=ResourceOptions(parent=self),
         )
