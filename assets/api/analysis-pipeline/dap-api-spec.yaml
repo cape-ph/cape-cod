@@ -69,7 +69,7 @@ paths:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
-                uri: "ListDapsHandler"
+                uri: "{{ ListDapsHandler }}"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -113,7 +113,7 @@ paths:
                         "Server error while getting list of available executors."
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
-                uri: "ListDapExecutorsHandler"
+                uri: "{{ ListDapExecutorsHandler }}"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -169,7 +169,7 @@ paths:
                     description: "Success submitting pipeline for execution."
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
-                uri: "SubmitDapForExecutionHandler"
+                uri: "{{ SubmitDapForExecutionHandler }}"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
