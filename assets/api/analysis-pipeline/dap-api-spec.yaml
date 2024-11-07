@@ -1,69 +1,199 @@
-# DO NOT USE THIS FILE AS IS. IT WILL NOT WORK YET
-#
-# TODO:
-# This file is the start of the data analysis pipeline api spec. It was meant to
-# be a toy implementation to test the creation of a single endpoint api for
-# queuing up a new data analsysis pipeline run. during the implementation, it
-# became clear that we would need values in here (e.g. the actual names of
-# lambda functions as they are deployed including the random hashes and other
-# things) not known till deploy time. Seems we need to look at how others may
-# have solved this, but first thing to mind is templating our openapi spec and
-# then render it with real values when we deploy. in any event, this needs to be
-# done in a new github issue (#61)
-openapi: 3.0.0
+openapi: "3.0.1"
 info:
-    title: CAPE data analysis pipeline API
-    description: CAPE API for data analysis pipeline operations.
-    version: 0.0.1
-# TODO: servers, schemes, security, more endpoints, oh my!
+    title: "CAPE Data Analysis Pipeline API"
+    description:
+        "CAPE Data Analysis Pipeline API (***TODO: add more comment***)"
+    version: "2024-11-04T20:50:49Z"
+servers:
+    # we do not provide x-amazon-apigateway-endpoint-configuration here (setting up the vpc endpoint)
+    # as we expect that to be set in the pulumi code setting up the RestApi. Don't want AWS ids in the
+    # repo
+    - url: "https://api.cape-dev.org/{basePath}"
+      variables:
+          basePath:
+              # This value needs to map to the stage name exposed via the ALB
+              default: "dap-dev"
+# these anchors are used below. they need to happen before use
+# TODO: this is a gamble. dunno if this will work in the OpenApi parser in aws. In HTTP apis, you can list
+#       the x-amazon-apigateway-integration objects in the components section to reuse them. that doesn't
+#       work in rest apis. So we're seeing if we can use x- prefixed YAML anchors for reusable blocks. If
+#       this doesn't work, then each object in this section needs to replace the anchor (`*anchor_name`
+#       notation) used below.
+x-amazon-definitions:
+    200AWSMockCors:
+        type: object
+        x-amazon-apigateway-integration: &200AWSMockCors
+            responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+            requestTemplates:
+                application/json: "{'statusCode':200}"
+            passthroughBehavior: "when_no_match"
+            timeoutInMillis: 29000
+            type: "mock"
 paths:
+    /analysispipelines:
+        get:
+            responses:
+                "200":
+                    # TODO: need the response headers (i.e. cors`)
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of available pipelines to run."
+                                items:
+                                    type: object
+                                    properties:
+                                        pipeline_name:
+                                            type: string
+                                            description: The pipeline name
+                                        pipeline_type:
+                                            type: string
+                                            description:
+                                                The type of pipeline execution
+                                                environment (e.g. 'nextflow')
+                                        version:
+                                            type: string
+                                            description: The pipeline version
+                "500":
+                    description:
+                        "Server Error - Unable to read the pipeline registry."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "ListDapsHandler"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration: *200AWSMockCors
+    /pipelineexecutors:
+        get:
+            responses:
+                "200":
+                    # TODO: need the response headers (i.e. cors`)
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of available pipeline executors."
+                                items:
+                                    type: object
+                                    properties:
+                                        instance_id:
+                                            type: string
+                                            description:
+                                                The ID of the executor EC2
+                                                instance
+                                        instance_name:
+                                            type: string
+                                            description:
+                                                The name of the executor EC2
+                                                instance
+                                        pipeline_type:
+                                            type: string
+                                            description:
+                                                The type of pipeline supported
+                                                by the executor EC2 instance.
+                "500":
+                    description:
+                        "Server error while getting list of available executors."
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "ListDapExecutorsHandler"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration: *200AWSMockCors
     /analysispipeline:
         post:
-            summary: Submit an analysis pipeline job.
-            description: Submit an analysis pipeline job for scheduling.
             requestBody:
-                description: Submit an analysis pipeline job for scheduling
+                description: Submit a data analysis pipeline for execution.
+                required: true
                 content:
                     application/json:
                         schema:
-                            $ref: "#/components/schemas/DAP"
-                required: true
+                            type: object
+                            properties:
+                                pipeline_name:
+                                    type: string
+                                    description: The name of the pipeline to run
+                                pipeline_version:
+                                    type: string
+                                    description:
+                                        The version of the pipeline to run
+                                output_path:
+                                    type: string
+                                    description: >
+                                        The S3 location to put pipeline output.
+                                        Assumes permissions are set correctly.
+                                # TODO: ISSUE #TBD all below fields are specific to bactopia right now. also, the
+                                #       descriptions are bunk if we keep using these params
+                                r1_path:
+                                    type: string
+                                    description: The R1 path.
+                                r2_path:
+                                    type: string
+                                    description: The R2 path.
+                                ec2_id:
+                                    type: string
+                                    description:
+                                        The id of the EC2 instance serving as
+                                        executor.
+                                sample:
+                                    type: string
+                                    description: >
+                                        The name of the sample being processed.
+                                        Affects output directory and file names
 
             responses:
                 "200":
-                    description: Analysis pipeline run submitted for scheduling.
-                "400":
-                    description: Invalid request.
+                    # TODO: need the response headers (i.e. cors`)
+                    description: "Success submitting pipeline for execution."
             x-amazon-apigateway-integration:
-                type: "aws_proxy"
                 httpMethod: "POST"
-                uri: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:LambdaFunctionName/invocations
+                uri: "SubmitDapForExecutionHandler"
                 passthroughBehavior: "when_no_match"
-                contentHandling: "CONVERT_TO_TEXT"
-                responses:
-                    default:
-                        statusCode: "200"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration: *200AWSMockCors
+# resusable components that follow OpenApi 3.0.1 spec
 components:
-    schemas:
-        DAP:
-            type: object
-            properties:
-                pipelineName:
-                    type: string
-                    description: Name of the analysis pipeline to run
-                    #example: generic bactopia pipeline
-                pipelineVersion:
-                    type: string
-                    description: Version of the analysis pipeline to run
-                    #example: 0.0.1
-                inputPath:
-                    type: string
-                    description:
-                        Path to the input for the data analysis pipeline
-                    #example: s3://blah/blah/blah
-                outputPath:
-                    type: string
-                    description:
-                        Path to where final output of the data analysis pipeline
-                        will be written
-                    #example: s3://blar/blar/blar
+    responses:
+        200OptionsCors:
+            description: "200 response"
+            headers:
+                Access-Control-Allow-Origin:
+                    schema:
+                        type: "string"
+                Access-Control-Allow-Methods:
+                    schema:
+                        type: "string"
+                Access-Control-Allow-Headers:
+                    schema:
+                        type: "string"
+            content: {}
+# we do not provide x-amazon-apigateway-policy here (setting up the policy for using the API)
+# as we expect that to be set in the pulumi code setting up the RestApi. Don't want AWS ids and
+# perms in the repo
