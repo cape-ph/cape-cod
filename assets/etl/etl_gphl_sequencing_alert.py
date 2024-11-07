@@ -20,7 +20,7 @@ f = io.BytesIO(etl_job.get_raw_file())
 
 try:
     # get the report date from the 4th line of the pdf
-    reader = PdfReader(etl_job.get_raw_file())
+    reader = PdfReader(f)
     page = reader.pages[0]
     date_reported = page.extract_text().split("\n")[3].strip()
     datetime.strptime(date_reported, "%m/%d/%Y")
