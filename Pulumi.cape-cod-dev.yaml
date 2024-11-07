@@ -108,9 +108,45 @@ config:
                     # each item should have:
                     #   - desc: A description for the api. Will be used in
                     #           description tags.
-                    # TODO: ISSUE #61 - openapi spec file would go here
+                    #   - spec: An OpenApi 3.0.1 yaml specification. This should
+                    #           include *no* AWS id's, names, account info, etc
+                    #   - handlers: a list of objects containing
+                    #       - id: the id in the spec file that will be replaced
+                    #             with the arn of the created lambda function
+                    #       - code: the path in the repo for the lambda that
+                    #               implements the endpoint
+                    #       - funct_args: arguments to pass *as is* to the
+                    #                     lambda function constructor. the keys
+                    #                     used need to map to actual argument
+                    #                     names of the pulumi lambda function
+                    #                     constructor. additionally, some args
+                    #                     will be ignored (e.g. environment,
+                    #                     role) as they are dynamically injected
+                    #                     in code. If not provided, the handler
+                    #                     will default to "index.index_handler"
+                    #                     and the runtime will default to
+                    #                     "python3.10"
+                    # TODO: enumerate supported/ignored funct_args
+                    # TODO: default handler and runtime
                     dap:
                         desc: "Data Analysis Pipeline API"
+                        spec: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml"
+                        handlers:
+                            - id: "list_daps_handler"
+                              code: "assets/api/data-analysis-pipeline/handlers/list_daps.py"
+                              funct_args:
+                                  handler: "index.index_handler"
+                                  runtime: "python3.10"
+                            - id: "list_dap_executors_handler"
+                              code: "assets/api/data-analysis-pipeline/handlers/list_dap_executors.py"
+                              funct_args:
+                                  handler: "index.index_handler"
+                                  runtime: "python3.10"
+                            - id: "submit_dap_run_handler"
+                              code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
+                              funct_args:
+                                  handler: "index.index_handler"
+                                  runtime: "python3.10"
             # static apps are deployed to s3 as html/js/css bundles and are
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
