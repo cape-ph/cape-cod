@@ -1,8 +1,7 @@
 """Lambda function for kicking off Glue Jobs triggered from an SQS queue."""
 
-import json
-
 import boto3
+from capepy.aws.lambda_ import EtlRecord
 
 glue_client = boto3.client("glue")
 
@@ -20,27 +19,23 @@ def index_handler(event, context):
 
     for rec in event["Records"]:
         # grab items from the incoming event needed later
-        qmsg = json.loads(rec["body"])
+        etl = EtlRecord(rec)
 
         try:
-            job_name = qmsg["etl_job"]
-            bucket = qmsg["bucket"]
-            obj_key = qmsg["key"]
-
             print(
-                f"Attempting to start etl job [{job_name}] with bucket "
-                f"[{bucket}] and object key [{obj_key}]"
+                f"Attempting to start etl job [{etl.job}] with bucket "
+                f"[{etl.bucket}] and object key [{etl.key}]"
             )
 
             run_id = glue_client.start_job_run(
-                JobName=job_name,
+                JobName=etl.job,
                 Arguments={
-                    "--RAW_BUCKET_NAME": bucket,
-                    "--ALERT_OBJ_KEY": obj_key,
+                    "--RAW_BUCKET_NAME": etl.bucket,
+                    "--OBJECT_KEY": etl.key,
                 },
             )
             status = glue_client.get_job_run(
-                JobName=job_name, RunId=run_id["JobRunId"]
+                JobName=etl.job, RunId=run_id["JobRunId"]
             )
 
             successful_job_runs.append(run_id["JobRunId"])
@@ -71,7 +66,7 @@ def index_handler(event, context):
             # we caught an exception that means we're not going to space today, but
             # could sometime in the future. so requeue the message hoping that day
             # will come.
-            batch_item_failures.append({"itemIdentifier": rec["messageId"]})
+            batch_item_failures.append({"itemIdentifier": etl.id})
 
     # check if we had any failures so we can update the queue as needed for
     # re-trigger

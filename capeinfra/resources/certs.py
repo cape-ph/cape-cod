@@ -3,11 +3,10 @@
 import os
 
 import pulumi_aws as aws
-from pulumi import ResourceOptions, warn
+from pulumi import ResourceOptions
 
-from capeinfra.resources.pulumi import CapeComponentResource
-
-from ..util.file import file_as_string
+from capeinfra.util.file import file_as_string
+from capepulumi import CapeComponentResource
 
 # TODO: ISSUE #99
 # TODO: ISSUE #125

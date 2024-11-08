@@ -4,7 +4,7 @@ import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 from pulumi_aws.ec2.get_network_interface import get_network_interface
 
-from capeinfra.resources.pulumi import CapeComponentResource
+from capepulumi import CapeComponentResource
 
 # NOTE:This ALB implementation supports 2 types of targets currently:
 #           - static apps served from S3

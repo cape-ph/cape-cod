@@ -8,6 +8,8 @@ import json
 import pulumi_aws as aws
 from pulumi import Input, Output, ResourceOptions
 
+import capeinfra
+
 # TODO: ISSUE #72
 
 
@@ -311,6 +313,7 @@ def get_etl_job_s3_policy(
     clean_bucket: str,
     script_bucket: str,
     script_path: str,
+    assets_bucket: str | None = None,
 ) -> str:
     """Get a role policy statement for an ETL job to read/write to s3.
 
@@ -327,37 +330,42 @@ def get_etl_job_s3_policy(
         The policy statement as a dictionary json encoded string.
     """
 
+    # TODO: FIX THE INCLUSION OF THE ASSETS BUCKET IN THESE PERMISSIONS
+    statements = [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+            ],
+            "Resource": "arn:aws:logs:*:*:*",
+        },
+        {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject"],
+            "Resource": [
+                f"arn:aws:s3:::{script_bucket}/{script_path}",
+                f"arn:aws:s3:::{raw_bucket}/*",
+                f"arn:aws:s3:::{raw_bucket}",
+                f"arn:aws:s3:::{assets_bucket}/*",
+                f"arn:aws:s3:::{assets_bucket}",
+            ],
+        },
+        {
+            "Effect": "Allow",
+            "Action": ["s3:PutObject"],
+            "Resource": [
+                f"arn:aws:s3:::{clean_bucket}/*",
+                f"arn:aws:s3:::{clean_bucket}",
+            ],
+        },
+    ]
+
     return json.dumps(
         {
             "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "logs:PutLogEvents",
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                    ],
-                    "Resource": "arn:aws:logs:*:*:*",
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": ["s3:GetObject"],
-                    "Resource": [
-                        f"arn:aws:s3:::{script_bucket}/{script_path}",
-                        f"arn:aws:s3:::{raw_bucket}/*",
-                        f"arn:aws:s3:::{raw_bucket}",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": ["s3:PutObject"],
-                    "Resource": [
-                        f"arn:aws:s3:::{clean_bucket}/*",
-                        f"arn:aws:s3:::{clean_bucket}",
-                    ],
-                },
-            ],
+            "Statement": statements,
         },
     )
 

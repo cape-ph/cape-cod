@@ -1,106 +1,21 @@
 """Lambda function for kicking off Epi/HAI Glue Jobs."""
 
 import json
-import logging
 import os
-import urllib.parse
 
 import boto3
 from botocore.exceptions import ClientError
-
-logger = logging.getLogger(__name__)
+from capepy.aws.dynamodb import EtlTable
+from capepy.aws.lambda_ import BucketNotificationRecord
+from capepy.aws.meta import Boto3Object
+from capepy.aws.utils import decode_error
 
 sqs_client = boto3.client("sqs")
 
-ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("DDB_REGION"))
 
-
-def decode_error(err: ClientError):
-    code, message = "Unknown", "Unknown"
-    if "Error" in err.response:
-        error = err.response["Error"]
-        if "Code" in error:
-            code = error["Code"]
-        if "Message" in error:
-            message = error["Message"]
-    return code, message
-
-
-def get_etl_attrs_table(table_name: str):
-    """Get a DynamoDB table by name.
-
-    Args:
-        table_name: The name of the table to get a reference to.
-
-    Returns:
-        A reference to the table.
-
-    Raises:
-        ClientError: If the table cannot be found or other client error.
-    """
-    try:
-        table = ddb_resource.Table(table_name)
-        table.load()
-    except ClientError as err:
-        code, message = decode_error(err)
-
-        if code == "ResourceNotFoundException":
-            msg = (
-                f"CAPE ETL attributes DynamoDB table ({table_name}) could not"
-                f"be found: {code} "
-                f"{message}",
-            )
-        else:
-            msg = (
-                f"Error trying to access CAPE ETL attributes DynamoDB table "
-                f"({table_name}): {code} "
-                f"{message}",
-            )
-
-        logger.error(msg)
-        raise err
-
-    return table
-
-
-def get_etl_attrs(table, bucket_name: str, prefix: str) -> dict | None:
-    """Get the ETL attributes from the DynamoDB table.
-
-    Args:
-        table: A reference to the DyanmoDB table.
-        bucket_name: The name of the bucket the attrs apply to.
-        prefix: The prefix in the S3 bucket attrs apply to.
-
-    Returns:
-        A dict containing the ETL attrs for the S3 bucket and prefix.
-
-    Raises:
-        ClientError: If no table items can be found for the S3 bucket name and
-                     prefix.
-    """
-    ret = None
-    try:
-        response = table.get_item(
-            Key={"bucket_name": bucket_name, "prefix": prefix}
-        )
-
-        ret = response["Item"]
-
-    except ClientError as err:
-        code, message = decode_error(err)
-
-        # in this case we really just need to ignore the object, but we'll log
-        # for the time being
-        logger.error(
-            f"Couldn't get ETL attributes for bucket '{bucket_name}' and "
-            f"prefix '{prefix}'. {code} "
-            f"{message}"
-        )
-
-    return ret
-
-
-def send_etl_message(queue_name: str, queue_url: str, qmsg: dict):
+def send_etl_message(
+    boto3_object: Boto3Object, queue_name: str, queue_url: str, qmsg: dict
+):
     """Send the object info as a json message to the specified queue.
 
     Args:
@@ -123,14 +38,14 @@ def send_etl_message(queue_name: str, queue_url: str, qmsg: dict):
     except ClientError as err:
         code, message = decode_error(err)
 
-        logger.exception(
+        boto3_object.logger.exception(
             f"Could not place message with body ({body}) on queue at URL "
             f"({queue_url}). {code} "
             f"{message}"
         )
         raise err
 
-    logger.info(
+    boto3_object.logger.info(
         f"Message ({body}) SUCCESSFULLY placed on queue at url ({queue_url})"
     )
 
@@ -144,39 +59,14 @@ def index_handler(event, context):
     """
 
     queue_name = os.getenv("QUEUE_NAME")
-    etl_attrs_ddb_name = os.getenv("ETL_ATTRS_DDB_TABLE")
 
     # obligatory data validation
     if queue_name is None:
         msg = "No queue name provided. Cannot insert notification message."
-        logger.error(msg)
         return {"statusCode": 500, "body": msg}
-
-    if etl_attrs_ddb_name is None:
-        msg = (
-            "No ETL attributes DynamoDB table name provided. Cannot insert "
-            "notification message."
-        )
-        logger.error(msg)
-        return {"statusCode": 500, "body": msg}
-
-    # grab all the info we care about for the new s3 object from the event
-    # object.
-    # NOTE: the event structure for notifications can contain many records.
-    #       grabbing them all to handle potential of multiple uploads in a
-    #       batch. a new message will be inserted for each record
-    object_info = [
-        {
-            "bucket": rec["s3"]["bucket"]["name"],
-            "key": urllib.parse.unquote_plus(
-                rec["s3"]["object"]["key"], encoding="utf-8"
-            ),
-        }
-        for rec in event["Records"]
-    ]
 
     # get a reference to the etl attributes table
-    ddb_table = get_etl_attrs_table(etl_attrs_ddb_name)
+    ddb_table = EtlTable()
 
     try:
         # we'll bucket the incoming object infos and use them to send our
@@ -189,9 +79,10 @@ def index_handler(event, context):
         response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
 
-        for oi in object_info:
+        for rec in event["Records"]:
+            bucket_notif = BucketNotificationRecord(rec)
             # deconstruct the key (s3 name, prefix, suffix)
-            prefix, _, objname = oi["key"].rpartition("/")
+            prefix, _, objname = bucket_notif.key.rpartition("/")
             if not objname:
                 # if we didn't get an objname, the separator "/" was not found,
                 # meaning there is no prefix. so do some rearranging of
@@ -206,22 +97,24 @@ def index_handler(event, context):
 
             # grab the filtering criteria from dynamodb and see if we care about
             # this object
-            etl_attrs = get_etl_attrs(ddb_table, oi["bucket"], prefix)
+            etl_attrs = ddb_table.get_etls(bucket_notif.bucket, prefix)
 
             if etl_attrs:
                 # if the file passes criteria, add message to queue_name
                 if suffix in etl_attrs["suffixes"]:
                     # we care about this object. go ahead and queue a message
-                    qmsg = {}
-                    qmsg.update(oi)
+                    qmsg = {
+                        "bucket": bucket_notif.bucket,
+                        "key": bucket_notif.key,
+                    }
                     qmsg.setdefault("etl_job", etl_attrs.get("etl_job"))
 
-                    send_etl_message(queue_name, queue_url, qmsg)
-                    processed_oi.append(oi)
+                    send_etl_message(ddb_table, queue_name, queue_url, qmsg)
+                    processed_oi.append(bucket_notif)
                 else:
-                    ignored_oi.append(oi)
+                    ignored_oi.append(bucket_notif)
             else:
-                ignored_oi.append(oi)
+                ignored_oi.append(bucket_notif)
 
         # Make our return message containing info about the processed and
         # ignored objects
@@ -234,7 +127,7 @@ def index_handler(event, context):
             )
 
             for poi in processed_oi:
-                body = f"{body}({poi['bucket']}, {poi['key']}), "
+                body = f"{body}({poi.bucket}, {poi.key}), "
 
             body = f"{body}]. "
 
@@ -245,7 +138,7 @@ def index_handler(event, context):
             )
 
             for ioi in ignored_oi:
-                body = f"{body}({ioi['bucket']}, {ioi['key']}), "
+                body = f"{body}({ioi.bucket}, {ioi.key}), "
 
             body = f"{body}]. "
 
@@ -261,7 +154,6 @@ def index_handler(event, context):
             f"{code} "
             f"{message}"
         )
-        logger.exception(msg)
 
         return {
             "statusCode": 500,
