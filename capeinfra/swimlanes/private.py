@@ -4,8 +4,6 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
 import json
-import os.path
-import pathlib
 
 import pulumi_aws as aws
 from pulumi import (
@@ -16,6 +14,7 @@ from pulumi import (
     ResourceOptions,
     warn,
 )
+from pulumi_synced_folder import S3BucketFolder
 
 from ..iam import (
     get_bucket_reader_policy,
@@ -711,14 +710,13 @@ class PrivateSwimlane(ScopedSwimlane):
         sa_name = sa_cfg.get("name", default=None)
         sa_fqdn = sa_cfg.get("fqdn", default=None)
         sa_dir = sa_cfg.get("dir", default=None)
-        sa_files = sa_cfg.get("files", default=[])
 
-        if None in (sa_name, sa_fqdn, sa_dir, sa_files):
+        if None in (sa_name, sa_fqdn, sa_dir):
             msg = (
                 f"Static App {sa_name or 'UNNAMED'} contains one or more "
                 "invalid configuration values that are required. The "
                 "application will not be deployed. Check the app name, fqdn, "
-                "repo directory, app files and tls configuration."
+                "and repo directory."
             )
 
             warn(msg)
@@ -730,7 +728,6 @@ class PrivateSwimlane(ScopedSwimlane):
         #   app_name: {
         #       "bucket": VersionedBucket,
         #       "cert": aws.acm.Certificate,
-        #       "paths": [],
         #   }
         # }
         self.static_apps.setdefault(sa_name, {})
@@ -758,27 +755,15 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
-        # deploy the static app files
-        # TODO: ISSUE #128
-        # TODO: this is not great long term as (much like etl scripts) we
-        #       really don't want this site managed in this repo, nor do we want
-        #       to re-upload these files on every deployment (as could happen
-        #       here). but for now...
-        for idx, f in enumerate(sa_files):
-            # first we need to track the path to the file (but not the
-            # filename). we need this to setup the ALB listener rules later.
-            # TODO: ISSUE #128
-            p = pathlib.Path(f["path"])
-            self.static_apps[sa_name].setdefault("paths", set()).add(p.parent)
-
-            # then actually add the file to the bucket
-            # TODO: ISSUE #129
-            self.static_apps[sa_name]["bucket"].add_object(
-                f"{self.basename}-{sa_name}-{idx}",
-                f["path"],
-                source=FileAsset(os.path.join(sa_dir, f["path"])),
-                content_type=f["content-type"],
-            )
+        # deploy the static app files by compying all directory contents to s3
+        S3BucketFolder(
+            f"{self.basename}-{sa_name}-syncfldr",
+            path=sa_dir,
+            bucket_name=self.static_apps[sa_name]["bucket"].bucket.bucket,
+            acl=aws.s3.CannedAcl.BUCKET_OWNER_FULL_CONTROL,
+            include_hidden_files=True,
+            opts=ResourceOptions(parent=self),
+        )
 
     # TODO: ISSUE #176
     def _create_static_app_alb(self):
@@ -794,11 +779,10 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
         # attach the static app targets to the alb
-        for sa_name, sa_info in self.static_apps.items():
+        for sa_name in self.static_apps.keys():
             self.albs["static"].add_static_app_target(
                 self.static_app_vpcendpoint,
                 sa_name,
-                sa_info["paths"],
                 port=443,
                 proto="HTTPS",
             )
@@ -828,7 +812,6 @@ class PrivateSwimlane(ScopedSwimlane):
                 proto="HTTPS",
             )
 
-    # TODO: ISSUE #128
     # TODO: ISSUE #176
     def create_static_web_resources(self):
         """Creates resources related to private swimlane web resources."""
