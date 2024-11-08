@@ -283,7 +283,7 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         vpc_ep: aws.ec2.VpcEndpoint,
         sa_name: str,
-        sa_paths: set,
+        # sa_paths: set,
         port: int | None = 443,
         proto: str | None = "HTTPS",
     ):
@@ -292,6 +292,8 @@ class AppLoadBalancer(CapeComponentResource):
         This method adds a target group, target group attachments, a listener,
         and listener rules for the static app. The listener will forward all
         requests to the provided VPC endpoint
+
+        TODO: reword doc when done
 
         NOTE: It is assumed that all provided paths for rules should ultimately
               end in serving an `index.html` file from the path and that the
@@ -341,6 +343,8 @@ class AppLoadBalancer(CapeComponentResource):
             )
         )
 
+        # TODO: rewod doc when done
+
         # the following code up some rules around rewriting request paths
         # where the url ends in a trailing slash or a an application (path)
         # name. as all of our apps are served as a single `index.html`
@@ -353,14 +357,22 @@ class AppLoadBalancer(CapeComponentResource):
         # rewrites/redirects (for actions). we will always have a default
         # that handles paths ending in trailing slashes or just the static app
         # name
+
+        # conditions_actions = [
+        #     (f"/{sa_name}*/", "/#{path}index.html"),
+        #     (f"/{sa_name}", "/#{path}/index.html"),
+        # ]
+
         conditions_actions = [
-            (f"/{sa_name}*/", "/#{path}index.html"),
-            (f"/{sa_name}", "/#{path}/index.html"),
+            (f"", "/index.html"),
+            (f"*/", "#{path}index.html"),
+            # (f"*.html", "#{path}"),
+            # (f"*", "#{path}.html"),
         ]
 
         # this constant action will work for all of our conditions and so we
         # only need to define it once
-        actn = "/#{path}/index.html"
+        # actn = "/#{path}/index.html"
 
         # NOTE: sa_paths is a set. Sets are not ordered. So if we do not sort
         #       in some way, we will probably get a different order every time
@@ -372,14 +384,14 @@ class AppLoadBalancer(CapeComponentResource):
         #       we add a new path that fits somewhere in the middle of the
         #       sorted list, all listeners after that entry would appear to
         #       be changed on that deployment...
-        for pth in sorted(sa_paths):
-            # we can ignore "." path here as that is the root of the s3
-            # bucket and would be covered by the default case.
-            if pth != ".":
-                # pth will look like `a/b/c` relative to the root of the s3
-                # bucket. the condition for that will look like `/a/b/c` and
-                # the action will be the constant defined above
-                conditions_actions.append((f"/{sa_name}/{pth}", actn))
+        # for pth in sorted(sa_paths):
+        #     # we can ignore "." path here as that is the root of the s3
+        #     # bucket and would be covered by the default case.
+        #     if pth != ".":
+        #         # pth will look like `a/b/c` relative to the root of the s3
+        #         # bucket. the condition for that will look like `/a/b/c` and
+        #         # the action will be the constant defined above
+        #         conditions_actions.append((f"/{sa_name}/{pth}", actn))
 
         # TODO: ISSUE #133
         # priorities for these rules are executed lowest to highest (and range
@@ -434,7 +446,7 @@ class AppLoadBalancer(CapeComponentResource):
             conditions=[
                 aws.lb.ListenerRuleConditionArgs(
                     path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
-                        values=[f"/{sa_name}/*"],
+                        values=[f"/*"],
                     ),
                 ),
             ],
