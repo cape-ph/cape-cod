@@ -1,4 +1,7 @@
 # See https://github.com/crate-ci/typos/blob/master/docs/reference.md to configure typos
+[files]
+extend-exclude = ["assets/web/*"]
+
 [default.extend-words]
 ser = "ser"
 ue = "ue"
