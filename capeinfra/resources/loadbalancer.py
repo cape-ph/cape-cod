@@ -1,25 +1,19 @@
 """Module of load balancer related resources."""
 
 import pulumi_aws as aws
-from pulumi import Input, Output, ResourceOptions, warn
+from pulumi import Input, ResourceOptions
 from pulumi_aws.ec2.get_network_interface import get_network_interface
 
 from capeinfra.resources.pulumi import CapeComponentResource
 
-# TODO:In order for this ALB implementation to support more than just a single
-#      static app (e.g. if we want multiple APIs or apps - static or not) we
-#      will require nothing to be served from the root of the ALB, but rather
-#      have paths that we can differentiate with. e.g. if the alb is linked
-#      with the fqdn myalb.tld we need things like myalb.tld/api1 or
-#      myalb.tld/app2. we want the default action of listeners to return a
-#      fixed response (e.g. a 403) if we don't have some sort of landing page
-#      (if we have a landing page then the default action can just forward to
-#      the target group for the landing page assuming that target group is
-#      known at the time the listener is created) and then add listener rules
-#      that match the paths to then forward to the right target group. Another
-#      option is to only support one item per load balancer (or support
-#      multiple with paths for things like APIs and just one for apps). The
-#      cost of an ALB at the time of this writing is $0.0225/hr.
+# NOTE:This ALB implementation supports 2 types of targets currently:
+#           - static apps served from S3
+#           - apis served from api gateway
+#      Multiple APIs can be served from the same subdomain FQDN (e.g.
+#      api.cape-dev.org/api1 and api.cape-dev.org/api2) while static apps
+#      require their own subdomain FQDN, and the bucket must be named with that
+#      FQDN. Only one app can be served from any s3 bucket, and it must be
+#      served from the root.
 
 
 # Fixed response for the default action of our listeners. Anything that doesn't
@@ -283,7 +277,6 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         vpc_ep: aws.ec2.VpcEndpoint,
         sa_name: str,
-        sa_paths: set,
         port: int | None = 443,
         proto: str | None = "HTTPS",
     ):
@@ -293,17 +286,15 @@ class AppLoadBalancer(CapeComponentResource):
         and listener rules for the static app. The listener will forward all
         requests to the provided VPC endpoint
 
-        NOTE: It is assumed that all provided paths for rules should ultimately
-              end in serving an `index.html` file from the path and that the
-              app exists in a prefix that is the same as the `sa_name` value
-              given.
+        NOTE: The only redirect rule set up for the static app is to append
+              `index.html` to any path ending in a slash. Everything else is
+              allowed through to the S3 vpc endpoint and will be served if it
+              exists. Be sure there are no secrets in the static app deployed.
 
         Args:
             vpc_ep: The VPC endpoint to associate with this static app.
             sa_name: The unique name of the static app being setup with this
                      ALB.
-            sa_paths: A set of paths (no leading slash) that will be allowed for
-                      this target.
             port: The port the of the listener the app will be associated with.
                   Defaults to 443
             proto: The protocol of the listener the app will be associated with.
@@ -313,6 +304,7 @@ class AppLoadBalancer(CapeComponentResource):
         listener = self._get_listener(port, proto)
 
         # All static sites will be routed to IP target groups.
+
         # NOTE: at this time all target group healtch checks for static apps
         #       will be checking for a HTTP GET on port 80 returning a 200, 307
         #       or 405. This is probably sufficient for a general health check
@@ -341,51 +333,23 @@ class AppLoadBalancer(CapeComponentResource):
             )
         )
 
-        # the following code up some rules around rewriting request paths
-        # where the url ends in a trailing slash or a an application (path)
-        # name. as all of our apps are served as a single `index.html`
-        # file in the static app case, we need to rewrite the url to
-        # actually be for that file. this is because the default behavior
-        # of s3 is to provide a file listing when given a url ending in a
-        # trailing slash. that would be no bueno
-
-        # first build the list of patterns (for conditions) and
-        # rewrites/redirects (for actions). we will always have a default
-        # that handles paths ending in trailing slashes or just the static app
-        # name
-        conditions_actions = [
-            (f"/{sa_name}*/", "/#{path}index.html"),
-            (f"/{sa_name}", "/#{path}/index.html"),
+        # This is the only redirect rule setup for the static app. If the path
+        # ends in a slash, we append `index.html` and then re-evaluate.
+        conditions_action_desc = [
+            ("*/", "/#{path}index.html", "Rule for trailing slash."),
         ]
-
-        # this constant action will work for all of our conditions and so we
-        # only need to define it once
-        actn = "/#{path}/index.html"
-
-        # NOTE: sa_paths is a set. Sets are not ordered. So if we do not sort
-        #       in some way, we will probably get a different order every time
-        #       we iterate over it when we make listener rules. This means that
-        #       the index-based listener rules will probably appear different
-        #       to pulumi every deployment. This is an attempt to mitigate that
-        #       somewhat.
-        #       The downside to this (being sorted alphbetically) is that if
-        #       we add a new path that fits somewhere in the middle of the
-        #       sorted list, all listeners after that entry would appear to
-        #       be changed on that deployment...
-        for pth in sorted(sa_paths):
-            # we can ignore "." path here as that is the root of the s3
-            # bucket and would be covered by the default case.
-            if pth != ".":
-                # pth will look like `a/b/c` relative to the root of the s3
-                # bucket. the condition for that will look like `/a/b/c` and
-                # the action will be the constant defined above
-                conditions_actions.append((f"/{sa_name}/{pth}", actn))
 
         # TODO: ISSUE #133
         # priorities for these rules are executed lowest to highest (and range
         # on 1-50000). so have the list here in the order you want them tried
         # in and the idx will take care of the priority
-        for idx, (ptrn, redir) in enumerate(conditions_actions, start=1):
+        # NOTE: this is in a loop even though there is only one
+        #       condition/action pair currently. Originally there were more
+        #       rules, and leaving it this way allows us to easily add more if
+        #       needed.
+        for idx, (ptrn, redir, desc) in enumerate(
+            conditions_action_desc, start=1
+        ):
             aws.lb.ListenerRule(
                 f"{self.name}-{sa_name}-lstnrrl{idx}",
                 listener_arn=listener.arn,
@@ -412,11 +376,7 @@ class AppLoadBalancer(CapeComponentResource):
                 tags={
                     "desc_name": (
                         f"{self.desc_name} {sa_name} ALB 443 HTTPS Listener "
-                        # TODO: can't have * in a tag value. would be nice to
-                        #       use some text here that's more useful than
-                        #       PATTERN WITH A STAR
-                        f"Rule for "
-                        f"{'PATTERN WITH A STAR' if '*' in ptrn else ptrn}"
+                        f"{desc}"
                     ),
                 },
             )
@@ -425,16 +385,14 @@ class AppLoadBalancer(CapeComponentResource):
         # group for this application.
         # NOTE: This rule must be under all others (at a higher priority value)
         # so that all other rules apply first te get redirects correct.
-        # TODO: This may not a good idea. It allows direct access to everything
-        #       in the hierarchy for the static app (which may be ok, may not).
-        #       SEE THE TODO AT THE TOP OF THIS FILE
+        fwd_rule_idx = len(conditions_action_desc) + 1
         aws.lb.ListenerRule(
-            f"{self.name}-{sa_name}-lstnrrl{len(conditions_actions)+1}",
+            f"{self.name}-{sa_name}-lstnrrl{fwd_rule_idx}",
             listener_arn=listener.arn,
             conditions=[
                 aws.lb.ListenerRuleConditionArgs(
                     path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
-                        values=[f"/{sa_name}/*"],
+                        values=[f"/*"],
                     ),
                 ),
             ],
@@ -451,7 +409,7 @@ class AppLoadBalancer(CapeComponentResource):
                     ),
                 ),
             ],
-            priority=len(conditions_actions) + 1,
+            priority=fwd_rule_idx,
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (

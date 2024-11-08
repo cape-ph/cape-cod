@@ -170,12 +170,6 @@ config:
                   #       repo, but rather follow the pattern we use with ETL
                   #       scripts using separate repos
                   dir: "./assets/web/static/dap-ui"
-                  # file paths are relative to `dir`
-                  files:
-                      - path: "nested/index.html"
-                        content-type: "text/html"
-                      - path: "nested/request-dap/index.html"
-                        content-type: "text/html"
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
