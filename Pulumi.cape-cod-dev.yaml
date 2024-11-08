@@ -111,22 +111,30 @@ config:
                     #   - spec: An OpenApi 3.0.1 yaml specification. This should
                     #           include *no* AWS id's, names, account info, etc
                     #   - handlers: a list of objects containing
-                    #       - id: the id in the spec file that will be replaced
-                    #             with the arn of the created lambda function
-                    #       - code: the path in the repo for the lambda that
-                    #               implements the endpoint
-                    #       - funct_args: arguments to pass *as is* to the
-                    #                     lambda function constructor. the keys
-                    #                     used need to map to actual argument
-                    #                     names of the pulumi lambda function
-                    #                     constructor. additionally, some args
-                    #                     will be ignored (e.g. environment,
-                    #                     role) as they are dynamically injected
-                    #                     in code. If not provided, the handler
-                    #                     will default to "index.index_handler"
-                    #                     and the runtime will default to
-                    #                     "python3.10"
-                    # TODO: enumerate supported/ignored funct_args
+                    #       - id:
+                    #           the id in the spec file that will be replaced
+                    #           with the arn of the created lambda function
+                    #       - code:
+                    #           the path in the repo for the lambda that
+                    #           implements the endpoint
+                    #       - funct_args:
+                    #           arguments to pass *as is* to the lambda
+                    #           function constructor. the keys used need to map
+                    #           to actual argument names of the pulumi lambda
+                    #           function constructor. additionally, most args
+                    #           will be ignored (e.g. environment, role) as
+                    #           they are dynamically injected in code or not
+                    #           used currently. If not provided, the handler
+                    #           will default to  "index.index_handler" and the
+                    #           runtime will default to "python3.10". The
+                    #           following arguments are supported:
+                    #           - architectures (defaults to ["x86_64"])
+                    #           - description
+                    #           - handler (defaults to "index.index_handler")
+                    #           - memory_size (MB,  defaults to 128)
+                    #           - runtime (defaults to "python3.10")
+                    #           - timeout (seconds, defaults to 3)
+                    # LEFTOFF
                     # TODO: default handler and runtime
                     dap:
                         desc: "Data Analysis Pipeline API"
