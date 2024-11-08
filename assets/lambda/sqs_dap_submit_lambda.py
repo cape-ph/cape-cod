@@ -1,115 +1,10 @@
 """Lambda function for kicking off DAPs triggered from an SQS queue."""
 
-import json
-import logging
-import os
-
 import boto3
-from botocore.exceptions import ClientError
+from capepy.aws.dynamodb import PipelineTable
+from capepy.aws.lambda_ import PipelineRecord
 
-logger = logging.getLogger(__name__)
-# TODO: ISSUE #84
-
-ddb_resource = boto3.resource("dynamodb", region_name=os.getenv("DDB_REGION"))
 ssm = boto3.client("ssm")
-
-
-# TODO: ISSUE #86
-def decode_error(err: ClientError):
-    """Decode a ClientError from AWS.
-
-    Args:
-        err: The ClientError being decoded.
-
-    Returns:
-        A tuple containing the error code and the error message provided by AWS.
-    """
-    code, message = "Unknown", "Unknown"
-    if "Error" in err.response:
-        error = err.response["Error"]
-        if "Code" in error:
-            code = error["Code"]
-        if "Message" in error:
-            message = error["Message"]
-    return code, message
-
-
-# TODO: ISSUE #86
-def get_dap_registry_table(table_name: str):
-    """Get the DAP registry DynamoDB table by name.
-
-    Args:
-        table_name: The name of the table to get a reference to.
-
-    Returns:
-        A reference to the table.
-
-    Raises:
-        ClientError: If the table cannot be found or other client error.
-    """
-    try:
-        table = ddb_resource.Table(table_name)
-        table.load()
-    except ClientError as err:
-        code, message = decode_error(err)
-
-        if code == "ResourceNotFoundException":
-            msg = (
-                f"CAPE DAP registry DynamoDB table ({table_name}) could not"
-                f"be found: {code} {message}",
-            )
-        else:
-            msg = (
-                f"Error trying to access CAPE data analysis pipeline registry "
-                f"DynamoDB table ({table_name}): {code} {message}",
-            )
-
-        logger.error(msg)
-        raise err
-
-    return table
-
-
-# TODO: ISSUE #86
-def get_dap_registry_entry(
-    table, pipeline_name: str, pipeline_version: str | None
-) -> dict | None:
-    """Get the DAP registry entry for the given pipeline name from DynamoDB.
-
-    Args:
-        table: A reference to the DyanmoDB table.
-        pipeline_name: The name of the pipeline who's registry entry we're
-                       looking for.
-        pipeline_version: The version of the pipeline who's registry entry we're
-                       looking for. Optional and defaults to None
-
-    Returns:
-        A dict containing the registry entry if found.
-
-    Raises:
-        ClientError: If no table items can be found for the pipeline name.
-    """
-    ret = None
-    try:
-        k = {"pipeline_name": pipeline_name}
-
-        # TODO: ISSUE #88
-        if pipeline_version is not None:
-            k.update({"version": pipeline_version})
-
-        response = table.get_item(Key=k)
-
-        ret = response["Item"]
-
-    except ClientError as err:
-        code, message = decode_error(err)
-
-        logger.error(
-            f"Couldn't get DAP registry entry for pipeline '{pipeline_name}'. "
-            f"{code} {message}"
-        )
-
-    return ret
 
 
 def index_handler(event, context):
@@ -119,47 +14,39 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
-    dap_registry_ddb_name = os.getenv("DAP_REG_DDB_TABLE")
-
-    if dap_registry_ddb_name is None:
-        msg = (
-            "No DAP registry DynamoDB table name provided. Cannot submit DAP "
-            "job to head node."
-        )
-        logger.error(msg)
-        return {"statusCode": 500, "body": msg}
-
     batch_item_failures = []
     successful_dap_jobs = []
     invalid_dap_jobs = []
 
     # get a reference to the etl attributes table
-    ddb_table = get_dap_registry_table(dap_registry_ddb_name)
+    ddb_table = PipelineTable()
 
     for rec in event["Records"]:
         # grab items from the incoming event needed later
-        qmsg = json.loads(rec["body"])
+        pipeline = PipelineRecord(rec)
 
         try:
             # TODO: ISSUE #84
-            pipeline_name = qmsg["pipeline_name"]
-            pipeline_version = qmsg["pipeline_version"]
-            output_path = qmsg["output_path"]
-            r1_path = qmsg["r1_path"]
-            r2_path = qmsg["r2_path"]
-            sample = qmsg["sample"]
-            ec2_id = qmsg["ec2_id"]
+            pipeline_name = pipeline.name
+            pipeline_version = pipeline.version
+
+            # TODO: update parameters to be an actual part of PipelineRecord
+            output_path = pipeline.parameters["output_path"]
+            r1_path = pipeline.parameters["r1_path"]
+            r2_path = pipeline.parameters["r2_path"]
+            sample = pipeline.parameters["sample"]
+            ec2_id = pipeline.parameters["ec2_id"]
 
             # attempt to get the registry entry from dynamodb. if we can't find
             # an entry, we'll log the error but not add to the batch failures
             # (if we can't find the entry, no amount of re-queuing will help).
 
-            dap_reg_entry = get_dap_registry_entry(
-                ddb_table, pipeline_name, pipeline_version
+            dap_reg_entry = ddb_table.get_pipeline(
+                pipeline_name, pipeline_version
             )
 
             if dap_reg_entry is None:
-                logger.error(
+                ddb_table.logger.error(
                     f"Cannot find DAP registry entry for data analysis "
                     f"pipeline {pipeline_name} (version {pipeline_version}."
                     "Cannot submit pipeline to the head node."
@@ -253,7 +140,7 @@ def index_handler(event, context):
             # we caught an exception that means we're not going to space today, but
             # could sometime in the future. so requeue the message hoping that day
             # will come.
-            batch_item_failures.append({"itemIdentifier": rec["messageId"]})
+            batch_item_failures.append({"itemIdentifier": pipeline.id})
 
     # check if we had any failures so we can update the queue as needed for
     # re-trigger

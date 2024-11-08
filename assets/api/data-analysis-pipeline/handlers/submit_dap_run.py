@@ -6,30 +6,11 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
+from capepy.aws.utils import decode_error
 
 logger = logging.getLogger(__name__)
 
 sqs_client = boto3.client("sqs")
-
-
-# TODO: ISSUE #86
-def decode_error(err: ClientError):
-    """Decode a ClientError from AWS.
-
-    Args:
-        err: The ClientError being decoded.
-
-    Returns:
-        A tuple containing the error code and the error message provided by AWS.
-    """
-    code, message = "Unknown", "Unknown"
-    if "Error" in err.response:
-        error = err.response["Error"]
-        if "Code" in error:
-            code = error["Code"]
-        if "Message" in error:
-            message = error["Message"]
-    return code, message
 
 
 # TODO: ISSUE #86
@@ -113,14 +94,24 @@ def index_handler(event, context):
         #       invalid values (e.g. a pipeline name that doesn't exist) will
         #       happen in the processing of the message from the queue in a
         #       different lambda.
+        # TODO: Feels we should add a DAPipelineSpec class or something to
+        #       capepy lib that can be reused across lambdas instead of a hard
+        #       coded dict here. would understand outermost keys, and be able
+        #       to be constructed with a collection of pipeline param keys
+        #       (maybe with some validation meta as well). deferring that for a
+        #       bit tho. could also just mod the PipelineRecord class for the
+        #       same purpose and have it be able to serialize/deserialize
+        #       to/from dicts for jsoning.
         qmsg = {
             "pipeline_name": pipeline_name,
             "pipeline_version": pipeline_version,
-            "output_path": output_path,
-            "r1_path": r1_path,
-            "r2_path": r2_path,
-            "sample": sample,
-            "ec2_id": ec2_id,
+            "pipeline_parameters": {
+                "output_path": output_path,
+                "r1_path": r1_path,
+                "r2_path": r2_path,
+                "sample": sample,
+                "ec2_id": ec2_id,
+            },
         }
 
         send_submit_dap_message(queue_name, queue_url, qmsg)

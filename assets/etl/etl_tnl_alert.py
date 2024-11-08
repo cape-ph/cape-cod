@@ -2,19 +2,12 @@
 
 import io
 import re
-import sys
 
-import boto3 as boto3
 import pandas as pd
-from awsglue.context import GlueContext
-from awsglue.utils import getResolvedOptions
-from pyspark.sql import SparkSession
+from capepy.aws.glue import EtlJob
 
-# for our purposes here, the spark and glue context are only (currently) needed
-# to get the logger.
-spark_ctx = SparkSession.builder.getOrCreate()  # pyright: ignore
-glue_ctx = GlueContext(spark_ctx)
-logger = glue_ctx.get_logger()
+# Instantiate the ETL Job using capepy
+etl_job = EtlJob()
 
 # TODO:
 #   - add error handling for the format of the document being incorrect
@@ -43,50 +36,6 @@ OUT_COL_NAMES = [
     "Colonization_Detected",
 ]
 
-parameters = getResolvedOptions(
-    sys.argv,
-    [
-        "RAW_BUCKET_NAME",
-        "ALERT_OBJ_KEY",
-        "CLEAN_BUCKET_NAME",
-    ],
-)
-
-raw_bucket_name = parameters["RAW_BUCKET_NAME"]
-alert_obj_key = parameters["ALERT_OBJ_KEY"]
-clean_bucket_name = parameters["CLEAN_BUCKET_NAME"]
-
-# NOTE: for now we'll take the alert object key and change out the file
-#       extension for the clean data (leaving all namespacing and such). this
-#       will probably need to change
-clean_obj_key = alert_obj_key.replace(".xlsx", ".csv")
-
-# NOTE: May need some creds here
-s3_client = boto3.client("s3")
-
-# try to get the docx object from S3 and handle any error that would keep us
-# from continuing.
-response = s3_client.get_object(Bucket=raw_bucket_name, Key=alert_obj_key)
-
-status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-
-if status != 200:
-    err = (
-        f"ERROR - Could not get object {alert_obj_key} from bucket "
-        f"{raw_bucket_name}. ETL Cannot continue."
-    )
-
-    logger.error(err)
-
-    # NOTE: need to properly handle exception stuff here, and we probably want
-    #       this going somewhere very visible (e.g. SNS topic or a perpetual log
-    #       as someone will need to be made aware)
-    raise Exception(err)
-
-logger.info(f"Obtained object {alert_obj_key} from bucket {raw_bucket_name}.")
-
-# handle the document itself...
-
 # NOTE: The data in this spreadsheet can take a few different forms based on
 #       pathogen. This could change in the future. The spreadsheet (regardless
 #       of pathogen) does have the same general format and is assumed to
@@ -95,7 +44,7 @@ logger.info(f"Obtained object {alert_obj_key} from bucket {raw_bucket_name}.")
 #       - a 1 column header row that can be ignored
 #       - another header row that contains all the column names for the table
 #       - rows of data
-data = pd.read_excel(response.get("Body").read(), engine="openpyxl", skiprows=1)
+data = pd.read_excel(etl_job.get_raw_file(), engine="openpyxl", skiprows=1)
 
 # strip out the ingorable header and reset the index
 data[1:].reset_index(drop=True, inplace=True)
@@ -169,27 +118,7 @@ interim["State_Lab_ID"] = data["State_Lab_ID"]
 # write out the transformed data
 with io.StringIO() as csv_buff:
     interim.to_csv(csv_buff, index=False)
-
-    response = s3_client.put_object(
-        Bucket=clean_bucket_name, Key=clean_obj_key, Body=csv_buff.getvalue()
-    )
-
-    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-
-    if status != 200:
-        err = (
-            f"ERROR - Could not write transformed data object {clean_obj_key} "
-            f"to bucket {clean_bucket_name}. ETL Cannot continue."
-        )
-
-        logger.error(err)
-
-        # NOTE: need to properly handle exception stuff here, and we probably
-        #       want this going somewhere very visible (e.g. SNS topic or a
-        #       perpetual log as someone will need to be made aware)
-        raise Exception(err)
-
-    logger.info(
-        f"Transformed {raw_bucket_name}/{alert_obj_key} and wrote result "
-        f"to {clean_bucket_name}/{clean_obj_key}"
+    etl_job.write_clean_file(
+        csv_buff.getvalue(),
+        etl_job.parameters["OBJECT_KEY"].replace(".xlsx", ".csv"),
     )

@@ -12,26 +12,15 @@
 import json
 import logging
 import os
-import urllib.parse
 
 import boto3
 from botocore.exceptions import ClientError
+from capepy.aws.lambda_ import BucketNotificationRecord
+from capepy.aws.utils import decode_error
 
 logger = logging.getLogger(__name__)
 
 sqs_client = boto3.client("sqs")
-
-
-# TODO: ISSUE #86
-def decode_error(err: ClientError):
-    code, message = "Unknown", "Unknown"
-    if "Error" in err.response:
-        error = err.response["Error"]
-        if "Code" in error:
-            code = error["Code"]
-        if "Message" in error:
-            message = error["Message"]
-    return code, message
 
 
 # TODO: ISSUE #86
@@ -87,25 +76,9 @@ def index_handler(event, context):
         logger.error(msg)
         return {"statusCode": 500, "body": msg}
 
-    # grab all the info we care about for the new s3 object from the event
-    # object.
-    # NOTE: the event structure for notifications can contain many records.
-    #       grabbing them all to handle potential of multiple uploads in a
-    #       batch. a new message will be inserted for each record
-    object_info = [
-        {
-            "bucket": rec["s3"]["bucket"]["name"],
-            "key": urllib.parse.unquote_plus(
-                rec["s3"]["object"]["key"], encoding="utf-8"
-            ),
-        }
-        for rec in event["Records"]
-    ]
-
     try:
         # we'll bucket the incoming object infos and use them to send our
         # response if nothing fails miserably
-        ignored_oi = []
         processed_oi = []
 
         # TODO: any other error checking here? we should get an exception if
@@ -113,9 +86,10 @@ def index_handler(event, context):
         response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
 
-        for oi in object_info:
+        for rec in event["Records"]:
+            bucket_notif = BucketNotificationRecord(rec)
             # deconstruct the key (s3 name, prefix, suffix)
-            prefix, _, objname = oi["key"].rpartition("/")
+            prefix, _, objname = bucket_notif.key.rpartition("/")
             if not objname:
                 # if we didn't get an objname, the separator "/" was not found,
                 # meaning there is no prefix. so do some rearranging of
@@ -130,15 +104,16 @@ def index_handler(event, context):
 
             # NOTE: first cut DAP results processing, we'll assume all files
             #       coming in will be ETL'd
-            qmsg = {}
-            qmsg.update(oi)
+            qmsg = {
+                "bucket": bucket_notif.bucket,
+                "key": bucket_notif.key,
+            }
             qmsg.setdefault("etl_job", etl_job_id)
 
             send_etl_message(queue_name, queue_url, qmsg)
-            processed_oi.append(oi)
+            processed_oi.append(bucket_notif)
 
-        # Make our return message containing info about the processed and
-        # ignored objects
+        # Make our return message containing info about the processed objects
         body = ""
 
         if processed_oi:
@@ -148,7 +123,7 @@ def index_handler(event, context):
             )
 
             for poi in processed_oi:
-                body = f"{body}({poi['bucket']}, {poi['key']}), "
+                body = f"{body}({poi.bucket}, {poi.key}), "
 
             body = f"{body}]. "
 

@@ -1,9 +1,18 @@
-"""Module of configuration related utilities."""
+"""Module of subclasses of pulumi constructs that are useful in constructing the
+CAPE infrastructure.
 
+The tooling here is core to building all of `capeinfra` which is why this is a
+separate module. Before there were issues of circular dependencies if there
+wanted to be anything static or top level in this module it would be impossible
+to instantiate because every other modules includes this module and therefore
+you cannot modify any state of the module without it importing itself.
+"""
+
+from abc import abstractmethod
 from collections.abc import Mapping
 from typing import Any
 
-from pulumi import Config
+from pulumi import ComponentResource, Config
 
 
 def update_dict(base: Any, delta: Mapping):
@@ -97,3 +106,46 @@ class CapeConfig(dict):
         """
         update_dict(self, delta)
         return self
+
+
+class CapeComponentResource(ComponentResource):
+    """Extension of ComponentResource that takes a descriptive name and sets up
+    configuration."""
+
+    def __init__(
+        self,
+        *args,
+        desc_name=None,
+        config: dict | str = {},
+        config_name: str | None = None,
+        **kwargs,
+    ):
+        """Constructor.
+
+        Takes all the same args/kwargs as pulumi's ComponentResource in addition
+        to the ones below.
+
+        Args:
+            config: A configuration dictionary or a string to pull an object
+                    from the Pulumi config
+            config_name: the name of the section in the pulumi config (Optional,
+                         only used if config is a string)
+            desc_name: A descriptive name that can be added to tags for child
+                       components because names are so restricted in length.
+        """
+        super().__init__(*args, **kwargs)
+        self._config = CapeConfig(
+            config, config_name=config_name, default=self.default_config
+        )
+        self.desc_name = desc_name
+
+    @property
+    @abstractmethod
+    def default_config(self) -> dict:
+        """Abstract property to get the default configuration of the component."""
+        pass
+
+    @property
+    def config(self):
+        """Return the config object for the component."""
+        return self._config

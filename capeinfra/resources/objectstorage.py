@@ -5,7 +5,7 @@ from typing import Any, Optional
 import pulumi_aws as aws
 from pulumi import Archive, Asset, ResourceOptions
 
-from .pulumi import CapeComponentResource
+from capepulumi import CapeComponentResource
 
 
 class VersionedBucket(CapeComponentResource):

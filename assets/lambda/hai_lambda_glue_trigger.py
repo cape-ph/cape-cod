@@ -2,9 +2,9 @@
 
 import json
 import os
-import urllib.parse
 
 import boto3
+from capepy.aws.lambda_ import BucketNotificationRecord
 
 glue_client = boto3.client("glue")
 
@@ -30,26 +30,15 @@ def index_handler(event, context):
         print(msg)
         return {"statusCode": 500, "body": msg}
 
-    # the new object key that triggers the lambda is not known until now
-    # and cannot be obtained as an env var or parameter. needs to be
-    # grabbed from the event
-    # NOTE: the event structure for notifications can contain many records.
-    #       grabbin them all to handle potential of multiple uploads in a
-    #       batch. a new glue job will be started for each record
-    object_keys = [
-        urllib.parse.unquote_plus(rec["s3"]["object"]["key"], encoding="utf-8")
-        for rec in event["Records"]
-    ]
-
     try:
-        for ok in object_keys:
+        for rec in event["Records"]:
             run_id = glue_client.start_job_run(
                 JobName=glue_job_name,
                 # NOTE: CLEAN_BUCKET_NAME is a default parameter the job will
                 #       always run with
                 Arguments={
                     "--RAW_BUCKET_NAME": raw_bucket_name,
-                    "--ALERT_OBJ_KEY": ok,
+                    "--OBJECT_KEY": BucketNotificationRecord(rec).key,
                 },
             )
             status = glue_client.get_job_run(

@@ -7,13 +7,12 @@ from pulumi import ResourceOptions, warn
 
 # TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
 #       it should not be here after 145.
-from .datalake.datalake import CatalogDatabase
-from .pipeline.batch import BatchCompute
-from .resources.certs import BYOCert
-from .resources.loadbalancer import AppLoadBalancer
-from .resources.pulumi import CapeComponentResource
-from .util.config import CapeConfig
-from .util.naming import disemvowel
+from capeinfra.datalake.datalake import CatalogDatabase
+from capeinfra.pipeline.batch import BatchCompute
+from capeinfra.resources.certs import BYOCert
+from capeinfra.resources.loadbalancer import AppLoadBalancer
+from capeinfra.util.naming import disemvowel
+from capepulumi import CapeComponentResource, CapeConfig
 
 
 class ScopedSwimlane(CapeComponentResource):

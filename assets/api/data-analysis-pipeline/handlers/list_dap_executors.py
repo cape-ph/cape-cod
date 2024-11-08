@@ -5,31 +5,12 @@ import logging
 
 import boto3
 from botocore.exceptions import ClientError
+from capepy.aws.utils import decode_error
 
 logger = logging.getLogger(__name__)
 
 
 ec2_client = boto3.client("ec2")
-
-
-# TODO: ISSUE #86
-def decode_error(err: ClientError):
-    """Decode a ClientError from AWS.
-
-    Args:
-        err: The ClientError being decoded.
-
-    Returns:
-        A tuple containing the error code and the error message provided by AWS.
-    """
-    code, message = "Unknown", "Unknown"
-    if "Error" in err.response:
-        error = err.response["Error"]
-        if "Code" in error:
-            code = error["Code"]
-        if "Message" in error:
-            message = error["Message"]
-    return code, message
 
 
 def index_handler(event, context):

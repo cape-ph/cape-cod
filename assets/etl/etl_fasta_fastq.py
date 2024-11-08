@@ -1,14 +1,13 @@
 import enum
 import io
 import json
-import sys
 
-import boto3 as boto3
 import pyfastx
-from awsglue.context import GlueContext
-from awsglue.utils import getResolvedOptions
+from capepy.aws.glue import EtlJob
 from pyfastxcli import fastx_format_check
-from pyspark.sql import SparkSession
+
+etl_job = EtlJob()
+alert_obj_key = etl_job.parameters["OBJECT_KEY"]
 
 
 class FastxTypes(enum.Enum):
@@ -16,18 +15,16 @@ class FastxTypes(enum.Enum):
     FASTQ = "fastq"
 
 
-def extract_objname_from_objkey(objkey):
+# TODO: maybe should live in `capepy` if it is generally useful in any way
+def extract_objname_from_objkey():
     """Extract the object name from a full s3 object key.
-
-    Args:
-        objkey: The full s3 key for an object (e.g. /subdir/objname.ext)
 
     Returns:
         The name of the object without the leading namespacing info (e.g.
         objname.ext)
     """
 
-    return objkey[objkey.rfind("/") + 1 :]
+    return alert_obj_key[alert_obj_key.rfind("/") + 1 :]
 
 
 # TODO:
@@ -42,22 +39,20 @@ def extract_objname_from_objkey(objkey):
 #   passing it was chosen. if/when we clean up fastx handling, re-examine
 
 
-def handle_fasta(objkey, fname, raw_bucket):
+def handle_fasta(fname):
     """Handle a fasta file.
 
     Args:
-        objkey: The full object key for the original file.
         fname: The file/object name portion of the full key.
-        raw_bucket: the name of the raw_bucket the original object lives in.
 
     Returns:
-        A dict containing info for the fasta file that will be writtent to the
+        A dict containing info for the fasta file that will be written to the
         "clean" json file.
     """
     fa = pyfastx.Fasta(fname)
 
     return {
-        "raw_object": f"s3://{raw_bucket}/{objkey}",
+        "raw_object": f"s3://{etl_job.parameters['RAW_BUCKET_NAME']}/{alert_obj_key}",
         "file_name": fname,
         "format": FastxTypes.FASTA.value,
         "fasta_type": fa.type,
@@ -70,22 +65,20 @@ def handle_fasta(objkey, fname, raw_bucket):
     }
 
 
-def handle_fastq(objkey, fname, raw_bucket):
+def handle_fastq(fname):
     """Handle a fastq file.
 
     Args:
-        objkey: The full object key for the original file.
         fname: The file/object name portion of the full key.
-        raw_bucket: the name of the raw_bucket the original object lives in.
 
     Returns:
-        A dict containing info for the fastq file that will be writtent to the
+        A dict containing info for the fastq file that will be written to the
         "clean" json file.
     """
     fq = pyfastx.Fastq(fname)
 
     return {
-        "raw_object": f"s3://{raw_bucket}/{objkey}",
+        "raw_object": f"s3://{etl_job.parameters['RAW_BUCKET_NAME']}/{alert_obj_key}",
         "file_name": fname,
         "format": FastxTypes.FASTQ.value,
         "num_sequences": len(fq),
@@ -103,59 +96,12 @@ def handle_fastq(objkey, fname, raw_bucket):
     }
 
 
-# for our purposes here, the spark and glue context are only (currently) needed
-# to get the logger.
-spark_ctx = SparkSession.builder.getOrCreate()  # pyright: ignore
-glue_ctx = GlueContext(spark_ctx)
-logger = glue_ctx.get_logger()
-
-
-parameters = getResolvedOptions(
-    sys.argv,
-    [
-        "RAW_BUCKET_NAME",
-        "ALERT_OBJ_KEY",
-        "CLEAN_BUCKET_NAME",
-    ],
-)
-
-raw_bucket_name = parameters["RAW_BUCKET_NAME"]
-alert_obj_key = parameters["ALERT_OBJ_KEY"]
-clean_bucket_name = parameters["CLEAN_BUCKET_NAME"]
-
-
 # and we need the object name itself (no leading namespacing info)
-obj_name = extract_objname_from_objkey(alert_obj_key)
-
-# NOTE: May need some creds here
-s3_client = boto3.client("s3")
-
-# try to get the docx object from S3 and handle any error that would keep us
-# from continuing.
-response = s3_client.get_object(Bucket=raw_bucket_name, Key=alert_obj_key)
-
-status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-
-if status != 200:
-    err = (
-        f"ERROR - Could not get object {alert_obj_key} from bucket "
-        f"{raw_bucket_name}. ETL Cannot continue."
-    )
-
-    logger.error(err)
-
-    # NOTE: need to properly handle exception stuff here, and we probably want
-    #       this going somewhere very visible (e.g. SNS topic or a perpetual log
-    #       as someone will need to be made aware)
-    raise Exception(err)
-
-logger.info(f"Obtained object {alert_obj_key} from bucket {raw_bucket_name}.")
-
-# handle the file itself...
+obj_name = extract_objname_from_objkey()
 
 # the response should contain a StreamingBody object that needs to be converted
 # to a file like object to make the docx library happy
-f = io.BytesIO(response.get("Body").read())
+f = io.BytesIO(etl_job.get_raw_file())
 
 # we now have the file in memory, but need to write it locally because the
 # pyfastx library only deals with file paths and not file-likes
@@ -168,14 +114,14 @@ try:
 
     match frmt:
         case FastxTypes.FASTA.value:
-            info = handle_fasta(alert_obj_key, obj_name, raw_bucket_name)
+            info = handle_fasta(obj_name)
         case FastxTypes.FASTQ.value:
-            info = handle_fastq(alert_obj_key, obj_name, raw_bucket_name)
+            info = handle_fastq(obj_name)
 
 except Exception as e:
     # NOTE: the library raises a generic Exception and so we catch
     #       nothing more specific
-    logger.error(f"Could not determine filetype for {obj_name}: {e}")
+    etl_job.logger.error(f"Could not determine filetype for {obj_name}: {e}")
     raise e
 
 
@@ -190,27 +136,4 @@ clean_obj_key = f"{alert_obj_key[0:alert_obj_key.find('.')]}.{frmt}.json"
 # write out our "clean" data
 with io.StringIO() as buff:
     json.dump(info, buff)
-
-    response = s3_client.put_object(
-        Bucket=clean_bucket_name, Key=clean_obj_key, Body=buff.getvalue()
-    )
-
-    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-
-    if status != 200:
-        err = (
-            f"ERROR - Could not write transformed data object {clean_obj_key} "
-            f"to bucket {clean_bucket_name}. ETL Cannot continue."
-        )
-
-        logger.error(err)
-
-        # NOTE: need to properly handle exception stuff here, and we probably
-        #       want this going somewhere very visible (e.g. SNS topic or a
-        #       perpetual log as someone will need to be made aware)
-        raise Exception(err)
-
-    logger.info(
-        f"Transformed {raw_bucket_name}/{alert_obj_key} and wrote result "
-        f"to {clean_bucket_name}/{clean_obj_key}"
-    )
+    etl_job.write_clean_file(buff.getvalue(), clean_obj_key)

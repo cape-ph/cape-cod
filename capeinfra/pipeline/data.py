@@ -5,14 +5,15 @@ from copy import deepcopy
 import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
-from ..iam import (
+import capeinfra
+from capeinfra.iam import (
     get_bucket_reader_policy,
     get_etl_job_s3_policy,
     get_inline_role,
     get_start_crawler_policy,
     get_start_etl_job_policy,
 )
-from ..resources.pulumi import CapeComponentResource
+from capepulumi import CapeComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
 
@@ -151,6 +152,7 @@ class DataCrawler(CapeComponentResource):
         self.trigger_function = aws.lambda_.Function(
             f"{self.name}-lmbdfnct",
             role=self.trigger_role.arn,
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             # NOTE: Lambdas want a zip file as opposed to an s3 script location
             code=AssetArchive(
                 {
@@ -159,7 +161,7 @@ class DataCrawler(CapeComponentResource):
                     )
                 }
             ),
-            runtime="python3.11",
+            runtime="python3.10",
             # in this case, the zip file for the lambda deployment is
             # being created by this code. and the zip file will be
             # called index. so the handler must be start with `index`
@@ -250,12 +252,14 @@ class EtlJob(CapeComponentResource):
                 raw_bucket=raw_bucket.bucket,
                 clean_bucket=clean_bucket.bucket,
                 script_bucket=script_bucket.bucket,
+                assets_bucket=capeinfra.meta.automation_assets_bucket.bucket.bucket,
             ).apply(
                 lambda args: get_etl_job_s3_policy(
                     args["raw_bucket"],
                     args["clean_bucket"],
                     args["script_bucket"],
                     self.config["script"],
+                    args["assets_bucket"],
                 )
             ),
             srvc_policy_attach=None,
@@ -270,7 +274,18 @@ class EtlJob(CapeComponentResource):
             default_args["--additional-python-modules"] = ",".join(
                 self.config["pymodules"]
             )
+
         default_args["--CLEAN_BUCKET_NAME"] = self.clean_bucket.bucket
+
+        # FIXME: FIGURE OUT HOW TO DEAL WITH OUTPUT[str] WITH ADDITIONAL PYTHON
+        # MODULES, CURRENTLY BREAKS THE INSTALLATION OF THE WHEEL
+        def add_to_python_modules(capepy):
+            default_args["--additional-python-modules"] = (
+                f"{default_args['--additional-python-modules']},{capepy}"
+                if "--additional-python-modules" in default_args
+                else capepy
+            )
+            return default_args
 
         self.job = aws.glue.Job(
             self.name,
@@ -281,7 +296,9 @@ class EtlJob(CapeComponentResource):
                 ),
                 python_version="3",
             ),
-            default_arguments=default_args,
+            default_arguments=capeinfra.meta.capepy.uri.apply(
+                add_to_python_modules
+            ),
             execution_property=aws.glue.JobExecutionPropertyArgs(
                 max_concurrent_runs=self.config.get("max_concurrent_runs"),
             ),
@@ -314,6 +331,7 @@ class EtlJob(CapeComponentResource):
         etl_function = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
             role=self.trigger_role.arn,
+            layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
@@ -321,7 +339,7 @@ class EtlJob(CapeComponentResource):
                     )
                 }
             ),
-            runtime="python3.11",
+            runtime="python3.10",
             # in this case, the zip file for the lambda deployment is
             # being created by this code. and the zip file will be
             # called index. so the handler must be start with `index`
