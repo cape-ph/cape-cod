@@ -364,8 +364,7 @@ class AppLoadBalancer(CapeComponentResource):
         # ]
 
         conditions_actions = [
-            (f"", "/index.html"),
-            (f"*/", "#{path}index.html"),
+            (f"*/", "/#{path}index.html"),
             # (f"*.html", "#{path}"),
             # (f"*", "#{path}.html"),
         ]
