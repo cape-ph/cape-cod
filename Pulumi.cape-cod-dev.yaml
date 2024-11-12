@@ -137,8 +137,6 @@ config:
                     #           - memory_size (MB,  defaults to 128)
                     #           - runtime (defaults to "python3.10")
                     #           - timeout (seconds, defaults to 3)
-                    # LEFTOFF
-                    # TODO: default handler and runtime
                     dap:
                         desc: "Data Analysis Pipeline API"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
@@ -146,21 +144,12 @@ config:
                             - id: "list_daps_handler"
                               name: "lsdaps"
                               code: "assets/api/data-analysis-pipeline/handlers/list_daps.py"
-                              funct_args:
-                                  handler: "index.index_handler"
-                                  runtime: "python3.10"
                             - id: "list_dap_executors_handler"
                               name: "lsexec"
                               code: "assets/api/data-analysis-pipeline/handlers/list_dap_executors.py"
-                              funct_args:
-                                  handler: "index.index_handler"
-                                  runtime: "python3.10"
                             - id: "submit_dap_run_handler"
                               name: "sbmtdap"
                               code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
-                              funct_args:
-                                  handler: "index.index_handler"
-                                  runtime: "python3.10"
             # static apps are deployed to s3 as html/js/css bundles and are
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
