@@ -94,6 +94,13 @@ class PrivateSwimlane(ScopedSwimlane):
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
 
+        # will contain a mapping of env var labels to resource names and types.
+        # these may be used in api configuration to state the need for a
+        # particular env var to be passed into the api lambda handlers. by
+        # virtue of configuring support for these vars, required resource
+        # permissions will also be added for the lambda.
+        self._exposed_env_vars = {}
+
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
         self.create_static_web_resources()
@@ -134,17 +141,22 @@ class PrivateSwimlane(ScopedSwimlane):
         """
         # create a new CapeRestApi object for the given api name
 
-        # TODO: how to generalize this for any API to specify
-        env_vars = {
-            "DAP_QUEUE_NAME": self.dap_submit_queue.name,
-            "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
-        }
-
-        # TODO: how to generalize this for any API to specify
-        resource_grants = {
-            "tables": [self.analysis_pipeline_registry_ddb_table.name],
-            "queues": [self.dap_submit_queue.name],
-        }
+        # construct the env_vars and resource_grants values based on the
+        # configuration.
+        # NOTE: if there's a bad env var in here, we'll let the KeyError go to
+        #       halt the deployment.
+        env_vars = {}
+        resource_grants = {}
+        for ev in self.apis[api_name]["spec"].get("env_vars", []):
+            env_vars.setdefault(ev, self._exposed_env_vars[ev]["resource_name"])
+            res = resource_grants.setdefault(
+                self._exposed_env_vars[ev]["type"], []
+            )
+            # we don't want to end up with the same thing in the list more than
+            # once. could go with a set or filter, or we could just check if
+            # it's in there before adding...
+            if not self._exposed_env_vars[ev]["resource_name"] in res:
+                res.append(self._exposed_env_vars[ev]["resource_name"])
 
         self.apis[api_name]["deploy"] = CapeRestApi(
             f"{self.basename}-{api_name}-api",
@@ -161,10 +173,7 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
     def create_analysis_pipeline_registry(self):
-        """Sets up an analysis pipeline registry database.
-
-        Args:
-        """
+        """Sets up an analysis pipeline registry database."""
         # setup a DynamoDB table to hold a mapping of pipeline names (user
         # facing names) to various config info for the running of the analysis
         # pipelines. E.g. a nextflow pipeline may have a default nextflow config
@@ -274,6 +283,17 @@ class PrivateSwimlane(ScopedSwimlane):
                     opts=ResourceOptions(parent=self),
                 )
 
+        # read access to this this resource can be configured via the deployment
+        # config (for api lambdas), so add it to the bookkeeping structure for
+        # that
+        self._exposed_env_vars.setdefault(
+            "DAP_REG_DDB_TABLE",
+            {
+                "resource_name": self.analysis_pipeline_registry_ddb_table.name,
+                "type": "table",
+            },
+        )
+
     def create_dap_submission_queue(self):
         """Creates and configures the SQS queue where DAP submissions will go.
 
@@ -353,6 +373,17 @@ class PrivateSwimlane(ScopedSwimlane):
             event_source_arn=self.dap_submit_queue.arn,
             function_name=self.dap_submit_qmsg_handler.arn,
             function_response_types=["ReportBatchItemFailures"],
+        )
+
+        # read access to this this resource can be configured via the deployment
+        # config (for api lambdas), so add it to the bookkeeping structure for
+        # that
+        self._exposed_env_vars.setdefault(
+            "DAP_QUEUE_NAME",
+            {
+                "resource_name": self.dap_submit_queue.name,
+                "type": "queue",
+            },
         )
 
     # TODO: ISSUE #126
