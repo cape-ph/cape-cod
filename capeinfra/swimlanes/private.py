@@ -20,7 +20,6 @@ import capeinfra
 from capeinfra.iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
-    get_dap_api_policy,
     get_inline_role,
     get_instance_profile,
     get_nextflow_executor_policy,
@@ -33,6 +32,7 @@ from capeinfra.iam import (
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
 from capeinfra.pipeline.data import DataCrawler, EtlJob
+from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane
@@ -132,375 +132,33 @@ class PrivateSwimlane(ScopedSwimlane):
         Args:
             api_name: The name of the API as configured.
         """
+        # create a new CapeRestApi object for the given api name
 
-        # TODO: ISSUE #61 - until we handle open api specs, we're manually
-        #                   building the DAP API here. as such we will warn
-        #                   about any other apis and ignore them otherwise.
-        if api_name != "dap":
-            warn(f"Unexpected API {api_name} cannot be deployed.")
-            return
+        # TODO: how to generalize this for any API to specify
+        env_vars = {
+            "DAP_QUEUE_NAME": self.dap_submit_queue.name,
+            "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
+        }
 
-        # setup bookkeeping for the api deployment info
-        # NOTE: we only need to put stuff in here that is needed after
-        #       execution of this method. which at this time includes
-        #   - deployed stage name
-        api_deploy_info = {}
-        api_spec = self.apis[api_name]["spec"]
+        # TODO: how to generalize this for any API to specify
+        resource_grants = {
+            "tables": [self.analysis_pipeline_registry_ddb_table.name],
+            "queues": [self.dap_submit_queue.name],
+        }
 
-        # this is used a ton in resource names below. do it once...
-        res_prefix = f"{self.basename}-{api_name}-api"
-
-        # API resource itself
-        # TODO: potentially use disable_execute_api_endpoint (force api to go
-        #       through our custom domain in all cases). Leaving on for now as
-        #       it's useful for testing.
-        restapi = aws.apigateway.RestApi(
-            f"{res_prefix}-restapi",
-            description=f"CAPE {api_spec['desc']}",
-            endpoint_configuration=aws.apigateway.RestApiEndpointConfigurationArgs(
-                types="PRIVATE",
-                vpc_endpoint_ids=(
-                    self.api_vpcendpoint.id.apply(lambda i: [f"{i}"])
-                ),
-            ),
-            policy=get_vpce_api_invoke_policy(vpce_id=self.api_vpcendpoint.id),
-            # TODO: ISSUE #61
-            # NOTE: no pulumi Asset/Archive stuff here. we need the contents as
-            #       a string.
-            # body=Path(
-            #    "./assets/api/analysis-pipeline/dap-api-spec.yaml"
-            # ).read_text(),
+        self.apis[api_name]["deploy"] = CapeRestApi(
+            f"{self.basename}-{api_name}-api",
+            api_name,
+            self.apis[api_name]["spec"]["spec_file"],
+            self.api_stage_suffix,
+            env_vars,
+            resource_grants,
+            self.api_vpcendpoint,
+            self.apigw_domainname.domain_name,
+            config=self.apis[api_name]["spec"],
+            desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),
         )
-
-        # Role for the lambda handlers of the API.
-        # NOTE: At this time we need one role for all possible operations of the
-        #       API (e.g. if it needs to write to SQS in one function and read
-        #       from DynamoDB in another, this role's policy must have both
-        #       those grants). This may not be the long term implementation.
-        api_lambda_role = get_inline_role(
-            f"{res_prefix}-lmbd-role",
-            f"{self.desc_name} {api_spec['desc']} lambda role",
-            "lmbd",
-            "lambda.amazonaws.com",
-            Output.all(
-                queue_name=self.dap_submit_queue.name,
-                table_name=self.analysis_pipeline_registry_ddb_table.name,
-            ).apply(lambda kwargs: get_dap_api_policy(**kwargs)),
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-        )
-
-        # Create an IAM role that API Gateway can assume to write logs
-        # NOTE: This does not set up the API to do logging. Nor does the
-        #       configuration of the logging for the Stage at the end of this
-        #       method. These only give permission to do logging and set the
-        #       format and log group. Turning on logging seems to only be
-        #       doable in the AWS console. Go to the stage in API gateway, find
-        #       "Logging and Tracing", select "Edit" and then flip the
-        #       CloudWatch logs toggle to "Errors Only" or "Errors and info
-        #       logs" as needed. The "Access Log Destination ARN" should be set
-        #       by this method, as should the format.
-        # TODO: can maybe get away with one log setup for all APIs? or because
-        #       they are so verbose and manually enabled, should we have one
-        #       per?
-        api_log_group = aws.cloudwatch.LogGroup(
-            # TODO: ISSUE #175
-            f"{res_prefix}-loggrp",
-        )
-
-        api_log_role = get_inline_role(
-            f"{res_prefix}-logrl",
-            f"{self.desc_name} API Logging Role",
-            "apigw",
-            "apigateway.amazonaws.com",
-            None,
-            (
-                "arn:aws:iam::aws:policy/service-role/"
-                "AmazonAPIGatewayPushToCloudWatchLogs"
-            ),
-            opts=ResourceOptions(parent=self),
-        )
-
-        # NOTE: this is just till we get openapi specs working. Even if we don't
-        #       go that route in the near term, this could use some refactor and
-        #       hooking up to the pulumi config
-        endpoint_specs = [
-            {
-                "name": "createpipeline",
-                "handler": "index.index_handler",
-                "runtime": "python3.10",
-                "handler_src": (
-                    "./assets/lambda/api-handlers/analysis-pipeline/"
-                    "queue_analysis_pipeline_run.py"
-                ),
-                "handler_vars": {"DAP_QUEUE_NAME": self.dap_submit_queue.name},
-                "path_part": "analysispipeline",
-                "method": "POST",
-                "enable_cors": True,
-            },
-            {
-                "name": "listpipelines",
-                "handler": "index.index_handler",
-                "runtime": "python3.10",
-                "handler_src": (
-                    "./assets/lambda/api-handlers/analysis-pipeline/"
-                    "list_analysis_pipelines.py"
-                ),
-                "handler_vars": {
-                    "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name
-                },
-                "path_part": "analysispipelines",
-                "method": "GET",
-                "enable_cors": True,
-            },
-            {
-                "name": "listexecutors",
-                "handler": "index.index_handler",
-                "runtime": "python3.10",
-                "handler_src": (
-                    "./assets/lambda/api-handlers/analysis-pipeline/"
-                    "list_pipeline_executors.py"
-                ),
-                "handler_vars": {},
-                "path_part": "pipelineexecutors",
-                "method": "GET",
-                "enable_cors": True,
-            },
-        ]
-
-        # tracks the methods and integrations we define below. without this
-        # things were made in the wrong order.
-        # NOTE: when working with api resources/methods/integrations, it seems
-        #       that we need to specify these dependencies explicitly or pulumi
-        #       may try to make things before stuff they depend on are ready.
-        #       though pulumi usually figures this kind of thing out pretty
-        #       well, this case is mentioned in their docs as something you
-        #       probably want to do.
-        deployment_depends = []
-
-        # iterate then endpoint specs and make the endpoints (resources) and
-        # wire up the methods of interest. then add the integration (which in
-        # this case is a lambda handler with perms needed to do its thing)
-        for es in endpoint_specs:
-            short_name = disemvowel(es["name"])
-            handler_lambda = aws.lambda_.Function(
-                f"{res_prefix}-{short_name}-lmbdfn",
-                role=api_lambda_role.arn,
-                layers=[capeinfra.meta.capepy.lambda_layer.arn],
-                handler=es["handler"],
-                runtime=es["runtime"],
-                code=AssetArchive({"index.py": FileAsset(es["handler_src"])}),
-                environment={"variables": es["handler_vars"]},
-                opts=ResourceOptions(parent=self),
-            )
-
-            # permission for rest api to invoke lambda
-            aws.lambda_.Permission(
-                f"{res_prefix}-{short_name}-allow-lmbd",
-                action="lambda:InvokeFunction",
-                function=handler_lambda.arn,
-                principal="apigateway.amazonaws.com",
-                source_arn=restapi.execution_arn.apply(
-                    # NOTE: this allows lambda on all endpoints and all methods
-                    #       for the api. may not be a great idea. or we may
-                    #       want different permissions for different parts of
-                    #       the API. not sure till we have a really fleshed out
-                    #       API.
-                    lambda arn: f"{arn}/*/*"
-                ),
-                opts=ResourceOptions(parent=self),
-            )
-
-            # TODO: ISSUE #61 - START manual route/integration (TO BE REMOVED)
-            handler_resource = aws.apigateway.Resource(
-                f"{res_prefix}-{short_name}-rsrc",
-                parent_id=restapi.root_resource_id,
-                path_part=es["path_part"],
-                rest_api=restapi.id,
-                opts=ResourceOptions(parent=self),
-            )
-
-            handler_method = aws.apigateway.Method(
-                f"{res_prefix}-{short_name}-{es['method']}-mthd",
-                http_method=es["method"],
-                # TODO: we need authz
-                authorization="NONE",
-                resource_id=handler_resource.id,
-                rest_api=restapi.id,
-                opts=ResourceOptions(parent=self),
-            )
-
-            handler_integration = aws.apigateway.Integration(
-                f"{res_prefix}-{short_name}-{es['method']}-intg",
-                http_method=handler_method.http_method,
-                resource_id=handler_resource.id,
-                rest_api=restapi.id,
-                # NOTE: with lambda backed endpoints, integration http method
-                #       should be POST
-                integration_http_method="POST",
-                type="AWS_PROXY",
-                uri=handler_lambda.invoke_arn,
-                opts=ResourceOptions(parent=self),
-            )
-
-            # TODO: ISSUE #141 this is probably not the best way to do this.
-            #       given we'd like to refactor to using openapi specs anyway,
-            #       not going to spend much time on it right now...
-            if es["enable_cors"]:
-                # If we are enabling CORS, we need:
-                #   - an OPTIONS method handler
-                #   - a method response for OPTIONS that forces the required
-                #     CORS headers to be returned (with a 200 status)
-                #   - a MOCK integration (with a json/200 request template)
-                #   - an OPTIONS integration response that has the correct
-                #     CORS headers
-                options_method = aws.apigateway.Method(
-                    f"{res_prefix}-{short_name}-options-mthd",
-                    http_method="OPTIONS",
-                    # TODO: we need authz
-                    authorization="NONE",
-                    resource_id=handler_resource.id,
-                    rest_api=restapi.id,
-                    opts=ResourceOptions(parent=self),
-                )
-
-                # this is repeated a bunch below
-                cors_hdr_prefix = "method.response.header.Access-Control-Allow"
-
-                aws.apigateway.MethodResponse(
-                    f"{res_prefix}-{short_name}-options-mthdrsp",
-                    rest_api=restapi.id,
-                    resource_id=handler_resource.id,
-                    http_method=options_method.http_method,
-                    status_code="200",
-                    response_parameters={
-                        f"{cors_hdr_prefix}-Headers": True,
-                        f"{cors_hdr_prefix}-Methods": True,
-                        f"{cors_hdr_prefix}-Origin": True,
-                    },
-                    opts=ResourceOptions(
-                        parent=self, depends_on=[options_method]
-                    ),
-                )
-
-                opts_integration = aws.apigateway.Integration(
-                    f"{res_prefix}-{short_name}-options-intg",
-                    http_method=options_method.http_method,
-                    type="MOCK",
-                    resource_id=handler_resource.id,
-                    rest_api=restapi.id,
-                    request_templates={
-                        "application/json": "{'statusCode':200}"
-                    },
-                    opts=ResourceOptions(
-                        parent=self, depends_on=[options_method]
-                    ),
-                )
-
-                aws.apigateway.IntegrationResponse(
-                    f"{res_prefix}-{short_name}-options-intgrsp",
-                    rest_api=restapi.id,
-                    resource_id=handler_resource.id,
-                    http_method=options_method.http_method,
-                    status_code="200",
-                    response_parameters={
-                        f"{cors_hdr_prefix}-Headers": (
-                            "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,"
-                            "X-Amz-Security-Token'"
-                        ),
-                        f"{cors_hdr_prefix}-Methods": (
-                            f"'OPTIONS,{es['method']}'"
-                        ),
-                        # TODO: ISSUE #141 we should not allow any origin here.
-                        #       if we keep with this CORS stuff and the result
-                        #       of an openapi setup is similar, we'll want a
-                        #       config value for the origins we allow cross
-                        #       requests from (or explicitly limit to whatever
-                        #       to setting is for the swimlane's domain -
-                        #       though that would lock use of the API to the
-                        #       VPN for dev purposes)
-                        f"{cors_hdr_prefix}-Origin": ("'*'"),
-                    },
-                    opts=ResourceOptions(
-                        parent=self, depends_on=[opts_integration]
-                    ),
-                )
-
-            deployment_depends.extend([handler_method, handler_integration])
-
-        # TODO: ISSUE 61 - END manual route/integration (TO BE REMOVED)
-
-        # Deployments and stages are needed to make APIs accessible. Another
-        # reason we may wanna go with an API class to manage all of this in one
-        # place
-        api_deployment = aws.apigateway.Deployment(
-            f"{res_prefix}-dplymnt",
-            rest_api=restapi.id,
-            # TODO: ISSUE #65
-            opts=ResourceOptions(
-                parent=self,
-                # NOTE: not specifying these led to the deployment being
-                #       constructed before things it depends on
-                depends_on=deployment_depends,
-            ),
-        )
-
-        # this ends up being the path after the fqdn for the subdomain to reach
-        # this api
-        api_deploy_info["stage_name"] = f"{api_name}-{self.api_stage_suffix}"
-
-        # make a stage for the deployment manually.
-        # NOTE: we could make this implicitly by just setting stage_name on the
-        #       deployment resource, but there are warnings in the pulumi docs
-        #       about weedy things that lead to deletion and addition of stages
-        #       on redeployments if done this way, which ultimately leads to a
-        #       service interruption.
-        api_deployment_stage = aws.apigateway.Stage(
-            f"{res_prefix}-dplymntstg",
-            stage_name=api_deploy_info["stage_name"],
-            description=(
-                f"CAPE {api_spec['desc']} {api_deploy_info['stage_name']} "
-                "deployment stage"
-            ),
-            deployment=api_deployment.id,
-            rest_api=restapi.id,
-            # NOTE: See note in this method when setting up the log group. This
-            #       does not turn on logging, just setups up to allow logging.
-            access_log_settings=aws.apigateway.StageAccessLogSettingsArgs(
-                destination_arn=api_log_group.arn,
-                format=json.dumps(
-                    {
-                        "requestId": "$context.requestId",
-                        "ip": "$context.identity.sourceIp",
-                        "caller": "$context.identity.caller",
-                        "user": "$context.identity.user",
-                        "requestTime": "$context.requestTime",
-                        "httpMethod": "$context.httpMethod",
-                        "resourcePath": "$context.resourcePath",
-                        "status": "$context.status",
-                        "protocol": "$context.protocol",
-                        "responseLength": "$context.responseLength",
-                    }
-                ),
-            ),
-            variables={"cloudWatchRoleArn": api_log_role.arn},
-            # TODO: ISSUE #67
-            opts=ResourceOptions(parent=self),
-        )
-
-        aws.apigateway.BasePathMapping(
-            f"{res_prefix}-bpm",
-            domain_name=self.apigw_domainname.domain_name,
-            rest_api=restapi.id,
-            # base_path is part of the ultimate URL that will be used in,
-            # hitting the API. stage_name is the stage name of the API the
-            # request is sent to (and is not part of the URL)
-            # NOTE: we require both to be the same
-            base_path=api_deployment_stage.stage_name,
-            stage_name=api_deployment_stage.stage_name,
-        )
-
-        self.apis[api_name]["deploy"] = api_deploy_info
 
     def create_analysis_pipeline_registry(self):
         """Sets up an analysis pipeline registry database.
@@ -807,7 +465,7 @@ class PrivateSwimlane(ScopedSwimlane):
         for api_info in self.apis.values():
             self.albs["api"].add_api_target(
                 self.api_vpcendpoint,
-                api_info["deploy"]["stage_name"],
+                api_info["deploy"].stage_name,
                 port=443,
                 proto="HTTPS",
             )
