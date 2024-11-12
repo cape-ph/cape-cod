@@ -453,8 +453,8 @@ def get_api_policy(grants: dict[str, list[Output]]):
     Args:
         grants: A dict of the format:
             {
-               "tables": [name Output for DDB table resources],
-               "queues": [name Output for SQS queue resources],
+               "table": [name Output for DDB table resources],
+               "queue": [name Output for SQS queue resources],
             }
 
     Returns:
@@ -482,7 +482,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
     ]
 
     # add the queue grants as configured
-    for q in grants.get("queues", []):
+    for q in grants.get("queue", []):
         stmnts.append(
             {
                 "Effect": "Allow",
@@ -497,7 +497,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
         )
 
     # add the table grants as configured
-    for t in grants.get("tables", []):
+    for t in grants.get("table", []):
         stmnts.append(
             {
                 "Effect": "Allow",
