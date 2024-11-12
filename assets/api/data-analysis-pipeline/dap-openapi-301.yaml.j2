@@ -13,34 +13,12 @@ servers:
           basePath:
               # This value needs to map to the stage name exposed via the ALB
               default: "dap-dev"
-# these anchors are used below. they need to happen before use
-# TODO: this is a gamble. dunno if this will work in the OpenApi parser in aws. In HTTP apis, you can list
-#       the x-amazon-apigateway-integration objects in the components section to reuse them. that doesn't
-#       work in rest apis. So we're seeing if we can use x- prefixed YAML anchors for reusable blocks. If
-#       this doesn't work, then each object in this section needs to replace the anchor (`*anchor_name`
-#       notation) used below.
-x-amazon-definitions:
-    200AWSMockCors:
-        type: object
-        x-amazon-apigateway-integration: &200AWSMockCors
-            responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-            requestTemplates:
-                application/json: "{'statusCode':200}"
-            passthroughBehavior: "when_no_match"
-            timeoutInMillis: 29000
-            type: "mock"
 paths:
     /analysispipelines:
         get:
             responses:
                 "200":
-                    # TODO: need the response headers (i.e. cors`)
+                    # TODO: need the response headers (i.e. cors)
                     description: "Success"
                     content:
                         application/json:
@@ -69,7 +47,7 @@ paths:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
-                uri: "{{ list_daps_handler }}"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ list_daps_handler }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -77,12 +55,24 @@ paths:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration: *200AWSMockCors
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
     /pipelineexecutors:
         get:
             responses:
                 "200":
-                    # TODO: need the response headers (i.e. cors`)
+                    # TODO: need the response headers (i.e. cors)
                     description: "Success"
                     content:
                         application/json:
@@ -113,7 +103,7 @@ paths:
                         "Server error while getting list of available executors."
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
-                uri: "{{ list_dap_executors_handler }}"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ list_dap_executors_handler }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -121,7 +111,19 @@ paths:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration: *200AWSMockCors
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
     /analysispipeline:
         post:
             requestBody:
@@ -162,14 +164,13 @@ paths:
                                     description: >
                                         The name of the sample being processed.
                                         Affects output directory and file names
-
             responses:
                 "200":
-                    # TODO: need the response headers (i.e. cors`)
+                    # TODO: need the response headers (i.e. cors)
                     description: "Success submitting pipeline for execution."
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
-                uri: "{{ submit_dap_run_handler }}"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ submit_dap_run_handler }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -177,7 +178,19 @@ paths:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration: *200AWSMockCors
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
 # resusable components that follow OpenApi 3.0.1 spec
 components:
     responses:
