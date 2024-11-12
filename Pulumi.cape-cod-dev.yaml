@@ -114,6 +114,9 @@ config:
                     #       - id:
                     #           the id in the spec file that will be replaced
                     #           with the arn of the created lambda function
+                    #       - name:
+                    #           a short name that will be used in resource
+                    #           creation (naming of the resources)
                     #       - code:
                     #           the path in the repo for the lambda that
                     #           implements the endpoint
@@ -128,7 +131,7 @@ config:
                     #           will default to  "index.index_handler" and the
                     #           runtime will default to "python3.10". The
                     #           following arguments are supported:
-                    #           - architectures (defaults to ["x86_64"])
+                    #           - architectures (list, defaults to ["x86_64"])
                     #           - description
                     #           - handler (defaults to "index.index_handler")
                     #           - memory_size (MB,  defaults to 128)
@@ -138,19 +141,22 @@ config:
                     # TODO: default handler and runtime
                     dap:
                         desc: "Data Analysis Pipeline API"
-                        spec: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml"
+                        spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
                         handlers:
                             - id: "list_daps_handler"
+                              name: "lsdaps"
                               code: "assets/api/data-analysis-pipeline/handlers/list_daps.py"
                               funct_args:
                                   handler: "index.index_handler"
                                   runtime: "python3.10"
                             - id: "list_dap_executors_handler"
+                              name: "lsexec"
                               code: "assets/api/data-analysis-pipeline/handlers/list_dap_executors.py"
                               funct_args:
                                   handler: "index.index_handler"
                                   runtime: "python3.10"
                             - id: "submit_dap_run_handler"
+                              name: "sbmtdap"
                               code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
                               funct_args:
                                   handler: "index.index_handler"
