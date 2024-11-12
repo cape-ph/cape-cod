@@ -108,8 +108,15 @@ config:
                     # each item should have:
                     #   - desc: A description for the api. Will be used in
                     #           description tags.
-                    #   - spec: An OpenApi 3.0.1 yaml specification. This should
-                    #           include *no* AWS id's, names, account info, etc
+                    #   - spec_file: An OpenApi 3.0.1 yaml specification. This
+                    #                should include *no* AWS id's, names,
+                    #                account info, etc
+                    #   - env_vars: a list of swimlane-exposed env vars that the
+                    #               API requires access to. the env vars will be
+                    #               passed into the environment of the lambda
+                    #               and basic permissions will be given to the
+                    #               lambda to access the resources referenced by
+                    #               the env var.
                     #   - handlers: a list of objects containing
                     #       - id:
                     #           the id in the spec file that will be replaced
@@ -140,6 +147,9 @@ config:
                     dap:
                         desc: "Data Analysis Pipeline API"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
+                        env_vars:
+                            - "DAP_QUEUE_NAME"
+                            - "DAP_REG_DDB_TABLE"
                         handlers:
                             - id: "list_daps_handler"
                               name: "lsdaps"
