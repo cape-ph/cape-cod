@@ -99,6 +99,17 @@ class PrivateSwimlane(ScopedSwimlane):
         # particular env var to be passed into the api lambda handlers. by
         # virtue of configuring support for these vars, required resource
         # permissions will also be added for the lambda.
+        # TODO: this may not really be what we want long term. ideally we would
+        #       be able to configure adding things like sqs queues and such
+        #       without having to change code to expose a new env var. there are
+        #       some gotchas (e.g. some things like the DAP registry are needed
+        #       by APIs but do not belong to a specific api, so configuration
+        #       would need to be done at a different level than if it was just
+        #       for use by an api. additionally, there are notification lambdas,
+        #       roles, and policies to consider). another option is to better
+        #       formalize this exposed env var concept and make a class that
+        #       does some form of registration on instantiation so that we are
+        #       not hard coding the env var label in this class.
         self._exposed_env_vars = {}
 
         self.create_analysis_pipeline_registry()
