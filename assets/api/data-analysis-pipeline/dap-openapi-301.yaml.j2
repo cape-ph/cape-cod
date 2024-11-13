@@ -134,27 +134,27 @@ paths:
                         schema:
                             type: object
                             properties:
-                                pipeline_name:
+                                pipelineName:
                                     type: string
                                     description: The name of the pipeline to run
-                                pipeline_version:
+                                pipelineVersion:
                                     type: string
                                     description:
                                         The version of the pipeline to run
-                                output_path:
+                                outputPath:
                                     type: string
                                     description: >
                                         The S3 location to put pipeline output.
                                         Assumes permissions are set correctly.
                                 # TODO: ISSUE #TBD all below fields are specific to bactopia right now. also, the
                                 #       descriptions are bunk if we keep using these params
-                                r1_path:
+                                r1Path:
                                     type: string
                                     description: The R1 path.
-                                r2_path:
+                                r2Path:
                                     type: string
                                     description: The R2 path.
-                                ec2_id:
+                                ec2Id:
                                     type: string
                                     description:
                                         The id of the EC2 instance serving as
