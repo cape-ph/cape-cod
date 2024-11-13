@@ -8,8 +8,6 @@ import json
 import pulumi_aws as aws
 from pulumi import Input, Output, ResourceOptions
 
-import capeinfra
-
 # TODO: ISSUE #72
 
 
@@ -433,66 +431,90 @@ def get_sqs_notifier_policy(
     return json.dumps(policy)
 
 
-# TODO: ISSUE #61 - may or may not be able to get a single policy for a
-#       whole api reasonably. depends how much we do in the api. as it
-#       is currently a two endpoints deployed in a non-ideal manner, one policy
-#       is fine
-def get_dap_api_policy(queue_name: str, table_name: str):
-    """Get a role policy statement for the DAP API.
+# TODO: ISSUE #TBD trying to get this a little more generalized than when it
+#       only existed for the DAP api (which needed the table/queue access this
+#       function currently gives). It'd be great if this was totally
+#       configurable for any resource grant, but it would also be great if we
+#       didn't have to give the same access to every function in the API. Until
+#       we do a little more design and have another API using this, not going to
+#       spend too long getting it perfect. Also, we should resrict the EC2
+#       instance describing
+def get_api_policy(grants: dict[str, list[Output]]):
+    """Get a role policy statement for the an API.
 
-    Currently requires writing to SQS and scanning a DynamoDB table.
+    The entire API (all functions) will be given access as configured in
+    `grants`. Lambda logging will be enabled without configuration as will the
+    ability to describe EC2 instances. Other
+    configurable access we currently we handle:
+    * DDB tables (lambdas given describe and scan access)
+    * SQS queues (lambdas given get queue url and send message access)
+
 
     Args:
-        queue_name: the name of the SQS queue to grant access to.
-        table_name: the name of the DynamoDB table to grant access to.
+        grants: A dict of the format:
+            {
+               "table": [name Output for DDB table resources],
+               "queue": [name Output for SQS queue resources],
+            }
 
     Returns:
         The policy statement as a dictionary json encoded string.
     """
+    stmnts = [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+            ],
+            "Resource": "arn:aws:logs:*:*:*",
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstances",
+            ],
+            "Resource": [
+                "*",
+            ],
+        },
+    ]
+
+    # add the queue grants as configured
+    for q in grants.get("queue", []):
+        stmnts.append(
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "sqs:GetQueueUrl",
+                    "sqs:SendMessage",
+                ],
+                "Resource": [
+                    f"arn:aws:sqs:*:*:{q}",
+                ],
+            },
+        )
+
+    # add the table grants as configured
+    for t in grants.get("table", []):
+        stmnts.append(
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "dynamodb:DescribeTable",
+                    "dynamodb:Scan",
+                ],
+                "Resource": [
+                    f"arn:aws:dynamodb:*:*:table/{t}",
+                ],
+            },
+        )
 
     return json.dumps(
         {
             "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "logs:PutLogEvents",
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                    ],
-                    "Resource": "arn:aws:logs:*:*:*",
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "sqs:GetQueueUrl",
-                        "sqs:SendMessage",
-                    ],
-                    "Resource": [
-                        f"arn:aws:sqs:*:*:{queue_name}",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "dynamodb:DescribeTable",
-                        "dynamodb:Scan",
-                    ],
-                    "Resource": [
-                        f"arn:aws:dynamodb:*:*:table/{table_name}",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "ec2:DescribeInstances",
-                    ],
-                    "Resource": [
-                        "*",
-                    ],
-                },
-            ],
+            "Statement": stmnts,
         },
     )
 

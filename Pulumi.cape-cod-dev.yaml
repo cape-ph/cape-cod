@@ -108,9 +108,58 @@ config:
                     # each item should have:
                     #   - desc: A description for the api. Will be used in
                     #           description tags.
-                    # TODO: ISSUE #61 - openapi spec file would go here
+                    #   - spec_file: An OpenApi 3.0.1 yaml specification. This
+                    #                should include *no* AWS id's, names,
+                    #                account info, etc
+                    #   - env_vars: a list of swimlane-exposed env vars that the
+                    #               API requires access to. the env vars will be
+                    #               passed into the environment of the lambda
+                    #               and basic permissions will be given to the
+                    #               lambda to access the resources referenced by
+                    #               the env var.
+                    #   - handlers: a list of objects containing
+                    #       - id:
+                    #           the id in the spec file that will be replaced
+                    #           with the arn of the created lambda function
+                    #       - name:
+                    #           a short name that will be used in resource
+                    #           creation (naming of the resources)
+                    #       - code:
+                    #           the path in the repo for the lambda that
+                    #           implements the endpoint
+                    #       - funct_args:
+                    #           arguments to pass *as is* to the lambda
+                    #           function constructor. the keys used need to map
+                    #           to actual argument names of the pulumi lambda
+                    #           function constructor. additionally, most args
+                    #           will be ignored (e.g. environment, role) as
+                    #           they are dynamically injected in code or not
+                    #           used currently. If not provided, the handler
+                    #           will default to  "index.index_handler" and the
+                    #           runtime will default to "python3.10". The
+                    #           following arguments are supported:
+                    #           - architectures (list, defaults to ["x86_64"])
+                    #           - description
+                    #           - handler (defaults to "index.index_handler")
+                    #           - memory_size (MB,  defaults to 128)
+                    #           - runtime (defaults to "python3.10")
+                    #           - timeout (seconds, defaults to 3)
                     dap:
                         desc: "Data Analysis Pipeline API"
+                        spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
+                        env_vars:
+                            - "DAP_QUEUE_NAME"
+                            - "DAP_REG_DDB_TABLE"
+                        handlers:
+                            - id: "list_daps_handler"
+                              name: "lsdaps"
+                              code: "assets/api/data-analysis-pipeline/handlers/list_daps.py"
+                            - id: "list_dap_executors_handler"
+                              name: "lsexec"
+                              code: "assets/api/data-analysis-pipeline/handlers/list_dap_executors.py"
+                            - id: "submit_dap_run_handler"
+                              name: "sbmtdap"
+                              code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
             # static apps are deployed to s3 as html/js/css bundles and are
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
