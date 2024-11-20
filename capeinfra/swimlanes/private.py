@@ -36,6 +36,7 @@ from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane
+from capeinfra.util.file import file_as_string
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeConfig
 
@@ -116,6 +117,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_dap_submission_queue()
         self.create_static_web_resources()
         self.create_private_api_resources()
+        self.create_application_instances()
         self._create_hosted_domain()
         self.create_vpn()
         self.prepare_nextflow_executor()
@@ -642,6 +644,67 @@ class PrivateSwimlane(ScopedSwimlane):
             self._deploy_api(api_name)
 
         self._create_api_alb()
+
+    def create_application_instances(self):
+        """Creates resources related to private swimlane web resources."""
+
+        self.app_instances = {}
+
+        # TODO: config for application instances and instance meta (keypair)
+        app_instance_pub_key = (
+            "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
+        )
+
+        app_instance_cfgs = [
+            {
+                "name": "tljh",
+                "image": "ami-05752f93029c09fa5",
+                "public_ip": False,
+                "instance_type": "t3a.medium",
+                "subnet_name": "compute",
+                # TODO: use user_data to update the tljh admins based on config
+                # TODO:
+                # - do we need any additional EBS (or to mod the default)
+                #   - ebs_block_devices
+                #   - root_block_device
+                # - do we need (now, probably yes long term) an iam instance
+                #   profile?
+                #   - iam_instance_profile
+            }
+        ]
+
+        # NOTE: for now all instances will be managed via the same keypair
+        self.ec2inst_keypair = aws.ec2.KeyPair(
+            f"{self.basename}-ec2i-kp",
+            key_name=f"{self.basename}-ec2inst-key",
+            public_key=file_as_string(app_instance_pub_key),
+        )
+
+        for aicfg in app_instance_cfgs:
+            self.app_instances[aicfg["name"]] = aws.ec2.Instance(
+                f"{self.basename}-{aicfg['name']}-ec2i",
+                ami=aicfg["image"],
+                associate_public_ip_address=aicfg.get("public_ip", False),
+                instance_type=aicfg.get("instance_type", "t3a.medium"),
+                subnet_id=self.private_subnets[aicfg["subnet_name"]].id,
+                key_name=self.ec2inst_keypair.key_name,
+                # TODO: ISSUE #112
+                vpc_security_group_ids=[self.vpc.default_security_group_id],
+                tags={
+                    "desc_name": (
+                        f"{self.desc_name} {aicfg['name']} application EC2 "
+                        "instance"
+                    )
+                },
+                opts=ResourceOptions(parent=self),
+            )
+
+        # TODO:
+        # - instance name not getting set...
+        # - alb just for these, or share with static app one?
+        # - route53 'jupyter.cape-dev.org' (configurable per app)
+        # - user_data for admin update based on config
+        # - figure out storage sizing or issue to deal with later
 
     def _create_hosted_domain(self):
         """Create the private zone for the swimlane.
