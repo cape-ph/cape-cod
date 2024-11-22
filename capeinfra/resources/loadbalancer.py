@@ -6,14 +6,16 @@ from pulumi_aws.ec2.get_network_interface import get_network_interface
 
 from capepulumi import CapeComponentResource
 
-# NOTE:This ALB implementation supports 2 types of targets currently:
+# NOTE:This ALB implementation supports 3 types of targets currently:
 #           - static apps served from S3
+#           - EC2 instance apps (EC2 instance handles everything and we just
+#             forward there)
 #           - apis served from api gateway
 #      Multiple APIs can be served from the same subdomain FQDN (e.g.
 #      api.cape-dev.org/api1 and api.cape-dev.org/api2) while static apps
 #      require their own subdomain FQDN, and the bucket must be named with that
 #      FQDN. Only one app can be served from any s3 bucket, and it must be
-#      served from the root.
+#      served from the root. Instance apps also require their own FQDN.
 
 
 # Fixed response for the default action of our listeners. Anything that doesn't
@@ -73,6 +75,22 @@ class AppLoadBalancer(CapeComponentResource):
         self.name = f"{name}"
         self._vpc_id = vpc_id
 
+        # we add a number of listener rules to the load balance to handle
+        # incoming requests. e.g. if we have a target EC2 based application at
+        # the domain app.cape-dev.org, we'd have a listener rule for that
+        # hostname that forwards traffic to that EC2 instance. each of these
+        # rules have a priority. no 2 rules can have the same priority.
+        # we add rules as we add targets to the load balancer, and we *do not*
+        # currently have priority as configurable (nor do we have any listener
+        # rule properties configurable). therefore we will just have an
+        # incrementing counter for the next priority, and the prioritization of
+        # rules will be based on the order in which targets are added. Adding
+        # order is defined in the swimlane in which the targets are created.
+        # NOTE: this does mean that if the config changes and a new target is
+        #       added or an old one is remove, the the priorities (and possible
+        #       resource names) of existing rules may change.
+        self._rule_priority_ctr = 1
+
         # these will be dependent on configuration
         self._target_groups = {}
         self._listeners = {}
@@ -88,6 +106,16 @@ class AppLoadBalancer(CapeComponentResource):
             },
             opts=ResourceOptions(parent=self),
         )
+
+    @property
+    def next_rule_priority(self):
+        """Convenience property to get the next listener rule priority.
+
+        Returns: The next listener rule priority value.
+        """
+        ret = self._rule_priority_ctr
+        self._rule_priority_ctr += 1
+        return ret
 
     def _add_target_group(
         self,
@@ -275,6 +303,7 @@ class AppLoadBalancer(CapeComponentResource):
 
     def add_static_app_target(
         self,
+        bucket: aws.s3.BucketV2,
         vpc_ep: aws.ec2.VpcEndpoint,
         sa_name: str,
         port: int | None = 443,
@@ -340,9 +369,6 @@ class AppLoadBalancer(CapeComponentResource):
         ]
 
         # TODO: ISSUE #133
-        # priorities for these rules are executed lowest to highest (and range
-        # on 1-50000). so have the list here in the order you want them tried
-        # in and the idx will take care of the priority
         # NOTE: this is in a loop even though there is only one
         #       condition/action pair currently. Originally there were more
         #       rules, and leaving it this way allows us to easily add more if
@@ -354,6 +380,15 @@ class AppLoadBalancer(CapeComponentResource):
                 f"{self.name}-{sa_name}-lstnrrl{idx}",
                 listener_arn=listener.arn,
                 conditions=[
+                    # for static apps, we want to match the host header (bucket
+                    # name is fqdn of the app) *and* the path pattern. this
+                    # keeps us from conflicting with other hosts on the same alb
+                    # and mucking with their paths
+                    aws.lb.ListenerRuleConditionArgs(
+                        host_header=aws.lb.ListenerRuleConditionHostHeaderArgs(
+                            values=[bucket.bucket.apply(lambda n: f"{n}")],
+                        ),
+                    ),
                     aws.lb.ListenerRuleConditionArgs(
                         path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
                             values=[ptrn],
@@ -371,7 +406,7 @@ class AppLoadBalancer(CapeComponentResource):
                         ),
                     ),
                 ],
-                priority=idx,
+                priority=self.next_rule_priority,
                 opts=ResourceOptions(parent=self),
                 tags={
                     "desc_name": (
@@ -391,6 +426,11 @@ class AppLoadBalancer(CapeComponentResource):
             listener_arn=listener.arn,
             conditions=[
                 aws.lb.ListenerRuleConditionArgs(
+                    host_header=aws.lb.ListenerRuleConditionHostHeaderArgs(
+                        values=[bucket.bucket.apply(lambda n: f"{n}")],
+                    ),
+                ),
+                aws.lb.ListenerRuleConditionArgs(
                     path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
                         values=[f"/*"],
                     ),
@@ -409,12 +449,93 @@ class AppLoadBalancer(CapeComponentResource):
                     ),
                 ),
             ],
-            priority=fwd_rule_idx,
+            priority=self.next_rule_priority,
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (
                     f"{self.desc_name} {sa_name} ALB 443 HTTPS Listener "
                     f"Rule for forward to {sa_name} target group"
+                ),
+            },
+        )
+
+    # TODO: a lot of shared boilerplate here with static app stuff
+    def add_instance_app_target(
+        self,
+        instance: aws.ec2.Instance,
+        app_name: str,
+        fqdn: str,
+        port: int | None = 443,
+        proto: str | None = "HTTPS",
+    ):
+        """Set an EC2 instance hosted app as a target for the ALB.
+
+        This method adds a target group, target group attachments, a listener,
+        and listener rules for the EC2 instance. The listener will forward all
+        requests to the provided instance.
+
+        Args:
+            instance: The EC2 instance hosting the application.
+            app_name: The unique name of the application being setup with this
+                      ALB.
+            fqdn: The FQDN for requests that should be routed to the instance.
+            port: The port the of the listener the app will be associated with.
+                  Defaults to 443
+            proto: The protocol of the listener the app will be associated with.
+                   Defaults to HTTPS
+        """
+
+        listener = self._get_listener(port, proto)
+
+        # NOTE: at this time all target group health checks for instances
+        #       will be checking for the default health checks
+        app_tg = self._add_target_group(
+            f"{app_name}",
+            ttype="instance",
+            healthcheck_args={
+                "path": "/",
+                "port": "80",
+                "protocol": "HTTP",
+            },
+        )
+
+        # for instance targets, the list we pass the attachment helper needs
+        # should contain string ids of the instances we're attaching to
+        instance.id.apply(
+            lambda i: self._add_target_group_attachments(app_tg, [f"{i}"])
+        )
+
+        # For instance targets, we will forward anything with the correct host
+        # header to the instance.
+        aws.lb.ListenerRule(
+            f"{self.name}-{app_name}-lstnrrl",
+            listener_arn=listener.arn,
+            conditions=[
+                aws.lb.ListenerRuleConditionArgs(
+                    host_header=aws.lb.ListenerRuleConditionHostHeaderArgs(
+                        values=[f"{fqdn}"],
+                    ),
+                ),
+            ],
+            actions=[
+                aws.lb.ListenerRuleActionArgs(
+                    type="forward",
+                    forward=aws.lb.ListenerRuleActionForwardArgs(
+                        target_groups=[
+                            aws.lb.ListenerRuleActionForwardTargetGroupArgs(
+                                arn=app_tg.arn,
+                                weight=1,
+                            )
+                        ],
+                    ),
+                ),
+            ],
+            priority=self.next_rule_priority,
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} {app_name} ALB 443 HTTPS Listener "
+                    f"Rule for forward to {app_name} target group"
                 ),
             },
         )
@@ -493,7 +614,7 @@ class AppLoadBalancer(CapeComponentResource):
                     ),
                 ),
             ],
-            priority=1,
+            priority=self.next_rule_priority,
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (
