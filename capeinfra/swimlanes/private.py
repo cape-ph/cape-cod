@@ -116,8 +116,10 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
         self.create_static_web_resources()
-        self.create_private_api_resources()
         self.create_application_instances()
+        # static and instance apps share an alb
+        self._create_app_alb()
+        self.create_private_api_resources()
         self._create_hosted_domain()
         self.create_vpn()
         self.prepare_nextflow_executor()
@@ -468,11 +470,15 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
     # TODO: ISSUE #176
-    def _create_static_app_alb(self):
-        """Create the application load balancer for static applications."""
+    def _create_app_alb(self):
+        """Create the application load balancer for applications.
+
+        Static (S3) and instance based applications share the same load
+        balancer.
+        """
 
         self.create_alb(
-            "static",
+            "application",
             [
                 self.private_subnets["vpn"],
                 self.private_subnets["vpn2"],
@@ -480,9 +486,23 @@ class PrivateSwimlane(ScopedSwimlane):
             self.domain_cert.acmcert,
         )
 
-        # attach the static app targets to the alb
-        for sa_name in self.static_apps.keys():
-            self.albs["static"].add_static_app_target(
+        # attach the instance applications first as they have simpler listener
+        # rules and need no path mucking
+        for ia_name, ia_info in self.instance_apps.items():
+            self.albs["application"].add_instance_app_target(
+                ia_info["instance"],
+                ia_name,
+                ia_info["fqdn"],
+                port=443,
+                proto="HTTPS",
+            )
+
+        # then attach the static app targets to the alb. we want their listeners
+        # to have lower priority as they may muck around with the path after the
+        # hostname before forwarding to the target
+        for sa_name, sa_info in self.static_apps.items():
+            self.albs["application"].add_static_app_target(
+                sa_info["bucket"].bucket,
                 self.static_app_vpcendpoint,
                 sa_name,
                 port=443,
@@ -569,8 +589,6 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        self._create_static_app_alb()
-
     # TODO: ISSUE #176
     def create_private_api_resources(self):
         """Creates resources related to private swimlane apis."""
@@ -648,7 +666,7 @@ class PrivateSwimlane(ScopedSwimlane):
     def create_application_instances(self):
         """Creates resources related to private swimlane web resources."""
 
-        self.app_instances = {}
+        self.instance_apps = {}
 
         # TODO: config for application instances and instance meta (keypair)
         app_instance_pub_key = (
@@ -662,14 +680,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 "public_ip": False,
                 "instance_type": "t3a.medium",
                 "subnet_name": "compute",
-                # TODO: use user_data to update the tljh admins based on config
-                # TODO:
-                # - do we need any additional EBS (or to mod the default)
-                #   - ebs_block_devices
-                #   - root_block_device
-                # - do we need (now, probably yes long term) an iam instance
-                #   profile?
-                #   - iam_instance_profile
+                "subdomain": "jupyterhub",
             }
         ]
 
@@ -681,30 +692,38 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
         for aicfg in app_instance_cfgs:
-            self.app_instances[aicfg["name"]] = aws.ec2.Instance(
-                f"{self.basename}-{aicfg['name']}-ec2i",
-                ami=aicfg["image"],
-                associate_public_ip_address=aicfg.get("public_ip", False),
-                instance_type=aicfg.get("instance_type", "t3a.medium"),
-                subnet_id=self.private_subnets[aicfg["subnet_name"]].id,
-                key_name=self.ec2inst_keypair.key_name,
-                # TODO: ISSUE #112
-                vpc_security_group_ids=[self.vpc.default_security_group_id],
-                tags={
-                    "desc_name": (
-                        f"{self.desc_name} {aicfg['name']} application EC2 "
-                        "instance"
-                    )
-                },
-                opts=ResourceOptions(parent=self),
-            )
+            # TODO: ISSUE #184
+            self.instance_apps[aicfg["name"]] = {
+                "instance": aws.ec2.Instance(
+                    f"{self.basename}-{aicfg['name']}-ec2i",
+                    ami=aicfg["image"],
+                    associate_public_ip_address=aicfg.get("public_ip", False),
+                    instance_type=aicfg.get("instance_type", "t3a.medium"),
+                    subnet_id=self.private_subnets[aicfg["subnet_name"]].id,
+                    key_name=self.ec2inst_keypair.key_name,
+                    # TODO: ISSUE #112
+                    vpc_security_group_ids=[self.vpc.default_security_group_id],
+                    tags={
+                        # NOTE: This is like the VPC in that to set the name to be
+                        #       displayed in the AWS console you must do it via the
+                        #       tag "Name"
+                        "Name": f"{self.basename}-{aicfg['name']}-ec2i",
+                        "desc_name": (
+                            f"{self.desc_name} {aicfg['name']} application EC2 "
+                            "instance"
+                        ),
+                    },
+                    opts=ResourceOptions(parent=self),
+                ),
+                "fqdn": f"{aicfg['subdomain']}.{self.domain_name}",
+            }
 
         # TODO:
-        # - instance name not getting set...
-        # - alb just for these, or share with static app one?
-        # - route53 'jupyter.cape-dev.org' (configurable per app)
-        # - user_data for admin update based on config
-        # - figure out storage sizing or issue to deal with later
+        # - user_data for admin update based on config (including https as JH is
+        #   not configured for that but the ALB wants it...)
+        # - move config out to file
+        # - figure out if we need an instance profile
+        # - constants for ALB ids...
 
     def _create_hosted_domain(self):
         """Create the private zone for the swimlane.
@@ -721,7 +740,14 @@ class PrivateSwimlane(ScopedSwimlane):
         for sa_name, sa_info in self.static_apps.items():
 
             self.create_private_domain_alb_record(
-                sa_info["bucket"].bucket.bucket, sa_name, "static"
+                sa_info["bucket"].bucket.bucket, sa_name, "application"
+            )
+
+        # and a zone record for each instance application
+        for ia_name, ia_info in self.instance_apps.items():
+
+            self.create_private_domain_alb_record(
+                ia_info["fqdn"], ia_name, "application"
             )
 
         # all apis are at the same subdomain with different paths off of that
