@@ -383,7 +383,7 @@ class ScopedSwimlane(CapeComponentResource):
         #                    deferring problem till later by taking just the
         #                    first 3 chars of the alb_id
 
-        short_alb = f"{alb_id[:2]}alb"
+        short_alb = f"{alb_id[:3]}alb"
         self.albs[alb_id] = AppLoadBalancer(
             f"{self.basename}-{short_alb}",
             self.vpc.id,
