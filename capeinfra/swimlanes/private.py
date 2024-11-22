@@ -44,6 +44,10 @@ from capepulumi import CapeConfig
 class PrivateSwimlane(ScopedSwimlane):
     """Contains resources for the private swimlane of the CAPE Infra."""
 
+    # ids for the ALBs we will set up in this class
+    APPLICATION_ALB = "application"
+    API_ALB = "api"
+
     @property
     def default_config(self) -> dict:
         """Implementation of abstract property `default_config`.
@@ -478,7 +482,7 @@ class PrivateSwimlane(ScopedSwimlane):
         """
 
         self.create_alb(
-            "application",
+            self.APPLICATION_ALB,
             [
                 self.private_subnets["vpn"],
                 self.private_subnets["vpn2"],
@@ -489,7 +493,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # attach the instance applications first as they have simpler listener
         # rules and need no path mucking
         for ia_name, ia_info in self.instance_apps.items():
-            self.albs["application"].add_instance_app_target(
+            self.albs[self.APPLICATION_ALB].add_instance_app_target(
                 ia_info["instance"],
                 ia_name,
                 ia_info["fqdn"],
@@ -501,7 +505,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # to have lower priority as they may muck around with the path after the
         # hostname before forwarding to the target
         for sa_name, sa_info in self.static_apps.items():
-            self.albs["application"].add_static_app_target(
+            self.albs[self.APPLICATION_ALB].add_static_app_target(
                 sa_info["bucket"].bucket,
                 self.static_app_vpcendpoint,
                 sa_name,
@@ -514,7 +518,7 @@ class PrivateSwimlane(ScopedSwimlane):
         """Create the application load balancer for private apis."""
 
         self.create_alb(
-            "api",
+            self.API_ALB,
             [
                 self.private_subnets["vpn"],
                 self.private_subnets["vpn2"],
@@ -527,7 +531,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # attach the api gateway targets to the alb
         for api_info in self.apis.values():
-            self.albs["api"].add_api_target(
+            self.albs[self.API_ALB].add_api_target(
                 self.api_vpcendpoint,
                 api_info["deploy"].stage_name,
                 port=443,
@@ -723,7 +727,6 @@ class PrivateSwimlane(ScopedSwimlane):
         #   not configured for that but the ALB wants it...)
         # - move config out to file
         # - figure out if we need an instance profile
-        # - constants for ALB ids...
 
     def _create_hosted_domain(self):
         """Create the private zone for the swimlane.
@@ -740,14 +743,14 @@ class PrivateSwimlane(ScopedSwimlane):
         for sa_name, sa_info in self.static_apps.items():
 
             self.create_private_domain_alb_record(
-                sa_info["bucket"].bucket.bucket, sa_name, "application"
+                sa_info["bucket"].bucket.bucket, sa_name, self.APPLICATION_ALB
             )
 
         # and a zone record for each instance application
         for ia_name, ia_info in self.instance_apps.items():
 
             self.create_private_domain_alb_record(
-                ia_info["fqdn"], ia_name, "application"
+                ia_info["fqdn"], ia_name, self.APPLICATION_ALB
             )
 
         # all apis are at the same subdomain with different paths off of that
@@ -757,7 +760,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_private_domain_alb_record(
             self.api_fqdn,
             "api",
-            "api",
+            self.API_ALB,
         )
 
         # and DNS for the zone
