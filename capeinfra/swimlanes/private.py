@@ -672,21 +672,13 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.instance_apps = {}
 
-        # TODO: config for application instances and instance meta (keypair)
-        app_instance_pub_key = (
-            "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
+        app_instance_pub_key = self.config.get(
+            "instance-apps", "pub-key", default=None
         )
 
-        app_instance_cfgs = [
-            {
-                "name": "tljh",
-                "image": "ami-05752f93029c09fa5",
-                "public_ip": False,
-                "instance_type": "t3a.medium",
-                "subnet_name": "compute",
-                "subdomain": "jupyterhub",
-            }
-        ]
+        app_instance_cfgs = self.config.get(
+            "instance-apps", "instances", default=[]
+        )
 
         # NOTE: for now all instances will be managed via the same keypair
         self.ec2inst_keypair = aws.ec2.KeyPair(
@@ -725,7 +717,6 @@ class PrivateSwimlane(ScopedSwimlane):
         # TODO:
         # - user_data for admin update based on config (including https as JH is
         #   not configured for that but the ALB wants it...)
-        # - move config out to file
         # - figure out if we need an instance profile
 
     def _create_hosted_domain(self):

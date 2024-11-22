@@ -175,6 +175,46 @@ config:
                   #       repo, but rather follow the pattern we use with ETL
                   #       scripts using separate repos
                   dir: "./assets/web/static/dap-ui"
+            # instance-apps defines our list of applications for the swimlane
+            # that are deployed as EC2 instances. They are added to the
+            # application load balancer and all traffic to the configured
+            # hostname is forwarded by the ALB
+            # TODO: this is ever so slightly different than static apps in
+            #       that we have at least one key that applies to all
+            #       instances and then have a sub list for the actual
+            #       instances. would be great if the configs were more in
+            #       similar
+            instance-apps:
+                # the path to the public key that will be deployed to all
+                # instances for SSH. you must maintain the private key securely
+                # separately
+                pub-key: "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
+                # a list of instance configurations that will be used to create
+                # the instances and wire them to the ALB
+                instances:
+                    # all instance configs have:
+                    # - name: used in resource naming and book keeping. must be
+                    #         unique across instance apps
+                    # - image: The id of the AMI to use for the instance
+                    # - public_ip: True if a public ip should be associated with
+                    #   the instance, False otherwise (defaults to False)
+                    # - instance_type: The EC2 instance type to use for the
+                    #                  instance
+                    # - subnet_name: The name of the subnet to launch the
+                    #                instance in. should match a subnet name in
+                    #                the swimlane's configuration
+                    # - subdomain: The subdomain to associate with the instance.
+                    #              This is paired with the swimlanes domain
+                    #              name, so if the subdomain was "app1" and the
+                    #              swimlane's domain_name was "cape-dev.org",
+                    #              the instance would be reachable at
+                    #              "app1.cape-dev.org"
+                    - "name": "tljh"
+                      "image": "ami-05752f93029c09fa5"
+                      "public_ip": False
+                      "instance_type": "t3a.medium"
+                      "subnet_name": "compute"
+                      "subdomain": "jupyterhub"
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
