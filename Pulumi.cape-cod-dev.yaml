@@ -225,6 +225,18 @@ config:
                     #                group constructor as-is. The keys must
                     #                match those expected in the pulumi docs:
                     #                https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
+                    #                This defaults to None and will use the AWS
+                    #                defaults in that case.
+                    #   user_data: This is an optional dictionary containing a
+                    #              path to a jinja2 template of user data to
+                    #              pass the instance, a dict of vars that will
+                    #              be passed to the template rendering, and a
+                    #              boolean stating if the instance should be
+                    #              rebuilt (destroyed and recreated) on a
+                    #              detected change in user data (defaults to
+                    #              False). To use user data with no rendering,
+                    #              use a template with no tags and an empty
+                    #              vars dict.
                     - name: "tljh"
                       image: "ami-05752f93029c09fa5"
                       public_ip: False
@@ -238,6 +250,15 @@ config:
                           port: 80
                           protocol: "HTTP"
                           matcher: "302"
+                      user_data:
+                          template: assets/instance/user-data/templates/tljh.j2
+                          vars:
+                              remove_admins:
+                                  - tljhadmin
+                              add_admins:
+                                  - admin
+                          rebuild_on_change: True
+
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
