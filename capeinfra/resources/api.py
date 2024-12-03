@@ -5,11 +5,9 @@ yet supported.
 """
 
 import json
-import pathlib
 from collections.abc import Mapping
 
 import pulumi_aws as aws
-from jinja2 import Environment, FileSystemLoader
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
@@ -18,6 +16,7 @@ from capeinfra.iam import (
     get_inline_role,
     get_vpce_api_invoke_policy,
 )
+from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
 
@@ -200,10 +199,7 @@ class CapeRestApi(CapeComponentResource):
 
     def _render_spec(self):
         """Render the configured open api spec as a jijna2 template."""
-        pth = pathlib.Path(self.spec_path)
-
-        env = Environment(loader=FileSystemLoader(pth.parent))
-        template = env.get_template(pth.name)
+        template = get_j2_template_from_path(self.spec_path)
 
         # as the lamnda function arns are Output variables, we need to use the
         # standard wrapping of those in an apply in order to render the
