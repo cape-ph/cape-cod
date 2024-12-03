@@ -122,6 +122,8 @@ class AppLoadBalancer(CapeComponentResource):
         group_id: str,
         ttype: str = "instance",
         healthcheck_args: dict | None = None,
+        port: int | None = 443,
+        proto: str | None = "HTTPS",
     ) -> aws.lb.TargetGroup:
         """Add a target group for the load balancer and return it.
 
@@ -132,9 +134,11 @@ class AppLoadBalancer(CapeComponentResource):
                       all of this load balancer's target groups.
             ttype: The target type for the group. One of `ip`, `instance`, or
                    `lambda`. Defaults to `instance`
-            healthchaeck_args: An optional dict of health check args. If not
+            healthcheck_args: An optional dict of health check args. If not
                                provided, the health check will default to a
                                ping on the traffic port.
+            port: The port for the target group. Defaults to 443
+            proto: The protocol for the target group. Defaults to HTTPS
 
         Returns:
             The new target group if created or the existing one for the
@@ -146,9 +150,6 @@ class AppLoadBalancer(CapeComponentResource):
                 f"Target group type {ttype} is invalid for ALB {self.name}."
             )
 
-        # NOTE: at this time we only support HTTPS or 443 for target groups
-        tg_port = 443
-        tg_proto = "HTTPS"
         # NOTE: these all seem sensible defaults for now. The one exception is a
         #       lambda target group, which we give a longer interval. the lambda
         #       interval must be longer than the runtime of the lambda, so this
@@ -179,8 +180,8 @@ class AppLoadBalancer(CapeComponentResource):
         tg_idx = len(self._target_groups)
         self._target_groups[group_id] = aws.lb.TargetGroup(
             f"{self.name}-tg-{tg_idx}",
-            port=tg_port,
-            protocol=tg_proto,
+            port=port,
+            protocol=proto,
             protocol_version="HTTP1",
             target_type=ttype,
             vpc_id=self._vpc_id,
@@ -196,7 +197,10 @@ class AppLoadBalancer(CapeComponentResource):
         return self._target_groups[group_id]
 
     def _add_target_group_attachments(
-        self, target_group: aws.lb.TargetGroup, targets: list[str]
+        self,
+        target_group: aws.lb.TargetGroup,
+        targets: list[str],
+        port: int | None = None,
     ):
         """Attach a list of targets to a target group.
 
@@ -211,6 +215,8 @@ class AppLoadBalancer(CapeComponentResource):
                           instance or ECS container ids.
                         * When the type is `lambda`, the list should contain
                           arns of lambda functions.
+            port: Optional port to use in the attachment. This should only be
+                  specified for non-lambda targets
         """
         for idx, tval in enumerate(targets):
             aws.lb.TargetGroupAttachment(
@@ -222,7 +228,7 @@ class AppLoadBalancer(CapeComponentResource):
                 f"{tval}-atch{idx}",
                 target_group_arn=target_group.arn,
                 target_id=tval,
-                port=443,
+                port=port,
                 opts=ResourceOptions(parent=self, depends_on=[target_group]),
             )
 
@@ -467,12 +473,22 @@ class AppLoadBalancer(CapeComponentResource):
         fqdn: str,
         port: int | None = 443,
         proto: str | None = "HTTPS",
+        fwd_port: int | None = 80,
+        fwd_proto: str | None = "HTTP",
+        hc_args: dict | None = None,
     ):
         """Set an EC2 instance hosted app as a target for the ALB.
 
         This method adds a target group, target group attachments, a listener,
         and listener rules for the EC2 instance. The listener will forward all
         requests to the provided instance.
+
+        NOTE: The protocol and port to use for forwarding to the instance can
+              be configured, but by default it is assumed that the load
+              balancer will handle TLS termination if needed and communications
+              with the instance will happen over 80/HTTP. In order to use
+              443/HTTPS from the ALB to the instance, certs will need to be set
+              up and that *is not* handled here.
 
         Args:
             instance: The EC2 instance hosting the application.
@@ -481,28 +497,53 @@ class AppLoadBalancer(CapeComponentResource):
             fqdn: The FQDN for requests that should be routed to the instance.
             port: The port the of the listener the app will be associated with.
                   Defaults to 443
-            proto: The protocol of the listener the app will be associated with.
-                   Defaults to HTTPS
+            proto: The protocol of the listener the app will be associated
+                   with. Defaults to HTTPS
+            fwd_port: The port to forward to on the instance. Defaults to 80.
+            fwd_proto: The protocol to use in forwarding to the instance.
+                       Defaults to HTTP.
+            hc_args: A dict of healtch check args to be passed directly to the
+                     target group for the instance. These will be passed
+                     *as-is* to the target group. This is useful if the app on
+                     the instance does not return an HTTP 200 from the default
+                     endpoint used by AWS. (e.g. if `curl http://[instance_ip]`
+                     returns something like 302 FOUND, or if HTTPS is required,
+                     etc)
         """
 
         listener = self._get_listener(port, proto)
 
-        # NOTE: at this time all target group health checks for instances
-        #       will be checking for the default health checks
-        app_tg = self._add_target_group(
-            f"{app_name}",
-            ttype="instance",
-            healthcheck_args={
+        # NOTE: if not specified otherwise, all target group health checks for
+        #       instances will be checking for the default health checks
+        hca = (
+            hc_args
+            if hc_args is not None
+            else {
                 "path": "/",
                 "port": "80",
                 "protocol": "HTTP",
-            },
+            }
+        )
+
+        app_tg = self._add_target_group(
+            f"{app_name}",
+            ttype="instance",
+            healthcheck_args=hca,
+            # Port is specified for the target group even though the value
+            # will also be specified in the target group attachment below,
+            # which will override if the ports are in conflict. Seems target
+            # group port becomes important with autoscaling groups, which we may
+            # or may not need at some point...
+            port=fwd_port,
+            proto=fwd_proto,
         )
 
         # for instance targets, the list we pass the attachment helper needs
         # should contain string ids of the instances we're attaching to
         instance.id.apply(
-            lambda i: self._add_target_group_attachments(app_tg, [f"{i}"])
+            lambda i: self._add_target_group_attachments(
+                app_tg, [f"{i}"], port=fwd_port
+            )
         )
 
         # For instance targets, we will forward anything with the correct host
