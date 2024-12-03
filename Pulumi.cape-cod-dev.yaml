@@ -209,12 +209,35 @@ config:
                     #              swimlane's domain_name was "cape-dev.org",
                     #              the instance would be reachable at
                     #              "app1.cape-dev.org"
-                    - "name": "tljh"
-                      "image": "ami-05752f93029c09fa5"
-                      "public_ip": False
-                      "instance_type": "t3a.medium"
-                      "subnet_name": "compute"
-                      "subdomain": "jupyterhub"
+                    # - port: The port the ALB should forward traffic to. By
+                    #         default we assume the ALB is performing TLS
+                    #         termination and thus this value defaults to 80.
+                    #         Note that is 443 is desired, the certs will have
+                    #         to be installed on the instance manually.
+                    # - protocol: The protocol the ALB should forward traffic
+                    #             with. By default we assume the ALB is
+                    #             performing TLS termination and thus this
+                    #             value defaults to "HTTP". Note that is
+                    #             "HTTPS" is desired, the certs will have to be
+                    #             installed on the instance manually.
+                    # - healthcheck: This is a dictionary of health check
+                    #                arguments that will be passed to the target
+                    #                group constructor as-is. The keys must
+                    #                match those expected in the pulumi docs:
+                    #                https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
+                    - name: "tljh"
+                      image: "ami-05752f93029c09fa5"
+                      public_ip: False
+                      instance_type: "t3a.medium"
+                      subnet_name: "compute"
+                      subdomain: "jupyterhub"
+                      port: 80
+                      protocol: "HTTP"
+                      healthcheck:
+                          path: "/"
+                          port: 80
+                          protocol: "HTTP"
+                          matcher: "302"
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
