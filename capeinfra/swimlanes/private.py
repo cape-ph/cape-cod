@@ -37,6 +37,7 @@ from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane
 from capeinfra.util.file import file_as_string
+from capeinfra.util.jinja2 import get_j2_template_from_path
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeConfig
 
@@ -499,6 +500,9 @@ class PrivateSwimlane(ScopedSwimlane):
                 ia_info["fqdn"],
                 port=443,
                 proto="HTTPS",
+                fwd_port=ia_info["port"],
+                fwd_proto=ia_info["proto"],
+                hc_args=ia_info["hc_args"],
             )
 
         # then attach the static app targets to the alb. we want their listeners
@@ -688,6 +692,18 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
         for aicfg in app_instance_cfgs:
+
+            # first process the user data if applicable
+
+            user_data = None
+            rebuild_on_ud_change = False
+            ud_info = aicfg.get("user_data", None)
+            if ud_info is not None:
+                rebuild_on_ud_change = ud_info["rebuild_on_change"]
+                template = get_j2_template_from_path(ud_info["template"])
+                user_data = template.render(**ud_info["vars"])
+
+            # now create the instance
             # TODO: ISSUE #184
             self.instance_apps[aicfg["name"]] = {
                 "instance": aws.ec2.Instance(
@@ -709,14 +725,17 @@ class PrivateSwimlane(ScopedSwimlane):
                             "instance"
                         ),
                     },
+                    user_data=user_data,
+                    user_data_replace_on_change=rebuild_on_ud_change,
                     opts=ResourceOptions(parent=self),
                 ),
                 "fqdn": f"{aicfg['subdomain']}.{self.domain_name}",
+                "port": aicfg.get("port", None),
+                "proto": aicfg.get("protocol", None),
+                "hc_args": aicfg.get("healthcheck", None),
             }
 
         # TODO:
-        # - user_data for admin update based on config (including https as JH is
-        #   not configured for that but the ALB wants it...)
         # - figure out if we need an instance profile
 
     def _create_hosted_domain(self):
