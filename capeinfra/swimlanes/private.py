@@ -703,6 +703,42 @@ class PrivateSwimlane(ScopedSwimlane):
                 template = get_j2_template_from_path(ud_info["template"])
                 user_data = template.render(**ud_info["vars"])
 
+            # TODO: ISSUE #186
+            instance_profile = None
+            if "athena" in aicfg.get("services", []):
+                # TODO: issue #185
+                athena_role = get_inline_role(
+                    f"{self.basename}-ec2role-athn",
+                    f"{self.desc_name} EC2 instance role for athena access",
+                    "ec2",
+                    "ec2.amazonaws.com",
+                    json.dumps(
+                        {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:ListBucket",
+                                        "s3:PutObject",
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:s3:::*/*",
+                                        "arn:aws:s3:::*",
+                                    ],
+                                }
+                            ],
+                        }
+                    ),
+                    "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
+                    opts=ResourceOptions(parent=self),
+                )
+
+                instance_profile = get_instance_profile(
+                    self.basename, athena_role
+                )
+
             # now create the instance
             # TODO: ISSUE #184
             self.instance_apps[aicfg["name"]] = {
@@ -727,6 +763,11 @@ class PrivateSwimlane(ScopedSwimlane):
                     },
                     user_data=user_data,
                     user_data_replace_on_change=rebuild_on_ud_change,
+                    iam_instance_profile=(
+                        instance_profile.name
+                        if instance_profile is not None
+                        else None
+                    ),
                     opts=ResourceOptions(parent=self),
                 ),
                 "fqdn": f"{aicfg['subdomain']}.{self.domain_name}",
