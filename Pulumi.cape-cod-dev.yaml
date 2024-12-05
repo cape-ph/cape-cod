@@ -227,7 +227,7 @@ config:
                     #                https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
                     #                This defaults to None and will use the AWS
                     #                defaults in that case.
-                    #   user_data: This is an optional dictionary containing a
+                    # - user_data: This is an optional dictionary containing a
                     #              path to a jinja2 template of user data to
                     #              pass the instance, a dict of vars that will
                     #              be passed to the template rendering, and a
@@ -237,6 +237,11 @@ config:
                     #              False). To use user data with no rendering,
                     #              use a template with no tags and an empty
                     #              vars dict.
+                    # - services: this is a list of services that the instance
+                    #             will need access to via an instance profile.
+                    #             *THIS IS QUITE SUBJECT TO CHANGE* as we get
+                    #             into how we do policies and roles
+                    #
                     - name: "tljh"
                       image: "ami-05752f93029c09fa5"
                       public_ip: False
@@ -258,6 +263,8 @@ config:
                               add_admins:
                                   - admin
                           rebuild_on_change: True
+                      services:
+                          - athena
 
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
