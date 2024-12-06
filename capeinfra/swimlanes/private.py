@@ -36,12 +36,18 @@ from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane
+from capeinfra.util.file import file_as_string
+from capeinfra.util.jinja2 import get_j2_template_from_path
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeConfig
 
 
 class PrivateSwimlane(ScopedSwimlane):
     """Contains resources for the private swimlane of the CAPE Infra."""
+
+    # ids for the ALBs we will set up in this class
+    APPLICATION_ALB = "application"
+    API_ALB = "api"
 
     @property
     def default_config(self) -> dict:
@@ -115,6 +121,9 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
         self.create_static_web_resources()
+        self.create_application_instances()
+        # static and instance apps share an alb
+        self._create_app_alb()
         self.create_private_api_resources()
         self._create_hosted_domain()
         self.create_vpn()
@@ -466,11 +475,15 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
     # TODO: ISSUE #176
-    def _create_static_app_alb(self):
-        """Create the application load balancer for static applications."""
+    def _create_app_alb(self):
+        """Create the application load balancer for applications.
+
+        Static (S3) and instance based applications share the same load
+        balancer.
+        """
 
         self.create_alb(
-            "static",
+            self.APPLICATION_ALB,
             [
                 self.private_subnets["vpn"],
                 self.private_subnets["vpn2"],
@@ -478,9 +491,26 @@ class PrivateSwimlane(ScopedSwimlane):
             self.domain_cert.acmcert,
         )
 
-        # attach the static app targets to the alb
-        for sa_name in self.static_apps.keys():
-            self.albs["static"].add_static_app_target(
+        # attach the instance applications first as they have simpler listener
+        # rules and need no path mucking
+        for ia_name, ia_info in self.instance_apps.items():
+            self.albs[self.APPLICATION_ALB].add_instance_app_target(
+                ia_info["instance"],
+                ia_name,
+                ia_info["fqdn"],
+                port=443,
+                proto="HTTPS",
+                fwd_port=ia_info["port"],
+                fwd_proto=ia_info["proto"],
+                hc_args=ia_info["hc_args"],
+            )
+
+        # then attach the static app targets to the alb. we want their listeners
+        # to have lower priority as they may muck around with the path after the
+        # hostname before forwarding to the target
+        for sa_name, sa_info in self.static_apps.items():
+            self.albs[self.APPLICATION_ALB].add_static_app_target(
+                sa_info["bucket"].bucket,
                 self.static_app_vpcendpoint,
                 sa_name,
                 port=443,
@@ -492,7 +522,7 @@ class PrivateSwimlane(ScopedSwimlane):
         """Create the application load balancer for private apis."""
 
         self.create_alb(
-            "api",
+            self.API_ALB,
             [
                 self.private_subnets["vpn"],
                 self.private_subnets["vpn2"],
@@ -505,7 +535,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # attach the api gateway targets to the alb
         for api_info in self.apis.values():
-            self.albs["api"].add_api_target(
+            self.albs[self.API_ALB].add_api_target(
                 self.api_vpcendpoint,
                 api_info["deploy"].stage_name,
                 port=443,
@@ -566,8 +596,6 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
             opts=ResourceOptions(parent=self),
         )
-
-        self._create_static_app_alb()
 
     # TODO: ISSUE #176
     def create_private_api_resources(self):
@@ -643,6 +671,114 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self._create_api_alb()
 
+    def create_application_instances(self):
+        """Creates resources related to private swimlane web resources."""
+
+        self.instance_apps = {}
+
+        app_instance_pub_key = self.config.get(
+            "instance-apps", "pub-key", default=None
+        )
+
+        app_instance_cfgs = self.config.get(
+            "instance-apps", "instances", default=[]
+        )
+
+        # NOTE: for now all instances will be managed via the same keypair
+        self.ec2inst_keypair = aws.ec2.KeyPair(
+            f"{self.basename}-ec2i-kp",
+            key_name=f"{self.basename}-ec2inst-key",
+            public_key=file_as_string(app_instance_pub_key),
+        )
+
+        for aicfg in app_instance_cfgs:
+
+            # first process the user data if applicable
+
+            user_data = None
+            rebuild_on_ud_change = False
+            ud_info = aicfg.get("user_data", None)
+            if ud_info is not None:
+                rebuild_on_ud_change = ud_info["rebuild_on_change"]
+                template = get_j2_template_from_path(ud_info["template"])
+                user_data = template.render(**ud_info["vars"])
+
+            # TODO: ISSUE #186
+            instance_profile = None
+            if "athena" in aicfg.get("services", []):
+                # TODO: issue #185
+                athena_role = get_inline_role(
+                    f"{self.basename}-ec2role-athn",
+                    f"{self.desc_name} EC2 instance role for athena access",
+                    "ec2",
+                    "ec2.amazonaws.com",
+                    json.dumps(
+                        {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:ListBucket",
+                                        "s3:PutObject",
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:s3:::*/*",
+                                        "arn:aws:s3:::*",
+                                    ],
+                                }
+                            ],
+                        }
+                    ),
+                    "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
+                    opts=ResourceOptions(parent=self),
+                )
+
+                instance_profile = get_instance_profile(
+                    self.basename, athena_role
+                )
+
+            # now create the instance
+            # TODO: ISSUE #184
+            self.instance_apps[aicfg["name"]] = {
+                "instance": aws.ec2.Instance(
+                    f"{self.basename}-{aicfg['name']}-ec2i",
+                    ami=aicfg["image"],
+                    associate_public_ip_address=aicfg.get("public_ip", False),
+                    instance_type=aicfg.get("instance_type", "t3a.medium"),
+                    subnet_id=self.private_subnets[aicfg["subnet_name"]].id,
+                    key_name=self.ec2inst_keypair.key_name,
+                    # TODO: ISSUE #112
+                    vpc_security_group_ids=[self.vpc.default_security_group_id],
+                    tags={
+                        # NOTE: This is like the VPC in that to set the name to be
+                        #       displayed in the AWS console you must do it via the
+                        #       tag "Name"
+                        "Name": f"{self.basename}-{aicfg['name']}-ec2i",
+                        "desc_name": (
+                            f"{self.desc_name} {aicfg['name']} application EC2 "
+                            "instance"
+                        ),
+                    },
+                    user_data=user_data,
+                    user_data_replace_on_change=rebuild_on_ud_change,
+                    iam_instance_profile=(
+                        instance_profile.name
+                        if instance_profile is not None
+                        else None
+                    ),
+                    opts=ResourceOptions(parent=self),
+                ),
+                "fqdn": f"{aicfg['subdomain']}.{self.domain_name}",
+                "port": aicfg.get("port", None),
+                "proto": aicfg.get("protocol", None),
+                "hc_args": aicfg.get("healthcheck", None),
+            }
+
+        # TODO:
+        # - figure out if we need an instance profile
+
     def _create_hosted_domain(self):
         """Create the private zone for the swimlane.
 
@@ -658,7 +794,14 @@ class PrivateSwimlane(ScopedSwimlane):
         for sa_name, sa_info in self.static_apps.items():
 
             self.create_private_domain_alb_record(
-                sa_info["bucket"].bucket.bucket, sa_name, "static"
+                sa_info["bucket"].bucket.bucket, sa_name, self.APPLICATION_ALB
+            )
+
+        # and a zone record for each instance application
+        for ia_name, ia_info in self.instance_apps.items():
+
+            self.create_private_domain_alb_record(
+                ia_info["fqdn"], ia_name, self.APPLICATION_ALB
             )
 
         # all apis are at the same subdomain with different paths off of that
@@ -668,7 +811,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_private_domain_alb_record(
             self.api_fqdn,
             "api",
-            "api",
+            self.API_ALB,
         )
 
         # and DNS for the zone

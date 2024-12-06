@@ -175,6 +175,97 @@ config:
                   #       repo, but rather follow the pattern we use with ETL
                   #       scripts using separate repos
                   dir: "./assets/web/static/dap-ui"
+            # instance-apps defines our list of applications for the swimlane
+            # that are deployed as EC2 instances. They are added to the
+            # application load balancer and all traffic to the configured
+            # hostname is forwarded by the ALB
+            # TODO: this is ever so slightly different than static apps in
+            #       that we have at least one key that applies to all
+            #       instances and then have a sub list for the actual
+            #       instances. would be great if the configs were more in
+            #       similar
+            instance-apps:
+                # the path to the public key that will be deployed to all
+                # instances for SSH. you must maintain the private key securely
+                # separately
+                pub-key: "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
+                # a list of instance configurations that will be used to create
+                # the instances and wire them to the ALB
+                instances:
+                    # all instance configs have:
+                    # - name: used in resource naming and book keeping. must be
+                    #         unique across instance apps
+                    # - image: The id of the AMI to use for the instance
+                    # - public_ip: True if a public ip should be associated with
+                    #   the instance, False otherwise (defaults to False)
+                    # - instance_type: The EC2 instance type to use for the
+                    #                  instance
+                    # - subnet_name: The name of the subnet to launch the
+                    #                instance in. should match a subnet name in
+                    #                the swimlane's configuration
+                    # - subdomain: The subdomain to associate with the instance.
+                    #              This is paired with the swimlanes domain
+                    #              name, so if the subdomain was "app1" and the
+                    #              swimlane's domain_name was "cape-dev.org",
+                    #              the instance would be reachable at
+                    #              "app1.cape-dev.org"
+                    # - port: The port the ALB should forward traffic to. By
+                    #         default we assume the ALB is performing TLS
+                    #         termination and thus this value defaults to 80.
+                    #         Note that is 443 is desired, the certs will have
+                    #         to be installed on the instance manually.
+                    # - protocol: The protocol the ALB should forward traffic
+                    #             with. By default we assume the ALB is
+                    #             performing TLS termination and thus this
+                    #             value defaults to "HTTP". Note that is
+                    #             "HTTPS" is desired, the certs will have to be
+                    #             installed on the instance manually.
+                    # - healthcheck: This is a dictionary of health check
+                    #                arguments that will be passed to the target
+                    #                group constructor as-is. The keys must
+                    #                match those expected in the pulumi docs:
+                    #                https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
+                    #                This defaults to None and will use the AWS
+                    #                defaults in that case.
+                    # - user_data: This is an optional dictionary containing a
+                    #              path to a jinja2 template of user data to
+                    #              pass the instance, a dict of vars that will
+                    #              be passed to the template rendering, and a
+                    #              boolean stating if the instance should be
+                    #              rebuilt (destroyed and recreated) on a
+                    #              detected change in user data (defaults to
+                    #              False). To use user data with no rendering,
+                    #              use a template with no tags and an empty
+                    #              vars dict.
+                    # - services: this is a list of services that the instance
+                    #             will need access to via an instance profile.
+                    #             *THIS IS QUITE SUBJECT TO CHANGE* as we get
+                    #             into how we do policies and roles
+                    #
+                    - name: "tljh"
+                      image: "ami-05752f93029c09fa5"
+                      public_ip: False
+                      instance_type: "t3a.medium"
+                      subnet_name: "compute"
+                      subdomain: "jupyterhub"
+                      port: 80
+                      protocol: "HTTP"
+                      healthcheck:
+                          path: "/"
+                          port: 80
+                          protocol: "HTTP"
+                          matcher: "302"
+                      user_data:
+                          template: assets/instance/user-data/templates/tljh.j2
+                          vars:
+                              remove_admins:
+                                  - tljhadmin
+                              add_admins:
+                                  - admin
+                          rebuild_on_change: True
+                      services:
+                          - athena
+
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet

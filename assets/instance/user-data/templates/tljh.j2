@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+{% for ra in remove_admins %}
+sudo tljh-config remove-item users.admin {{ ra }}
+{% endfor %}
+{% for aa in add_admins %}
+sudo tljh-config add-item users.admin {{ aa }}
+{% endfor %}
+sudo tljh-config reload proxy
