@@ -66,10 +66,17 @@ config:
                 - name: etl-bactopia-results
                   key: glue/etl/etl_bactopia_results.py
                   srcpth: ./assets/etl/etl_bactopia_results.py
+    # `cape-cod:swimlanes` (mapping, required)
+    # Contains the configuration for all swimlanes. Swimlanes define logical
+    # separations of public, protected and private resources in CAPE. Each
+    # swimlane gets its own VPC.
     cape-cod:swimlanes:
+        # `private` (mapping, optional)
+        # Contains configuration of the private swimmalne.
         private:
+            # `domain` (string, optional)
             # This is the private domain that will be setup in the cloud
-            # provider private VPC.
+            # provider private VPC. Defaults to "cape-dev.org"
             # At this time, this does not need to be setup with a domain
             # registrar unless it is also the domain used in a public facing
             # resource. The domain will need to be able to be used for creation
@@ -77,32 +84,74 @@ config:
             # self-signed and in all cases need to be managed outside this
             # repo).
             domain: cape-dev.org
-            # NOTE: at this time we support a single (wildcard) cert per
-            #       swimlane for non-vpn tls/ssl (vpn has its own cert). this
-            #       may change in the future
+            # `tls` (mapping, optional)
+            # The configuration for TLS for the swimlane. At this time we
+            # support a single (wildcard) cert per swimlane for non-vpn
+            # tls/ssl (vpn has its own cert). This may change in the future.
+            # If this mapping is not provided and valid, TLS will not be
+            # configured (or will have an invalid configuration) which will
+            # will lead to failure in deployment.
             tls:
+                # `dir` (string, required)
+                # Path (relative to repo root) to the directory that contains
+                # the TLS certs and keys. It is recommended to make this a
+                # subdirectory of <repo_root>/assets-untracked which is
+                # explicitly ignored by the git configuration (so that these
+                # files never end up in version control).
                 dir: "./assets-untracked/tls/private-swimlane"
+                # `ca-cert` (string, required)
+                # The name of the cert chain file. At this time, we require this
+                # to be a separate file (cannot be embedded in the cert pem
+                # itself). The file should be in PEM format.
                 ca-cert: "ca.crt"
-                # if not specified, the key and cert are expected to be
-                # named following the pattern {fqdn}.[key|crt] where
-                # `{fqdn}` is the value of the domain key provided above
+                # `server-key` (string, required)
+                # The name of the key file. The file should be in PEM format.
                 server-key: "*.cape-dev.org.key"
+                # `server-cert` (string, required)
+                # The name of the cert file. The file should be in PEM format.
                 server-cert: "*.cape-dev.org.crt"
+            # `cidr-block` (string, optional)
+            # The full cidr block that will be given to the private swimlane.
+            # Defaults to "10.0.0.0/24"
             cidr-block: 10.0.0.0/16
+            # `public-subnet` (mapping, optional)
+            # Contains the configuration of the public subnet. If not provided,
+            # a default public subnet configuration will be used. The public
+            # subnet is special and there will be one per VPC. This is required
+            # to house a NAT for the VPC that allows traffic egress to the
+            # internet.
             public-subnet:
-                # public subnet is special and there will be one (for now) per
-                # swimlane (vpc), the main purpose is currently for a NAT to
-                # live in to allow egress to the internet for the instances in
-                # private subnets
+                # `cidr-block` (string, optional)
+                # The cidr block that will be given to the public subnet of the
+                # swimlane. Defaults to "10.0.0.0/24"
                 cidr-block: 10.0.1.0/24
+            # `private-subnets` (mapping[], optional)
+            # A list of configurations for the private subnets of the swimlane.
+            # If not provided, not privat subnets will be configured. All list
+            # items have the following schema:
+            # * `name` (string, required)
+            #   A short name for the subnet. This should be unique across all
+            #   private subnets in the swimlane. No private subnet may be named
+            #   "public"
+            # * `cidr-block` (string, required)
+            #   The cidr block given to the private subnet
+            # * `routes` (string[], optional)
+            #   A list of subnet names for which this subnet should be able to
+            #   route to (via routing table). The special name "public" may be
+            #   used to allow routing to the public subnet for the swimlane (if
+            #   public is not explicitly specified, the subnet will have no
+            #   internet access).
+            # * `az` (string optional)
+            #   An explicit availability zone for the subnet. If not provided,
+            #   the default availability zone will be used. This is generally
+            #   only needed when setting up redundant private subnets for
+            #   something like VPN
             private-subnets:
                 - name: compute
                   cidr-block: 10.0.2.0/24
-                  # if True, the private subnet's outgoing traffic will be
-                  # routed to the NAT gateway for egress to the internet
                   routes:
                       - "public"
-                - name: vpn
+                - name: vpn1
                   cidr-block: 10.0.3.0/24
                   az: "us-east-2b"
                   routes:
@@ -118,6 +167,7 @@ config:
                   az: "us-east-2c"
                   routes:
                       - "public"
+            ### LEFTOFF
             # NOTE: the apis section here will likely need to be re-worked as we
             #       move the api to a real host name, add certs, and all the
             #       things. for now just trying to get the stage name
