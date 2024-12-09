@@ -1,15 +1,49 @@
+# `encryptionsalt` (string, required)
+# This key is added and managed by pulumi. this should not be modified outside
+# of that context, and is specific to your pulumi setup
 encryptionsalt: v1:PZ8pzBjNSVk=:v1:SGEZ1sCsg7aCAu5i:Ntz5ud8IjMsY1H5RLI/n6zmuuIK9sQ==
+# `config` (mapping, required)
+# This is the top-level config mapping and is required of all pulumi configs
 config:
+    # `deployment:meta` (mapping, required)
     # This block is for meta about the deployment itself that may be reused in
-    # later config settings.
+    # later config settings. The `&depmet` anchor is used to refer to this block
+    # later. Any items added to this block will be available to later config
+    # blocks that use the anchor
     deployment:meta: &depmet
-        # stage-suffix is used anywhere we need the deployment stage name and
-        # should be values like "dev", "prod", etc. There is exact no exact
-        # enumeration of values yet.
+        # `stage-suffix` (string, required)
+        # This is used anywhere we need the deployment stage name and should
+        # be values like "dev", "prod", etc. There is exact no exact
+        # enumeration of values yet. The value given here will be used in items
+        # like API paths
         stage-suffix: "dev"
+    # `aws:region` (string, required)
+    # The AWS region the deployment will go into. As of now, CAPE supports a
+    # single requion only
     aws:region: us-east-2
+    # `cape-cod:meta` (mapping, required)
+    # Contains configuration that is used by a number of functional areas in
+    # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
+    # functions can be found.
     cape-cod:meta:
+        # `glue` (mapping, optional)
+        # Contains meta configuration related to aws glue.
         glue:
+            # `etl` (mapping[], optional)
+            # Contains meta configuration related to aws glue etl scripts'
+            # placement in the common s3 bucket. Every item in the list is
+            # required to have:
+            # * `name` (string, required) - The name of the etl script. This
+            #    will be used as part of the object name in storage as well as
+            #    part of the name in the pulumi state.
+            # * `key` (string, required) - The key to use when placing this
+            #   script in object storage. This should include any required
+            #   prefixes.
+            # * `srcpath` (string, required) - The source path of this script
+            #   in the deployment repo. **NOTE** This key may become optional
+            #   or be removed all together in the future. Ideally we will not
+            #   have ETL scripts in this repo in the long run but rather have
+            #   brought in from other repos in dome manner.
             etl:
                 - name: etl-gphl-cre
                   key: glue/etl/etl_gphl_cre_alert.py
@@ -309,11 +343,98 @@ config:
                           # desired_vcpus: 8
                           # (optional) the minimum number of vCPUs to have in the environment
                           # min_vcpus: 8
-
+    # `cape-cod:datalakehouse` (mapping, required)
+    # Contains configuration specific to the data lake house (DLH). The DLH
+    # contains tributaries, which are compionents that consist of a pair of raw
+    # and clean data buckets (and automation resources for those buckets) and
+    # data pipelines that define transformations on data places in the raw
+    # bucket. This is all described in more detail below.
     cape-cod:datalakehouse:
         # NOTE: unless specified otherwise in here, all crawlers will run at
         #       0200 daily
+
+        # `tributaries` (mapping[], optional)
+        # Contains a list of mappings defining specific domains in the data
+        # lake house (e.g. HAI, genomics). Each tributary has its own raw/clean
+        # storage, etl scripts, lambda functions, etc.
         tributaries:
+            # The schema for each item of this list is:
+            # * `name` (string required)
+            #   The name of this tributary. This name is included in AWS
+            #   resource names, which have a very small character limit. So this
+            #   name should be kept as short as possible, but must be unique
+            #   among all tributaries
+            # * `buckets` (mapping, required)
+            #   This contains the configuration for the raw and clean buckets of
+            #   the tributary, including crawlers
+            #   * `raw` (mapping, required)
+            #     Contains the configuration for the raw bucket
+            #     * `name` (string, optional)
+            #       The name of the raw bucket. Defaults to
+            #       "{tributary_resource_name}-raw-vbkt"
+            #     * `crawler` (mapping, optional)
+            #       Contains the configuration for the bucket crawler. If no
+            #       configuration is given, no crawler will be created for the
+            #       bucket. Generally, we do not define crawlers for raw
+            #       buckets.
+            #       * `excludes` (string[], required)
+            #         A list of exclude patterns for the crawler. Leave the
+            #         empty for no exclusions. The rules for these patterns are
+            #         defined in the official aws docs (under exclude patterns)
+            #         https://docs.aws.amazon.com/glue/latest/dg/define-crawler-choose-data-sources.html
+            #       * `classifiers` (string[], optional)
+            #         A list of custom classifiers for the crawler. If not
+            #         provided the AWS schema detection will be allowed to
+            #         figure out what to use (which may not be possible
+            #         depending on the raw data schema). These classifiers must
+            #         exist either in AWS or as part of this deployment. The
+            #         only currently supported custom classifier is
+            #         cape-csv-standard-classifier
+            #       * `schedule` (string, optional)
+            #         The crantab-formatted schedule for the crawler. Defaults
+            #         to 0200 daily ("0 2 * * ? *"). Format details can be
+            #         found here: https://en.wikipedia.org/wiki/Cron
+            #   * `clean` (mapping, required)
+            #     Contains configuration for the clean bucket. The schema is the
+            #     same as the `raw` bucket section immediately preceding
+            #     `clean`.
+            # * `pipelines` (mapping, optional)
+            #   Contains configuration for the pipelines of the tributary.
+            #   * `data` (mapping, optional)
+            #     Contains configuration for data pipelines in the tributary
+            #     * `etl` (mapping[], optional)
+            #       A list of configurations for ETL data pipelines in the
+            #       tributary. Each list item has the following schema
+            #       * `name` (string, required)
+            #         A short name for the ETL script. Needs to be unique across
+            #         ETL scripts in the tributary. This value is used in AWS
+            #         resource names and thus should be kept as short as
+            #         possible.
+            #       * `script` (string, required)
+            #         The path in the common assets bucket where the ETL script
+            #         will be found. This is the deployed path, *not* the path
+            #         in the repo.
+            #       * `prefix` (string, required)
+            #         The object prefix to limit the ETL script to. If not
+            #         specified, the ETL script will apply to *all* objects
+            #         added to the bucket.
+            #       * `suffixes` (string[], optional)
+            #         A list of object (e.g. file) suffixes the ETL script
+            #         should be limited to. If not specified, the ETL script
+            #         will apply to all suffixes.
+            #       * `pymodules` (string[], optional)
+            #         A list of additional python modules to be passed into the
+            #         ETL script's runtime. These is specified in pip install
+            #         compatible version format (i.e.
+            #         `package_name[version_specifier]`). More information on
+            #         version specifiers van be found here:
+            #         https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
+            #       * `max_concurrent_runs` (int, optional)
+            #         The max number of concurrent runs for the ETL Job. If the
+            #         number of requested ETL runs is greater than this value,
+            #         ETL jobs will be queued until currently running jobs are
+            #         completed and the number of running jobs is < max.
+            #         Defaults to 5.
             - name: hai
               buckets:
                   raw:
@@ -325,6 +446,7 @@ config:
                           excludes:
                           classifiers:
                               - cape-csv-standard-classifier
+                          schedule: "0 2 * * ? *"
               pipelines:
                   data:
                       etl:
@@ -371,4 +493,4 @@ config:
                                 - fastq
                             pymodules:
                                 - pyfastx==2.1.0
-                            max_concurrent_runs: 5 # optional, 5 is the default
+                            max_concurrent_runs: 5
