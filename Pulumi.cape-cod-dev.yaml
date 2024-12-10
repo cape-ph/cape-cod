@@ -167,67 +167,91 @@ config:
                   az: "us-east-2c"
                   routes:
                       - "public"
-            ### LEFTOFF
-            # NOTE: the apis section here will likely need to be re-worked as we
-            #       move the api to a real host name, add certs, and all the
-            #       things. for now just trying to get the stage name
-            #       configurable from the root deployment:meta section
+            # `api` (mapping, optional)
+            # Contains the configuration for apis and the API application load
+            # balancer. If this is not included, a default configuration will be
+            # used with a subdomain of `api`, a `dev` stage name and no APIs
+            # deployed.
+            # NOTE: at this time and API ALB will still be created even if not
+            #       configured, as will a VPC Endpoint that routes to the API
+            #       gateway. You will be billed for these resources by AWS.
             api:
-                # all apis will go in the same subdomain, and will be
-                # differentiated based on the path component of each individual
-                # api in the list below. e.g. for a domain of cape-dev.org and a
-                # subdomain value of "api", all apis will be rooted at
-                # api.cape-dev.org. for an api named `api1` and a stage-name of
-                # `dev`, that specific api can be found at
-                # api.cape-dev.org/api1-dev
+                # `subdomain` (string, optional)
+                # The name of the subdomain (in the swimlanes configured
+                # domain) where api's will be exposed. All apis will go in the
+                # same subdomain, and will be differentiated based on the path
+                # component of each individual api in the list below. E.g. for
+                # a domain of "cape-dev.org" and a subdomain value of "api",
+                # all apis will be rooted at "api.cape-dev.org". For an api
+                # named "api1" and a stage-name of "dev", that specific api can
+                # be found at "api.cape-dev.org/api1-dev".
+                # If not provided, this defaults to "api"
                 subdomain: "api"
-                # this item needs to exist as-is. we have a common stage suffix
-                # used for all apis in the dpeloyment at present, and this is
-                # how we access it
+                # `stage` (mapping, optional)
+                # The stage configuration for all apis. We currently only
+                # support one stage name for all of CAPE.
                 stage:
+                    # `meta` (anchor, required)
+                    # This item needs to exist as-is. we have a common stage
+                    # suffix used for all apis in the deployment at present,
+                    # and this is how we access it. This is an anchor reference
+                    # to the `deployment:meta` block at the top of the file.
                     meta: *depmet
+                # `apis` (mapping[], optional)
+                # A list of deployable API configurations. If not provided, an
+                # empty list will be used.
+                # Every element in this object will specify an individual api
+                # to be deployed. Each item is a key/mapping pair where the key
+                # is the api name and the mapping contains:
+                # * `desc` (string, required)
+                #    A description for the api. Will be used in description
+                #    tags. The key is required, but the value may be left
+                #    empty.
+                # * `spec_file` (string, required)
+                #   Path to an OpenApi 3.0.1 yaml specification jinja2
+                #   template. This file should include *no* AWS id's, names,
+                #   account info, etc.
+                # * `env_vars` (string[], optional)
+                #   A list of swimlane-exposed env vars that the API requires
+                #   access to. The env vars will be passed into the
+                #   environment of the lambda and basic permissions will be
+                #   given to the lambda to access the resources referenced by
+                #   the env var. No new environment variables may be defined
+                #   here, the only valid entries are those exposed by the
+                #   swimlane. If not provided, this defaults to an empty list.
+                # * `handlers` (mapping[], optional)
+                #   A list of mappings containing configuration for lambda
+                #   handlers tied to the API's endpoints. Each mapping should
+                #   contain:
+                #   * `id` (string, required)
+                #     The id in the spec file template that will be replaced
+                #     with the arn of the created lambda function.
+                #   * `name` (string, required)
+                #     A short name that will be used in resource creation
+                #     (naming of the resources). As this is used in resource
+                #     names, it should be kept as short as possible, but
+                #     must be unique across handlers for an API.
+                #   * `code` (string, required)
+                #     The path in the repo (from repo root) for the lambda that
+                #     implements the endpoint.
+                #   * `funct_args` (mapping, optional)
+                #     Arguments to pass *as is* to the lambda function
+                #     constructor. The keys used need to map to actual argument
+                #     names of the pulumi lambda function constructor.
+                #     Additionally, most args will be ignored (e.g.
+                #     environment, role) as they are dynamically injected in
+                #     code or not used currently. If not provided, the handler
+                #     will default to  "index.index_handler" and the runtime
+                #     will default to "python3.10". The following arguments are
+                #     optional but supported:
+                #     * architectures (string[], defaults to ["x86_64"])
+                #     * description (string, defaults to "handler_name Lambda
+                #       Function")
+                #     * handler (string, defaults to "index.index_handler")
+                #     * memory_size (int, defaults to 128[unit is MB])
+                #     * runtime (string defaults to "python3.10")
+                #     * timeout (int, defaults to 3[unit is seconds])
                 apis:
-                    # Every element in this object will specify an individual
-                    # api to be deployed. Where the key is the api name and
-                    # each item should have:
-                    #   - desc: A description for the api. Will be used in
-                    #           description tags.
-                    #   - spec_file: An OpenApi 3.0.1 yaml specification. This
-                    #                should include *no* AWS id's, names,
-                    #                account info, etc
-                    #   - env_vars: a list of swimlane-exposed env vars that the
-                    #               API requires access to. the env vars will be
-                    #               passed into the environment of the lambda
-                    #               and basic permissions will be given to the
-                    #               lambda to access the resources referenced by
-                    #               the env var.
-                    #   - handlers: a list of objects containing
-                    #       - id:
-                    #           the id in the spec file that will be replaced
-                    #           with the arn of the created lambda function
-                    #       - name:
-                    #           a short name that will be used in resource
-                    #           creation (naming of the resources)
-                    #       - code:
-                    #           the path in the repo for the lambda that
-                    #           implements the endpoint
-                    #       - funct_args:
-                    #           arguments to pass *as is* to the lambda
-                    #           function constructor. the keys used need to map
-                    #           to actual argument names of the pulumi lambda
-                    #           function constructor. additionally, most args
-                    #           will be ignored (e.g. environment, role) as
-                    #           they are dynamically injected in code or not
-                    #           used currently. If not provided, the handler
-                    #           will default to  "index.index_handler" and the
-                    #           runtime will default to "python3.10". The
-                    #           following arguments are supported:
-                    #           - architectures (list, defaults to ["x86_64"])
-                    #           - description
-                    #           - handler (defaults to "index.index_handler")
-                    #           - memory_size (MB,  defaults to 128)
-                    #           - runtime (defaults to "python3.10")
-                    #           - timeout (seconds, defaults to 3)
                     dap:
                         desc: "Data Analysis Pipeline API"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
@@ -238,12 +262,21 @@ config:
                             - id: "list_daps_handler"
                               name: "lsdaps"
                               code: "assets/api/data-analysis-pipeline/handlers/list_daps.py"
+                              funct_args:
+                                  handler: "index.index_handler"
+                                  runtime: "python3.10"
+                                  architectures:
+                                      - "x86_64"
+                                  description: "lsdaps Lambda Funnction"
+                                  memory_size: 128
+                                  timeout: 3
                             - id: "list_dap_executors_handler"
                               name: "lsexec"
                               code: "assets/api/data-analysis-pipeline/handlers/list_dap_executors.py"
                             - id: "submit_dap_run_handler"
                               name: "sbmtdap"
                               code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
+            # LEFTOFF
             # static apps are deployed to s3 as html/js/css bundles and are
             # exposed through an application load balancer. these may hit API
             # endpoints (assuming the required permissions/roles are available),
