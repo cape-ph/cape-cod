@@ -175,6 +175,7 @@ config:
             # NOTE: at this time and API ALB will still be created even if not
             #       configured, as will a VPC Endpoint that routes to the API
             #       gateway. You will be billed for these resources by AWS.
+            # TODO: ISSUE #191
             api:
                 # `subdomain` (string, optional)
                 # The name of the subdomain (in the swimlanes configured
@@ -276,89 +277,124 @@ config:
                             - id: "submit_dap_run_handler"
                               name: "sbmtdap"
                               code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
-            # LEFTOFF
-            # static apps are deployed to s3 as html/js/css bundles and are
-            # exposed through an application load balancer. these may hit API
+            # `static_apps` (mapping[], optional)
+            # Contains configuration for static apps deployed as part of CAPE.
+            # Static apps are deployed to s3 as html/js/css bundles and are
+            # exposed through an application load balancer. These may hit API
             # endpoints (assuming the required permissions/roles are available),
-            # but have no server side functions. they are served as-is
+            # but have no server side functions. They are served as-is and only
+            # from S3.
+            # Each mapping in the list has the following schema:
+            # * `name` (string, required)
+            #    The name of the static app. This is used in book keeping and
+            #    resource naming. As it is used in resource naming it should be
+            #    kept as short as possible, but it must be unique across static
+            #    app names in the swimlane.
+            # * `fqdn` (string, required)
+            #   This is the FQDN for the static app. The domain must match the
+            #   swimlane's domain presently. The FQDN becomes the name of the S3
+            #   bucket, and this is a requirement for serving static apps from
+            #   S3.
+            # * `dir` (string, required)
+            #   The path to the directory in the repo (from repo root) where the
+            #   assets for the static app exist. This will be fully copied, so
+            #   ensure there are no items in the hierarchy that should not end
+            #   up in S3
             # TODO: ISSUE #128
             # TODO: ISSUE #166
+            # TODO: ISSUE #192
             static-apps:
                 - name: "dap-ui"
                   fqdn: "analysis-pipelines.cape-dev.org"
-                  # repo_dir is the root directory in the repo for this app's
-                  # files.
-                  # TODO: long-term we will not want to have these apps in the
-                  #       repo, but rather follow the pattern we use with ETL
-                  #       scripts using separate repos
                   dir: "./assets/web/static/dap-ui"
-            # instance-apps defines our list of applications for the swimlane
-            # that are deployed as EC2 instances. They are added to the
-            # application load balancer and all traffic to the configured
-            # hostname is forwarded by the ALB
+            # `instance_apps` (mapping, optional)
+            # Contains configuration for all swimlane apps that are deployed to
+            # EC2 instances.
+            # A list of applications for the swimlane that are deployed as EC2
+            # instances.
             # TODO: this is ever so slightly different than static apps in
             #       that we have at least one key that applies to all
             #       instances and then have a sub list for the actual
-            #       instances. would be great if the configs were more in
-            #       similar
+            #       instances (whereas static apps has no common keys and is
+            #       just a top-level list). would be great if the configs were
+            #       more similar
             instance-apps:
-                # the path to the public key that will be deployed to all
-                # instances for SSH. you must maintain the private key securely
-                # separately
+                # `pub-key` (string, required)
+                # The path to the public key that will be deployed to all
+                # instances for SSH. You must maintain the private key securely
+                # separately. We recommend using a subdirectory of
+                # `assets-untracked` in order to ensure no keys (public or not)
+                # end up in the repository.
                 pub-key: "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
-                # a list of instance configurations that will be used to create
-                # the instances and wire them to the ALB
+                # `instances` (mapping[], optional)
+                # A list of instance configurations that will be used to create
+                # the instances and wire them to the ALB.
+                # all instance configs have:
+                # * `name` (string, required)
+                #   Used in resource naming and book keeping. Must be unique
+                #   across instance apps
+                # * `image` (string, required)
+                #   The id of the AMI to use for the instance. This AMI must
+                #   already exist in AWS
+                # * `public_ip` (bool, optional)
+                #   True if a public ip should be associated with the instance,
+                #   False otherwise (defaults to False)
+                # * `instance_type` (string, required)
+                #   The EC2 instance type to use for the instance. Defaults to
+                #   "t3a.medium".
+                # * `subnet_name` (string, required)
+                #   The name of the subnet to launch the instance in. Must
+                #   match a subnet name in the swimlane's configuration
+                # * `subdomain` (string, required)
+                #   The subdomain to associate with the instance. This is
+                #   paired with the swimlane's domain, so if the `subdomain`
+                #   was "app1" and the swimlane's `domain_name` was
+                #   "cape-dev.org", the instance would be reachable at
+                #   "app1.cape-dev.org".
+                # * `port` (int, optional)
+                #   The port the ALB should forward traffic to on the instance.
+                #   In general, we assume the ALB is performing TLS termination
+                #   and thus this value defaults to 80. Note that if 443 is
+                #   desired, the certs will have to be installed on the instance
+                #   manually.
+                # * `protocol` (string, optional)
+                #   The protocol the ALB should forward traffic to the instance
+                #   with. In general, we assume the ALB is performing TLS
+                #   termination and thus this value defaults to "HTTP". Note
+                #   that is "HTTPS" is desired, the certs will have to be
+                #   installed on the instance manually.
+                # * `healthcheck` (mapping, optional)
+                #   This is a mapping of health check arguments that will be
+                #   passed to the target group constructor *as-is*. The keys
+                #   must match those expected in the pulumi docs:
+                #   https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
+                #   This defaults to None and will use the AWS defaults in that
+                #   case.
+                # * `user_data` (mapping, optional)
+                #   This is an optional mapping containing configuration for the
+                #   user data that will be passed into the instance on creation.
+                #   The mapping has the following schema:
+                #   * `template` (string, required)
+                #     The path to a jinja2 template that when rendered will be
+                #     the user data passed to the instance.
+                #   * `vars` (mapping, optional)
+                #     A mapping of vars that will be passed to the template
+                #     rendering. The schema of this mapping is completely
+                #     dependent on the template, and the vars will be passed
+                #     *as-is*. The key names must match the names of template
+                #     variables and the values must be appropriate for redering
+                #     those variables. If you wish to use the user data template
+                #     without rendering, pass in an empty value for `vars`
+                #   * `rebuild_on_change` (boolean, optional)
+                #     A boolean stating if the instance should be rebuilt (i.e.
+                #     destroyed and recreated) on a detected change in user
+                #     data (defaults to False).
+                # * `services` (stgin[], optional)
+                #   A list of services that the instance will need access to
+                #   via an instance profile. *THIS IS QUITE SUBJECT TO CHANGE*
+                #   as we get into how we do policies and roles. Currently the
+                #   only supported value is "athena"
                 instances:
-                    # all instance configs have:
-                    # - name: used in resource naming and book keeping. must be
-                    #         unique across instance apps
-                    # - image: The id of the AMI to use for the instance
-                    # - public_ip: True if a public ip should be associated with
-                    #   the instance, False otherwise (defaults to False)
-                    # - instance_type: The EC2 instance type to use for the
-                    #                  instance
-                    # - subnet_name: The name of the subnet to launch the
-                    #                instance in. should match a subnet name in
-                    #                the swimlane's configuration
-                    # - subdomain: The subdomain to associate with the instance.
-                    #              This is paired with the swimlanes domain
-                    #              name, so if the subdomain was "app1" and the
-                    #              swimlane's domain_name was "cape-dev.org",
-                    #              the instance would be reachable at
-                    #              "app1.cape-dev.org"
-                    # - port: The port the ALB should forward traffic to. By
-                    #         default we assume the ALB is performing TLS
-                    #         termination and thus this value defaults to 80.
-                    #         Note that is 443 is desired, the certs will have
-                    #         to be installed on the instance manually.
-                    # - protocol: The protocol the ALB should forward traffic
-                    #             with. By default we assume the ALB is
-                    #             performing TLS termination and thus this
-                    #             value defaults to "HTTP". Note that is
-                    #             "HTTPS" is desired, the certs will have to be
-                    #             installed on the instance manually.
-                    # - healthcheck: This is a dictionary of health check
-                    #                arguments that will be passed to the target
-                    #                group constructor as-is. The keys must
-                    #                match those expected in the pulumi docs:
-                    #                https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
-                    #                This defaults to None and will use the AWS
-                    #                defaults in that case.
-                    # - user_data: This is an optional dictionary containing a
-                    #              path to a jinja2 template of user data to
-                    #              pass the instance, a dict of vars that will
-                    #              be passed to the template rendering, and a
-                    #              boolean stating if the instance should be
-                    #              rebuilt (destroyed and recreated) on a
-                    #              detected change in user data (defaults to
-                    #              False). To use user data with no rendering,
-                    #              use a template with no tags and an empty
-                    #              vars dict.
-                    # - services: this is a list of services that the instance
-                    #             will need access to via an instance profile.
-                    #             *THIS IS QUITE SUBJECT TO CHANGE* as we get
-                    #             into how we do policies and roles
-                    #
                     - name: "tljh"
                       image: "ami-05752f93029c09fa5"
                       public_ip: False
@@ -382,7 +418,7 @@ config:
                           rebuild_on_change: True
                       services:
                           - athena
-
+            # LEFTOFF
             vpn:
                 # This cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
