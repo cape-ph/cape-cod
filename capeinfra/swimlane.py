@@ -44,6 +44,13 @@ class ScopedSwimlane(CapeComponentResource):
         self.albs = {}
         self.domain_name = self.config.get("domain")
 
+        # we require a domain name for swimlanes.
+        if self.domain_name is None:
+            raise ValueError(
+                f"{self.basename} swimlane domain is not configured to a "
+                "valid value"
+            )
+
         # TODO: ISSUE #145 this member is only needed for the temporary DAP S3
         #       handling. it should not be here after 145. if it needs to, we
         #       should probably rethink how we expose the catalog to

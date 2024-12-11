@@ -1,15 +1,49 @@
+# `encryptionsalt` (string, required)
+# This key is added and managed by pulumi. this should not be modified outside
+# of that context, and is specific to your pulumi setup
 encryptionsalt: v1:PZ8pzBjNSVk=:v1:SGEZ1sCsg7aCAu5i:Ntz5ud8IjMsY1H5RLI/n6zmuuIK9sQ==
+# `config` (mapping, required)
+# This is the top-level config mapping and is required of all pulumi configs
 config:
+    # `deployment:meta` (mapping, required)
     # This block is for meta about the deployment itself that may be reused in
-    # later config settings.
+    # later config settings. The `&depmet` anchor is used to refer to this block
+    # later. Any items added to this block will be available to later config
+    # blocks that use the anchor
     deployment:meta: &depmet
-        # stage-suffix is used anywhere we need the deployment stage name and
-        # should be values like "dev", "prod", etc. There is exact no exact
-        # enumeration of values yet.
+        # `stage-suffix` (string, required)
+        # This is used anywhere we need the deployment stage name and should
+        # be values like "dev", "prod", etc. There is exact no exact
+        # enumeration of values yet. The value given here will be used in items
+        # like API paths
         stage-suffix: "dev"
+    # `aws:region` (string, required)
+    # The AWS region the deployment will go into. As of now, CAPE supports a
+    # single requion only
     aws:region: us-east-2
+    # `cape-cod:meta` (mapping, required)
+    # Contains configuration that is used by a number of functional areas in
+    # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
+    # functions can be found.
     cape-cod:meta:
+        # `glue` (mapping, optional)
+        # Contains meta configuration related to aws glue.
         glue:
+            # `etl` (mapping[], optional)
+            # Contains meta configuration related to aws glue etl scripts'
+            # placement in the common s3 bucket. Every item in the list is
+            # required to have:
+            # * `name` (string, required) - The name of the etl script. This
+            #    will be used as part of the object name in storage as well as
+            #    part of the name in the pulumi state.
+            # * `key` (string, required) - The key to use when placing this
+            #   script in object storage. This should include any required
+            #   prefixes.
+            # * `srcpath` (string, required) - The source path of this script
+            #   in the deployment repo. **NOTE** This key may become optional
+            #   or be removed all together in the future. Ideally we will not
+            #   have ETL scripts in this repo in the long run but rather have
+            #   brought in from other repos in dome manner.
             etl:
                 - name: etl-gphl-cre
                   key: glue/etl/etl_gphl_cre_alert.py
@@ -32,10 +66,17 @@ config:
                 - name: etl-bactopia-results
                   key: glue/etl/etl_bactopia_results.py
                   srcpth: ./assets/etl/etl_bactopia_results.py
+    # `cape-cod:swimlanes` (mapping, required)
+    # Contains the configuration for all swimlanes. Swimlanes define logical
+    # separations of public, protected and private resources in CAPE. Each
+    # swimlane gets its own VPC.
     cape-cod:swimlanes:
+        # `private` (mapping, optional)
+        # Contains configuration of the private swimmalne.
         private:
+            # `domain` (string, optional)
             # This is the private domain that will be setup in the cloud
-            # provider private VPC.
+            # provider private VPC. Defaults to "cape-dev.org"
             # At this time, this does not need to be setup with a domain
             # registrar unless it is also the domain used in a public facing
             # resource. The domain will need to be able to be used for creation
@@ -43,29 +84,71 @@ config:
             # self-signed and in all cases need to be managed outside this
             # repo).
             domain: cape-dev.org
-            # NOTE: at this time we support a single (wildcard) cert per
-            #       swimlane for non-vpn tls/ssl (vpn has its own cert). this
-            #       may change in the future
+            # `tls` (mapping, optional)
+            # The configuration for TLS for the swimlane. At this time we
+            # support a single (wildcard) cert per swimlane for non-vpn
+            # tls/ssl (vpn has its own cert). This may change in the future.
+            # If this mapping is not provided and valid, TLS will not be
+            # configured (or will have an invalid configuration) which will
+            # will lead to failure in deployment.
             tls:
+                # `dir` (string, required)
+                # Path (relative to repo root) to the directory that contains
+                # the TLS certs and keys. It is recommended to make this a
+                # subdirectory of <repo_root>/assets-untracked which is
+                # explicitly ignored by the git configuration (so that these
+                # files never end up in version control).
                 dir: "./assets-untracked/tls/private-swimlane"
+                # `ca-cert` (string, required)
+                # The name of the cert chain file. At this time, we require this
+                # to be a separate file (cannot be embedded in the cert pem
+                # itself). The file should be in PEM format.
                 ca-cert: "ca.crt"
-                # if not specified, the key and cert are expected to be
-                # named following the pattern {fqdn}.[key|crt] where
-                # `{fqdn}` is the value of the domain key provided above
+                # `server-key` (string, required)
+                # The name of the key file. The file should be in PEM format.
                 server-key: "*.cape-dev.org.key"
+                # `server-cert` (string, required)
+                # The name of the cert file. The file should be in PEM format.
                 server-cert: "*.cape-dev.org.crt"
+            # `cidr-block` (string, optional)
+            # The full cidr block that will be given to the private swimlane.
+            # Defaults to "10.0.0.0/24"
             cidr-block: 10.0.0.0/16
+            # `public-subnet` (mapping, optional)
+            # Contains the configuration of the public subnet. If not provided,
+            # a default public subnet configuration will be used. The public
+            # subnet is special and there will be one per VPC. This is required
+            # to house a NAT for the VPC that allows traffic egress to the
+            # internet.
             public-subnet:
-                # public subnet is special and there will be one (for now) per
-                # swimlane (vpc), the main purpose is currently for a NAT to
-                # live in to allow egress to the internet for the instances in
-                # private subnets
+                # `cidr-block` (string, optional)
+                # The cidr block that will be given to the public subnet of the
+                # swimlane. Defaults to "10.0.0.0/24"
                 cidr-block: 10.0.1.0/24
+            # `private-subnets` (mapping[], optional)
+            # A list of configurations for the private subnets of the swimlane.
+            # If not provided, not privat subnets will be configured. All list
+            # items have the following schema:
+            # * `name` (string, required)
+            #   A short name for the subnet. This should be unique across all
+            #   private subnets in the swimlane. No private subnet may be named
+            #   "public"
+            # * `cidr-block` (string, required)
+            #   The cidr block given to the private subnet
+            # * `routes` (string[], optional)
+            #   A list of subnet names for which this subnet should be able to
+            #   route to (via routing table). The special name "public" may be
+            #   used to allow routing to the public subnet for the swimlane (if
+            #   public is not explicitly specified, the subnet will have no
+            #   internet access).
+            # * `az` (string optional)
+            #   An explicit availability zone for the subnet. If not provided,
+            #   the default availability zone will be used. This is generally
+            #   only needed when setting up redundant private subnets for
+            #   something like VPN
             private-subnets:
                 - name: compute
                   cidr-block: 10.0.2.0/24
-                  # if True, the private subnet's outgoing traffic will be
-                  # routed to the NAT gateway for egress to the internet
                   routes:
                       - "public"
                 - name: vpn
@@ -84,66 +167,92 @@ config:
                   az: "us-east-2c"
                   routes:
                       - "public"
-            # NOTE: the apis section here will likely need to be re-worked as we
-            #       move the api to a real host name, add certs, and all the
-            #       things. for now just trying to get the stage name
-            #       configurable from the root deployment:meta section
+            # `api` (mapping, optional)
+            # Contains the configuration for apis and the API application load
+            # balancer. If this is not included, a default configuration will be
+            # used with a subdomain of `api`, a `dev` stage name and no APIs
+            # deployed.
+            # NOTE: at this time and API ALB will still be created even if not
+            #       configured, as will a VPC Endpoint that routes to the API
+            #       gateway. You will be billed for these resources by AWS.
+            # TODO: ISSUE #191
             api:
-                # all apis will go in the same subdomain, and will be
-                # differentiated based on the path component of each individual
-                # api in the list below. e.g. for a domain of cape-dev.org and a
-                # subdomain value of "api", all apis will be rooted at
-                # api.cape-dev.org. for an api named `api1` and a stage-name of
-                # `dev`, that specific api can be found at
-                # api.cape-dev.org/api1-dev
+                # `subdomain` (string, optional)
+                # The name of the subdomain (in the swimlanes configured
+                # domain) where api's will be exposed. All apis will go in the
+                # same subdomain, and will be differentiated based on the path
+                # component of each individual api in the list below. E.g. for
+                # a domain of "cape-dev.org" and a subdomain value of "api",
+                # all apis will be rooted at "api.cape-dev.org". For an api
+                # named "api1" and a stage-name of "dev", that specific api can
+                # be found at "api.cape-dev.org/api1-dev".
+                # If not provided, this defaults to "api"
                 subdomain: "api"
-                # this item needs to exist as-is. we have a common stage suffix
-                # used for all apis in the dpeloyment at present, and this is
-                # how we access it
+                # `stage` (mapping, optional)
+                # The stage configuration for all apis. We currently only
+                # support one stage name for all of CAPE.
                 stage:
+                    # `meta` (anchor, required)
+                    # This item needs to exist as-is. we have a common stage
+                    # suffix used for all apis in the deployment at present,
+                    # and this is how we access it. This is an anchor reference
+                    # to the `deployment:meta` block at the top of the file.
                     meta: *depmet
+                # `apis` (mapping[], optional)
+                # A list of deployable API configurations. If not provided, an
+                # empty list will be used.
+                # Every element in this object will specify an individual api
+                # to be deployed. Each item is a key/mapping pair where the key
+                # is the api name and the mapping contains:
+                # * `desc` (string, required)
+                #    A description for the api. Will be used in description
+                #    tags. The key is required, but the value may be left
+                #    empty.
+                # * `spec_file` (string, required)
+                #   Path to an OpenApi 3.0.1 yaml specification jinja2
+                #   template. This file should include *no* AWS id's, names,
+                #   account info, etc.
+                # * `env_vars` (string[], optional)
+                #   A list of swimlane-exposed env vars that the API requires
+                #   access to. The env vars will be passed into the
+                #   environment of the lambda and basic permissions will be
+                #   given to the lambda to access the resources referenced by
+                #   the env var. No new environment variables may be defined
+                #   here, the only valid entries are those exposed by the
+                #   swimlane. If not provided, this defaults to an empty list.
+                # * `handlers` (mapping[], optional)
+                #   A list of mappings containing configuration for lambda
+                #   handlers tied to the API's endpoints. Each mapping should
+                #   contain:
+                #   * `id` (string, required)
+                #     The id in the spec file template that will be replaced
+                #     with the arn of the created lambda function.
+                #   * `name` (string, required)
+                #     A short name that will be used in resource creation
+                #     (naming of the resources). As this is used in resource
+                #     names, it should be kept as short as possible, but
+                #     must be unique across handlers for an API.
+                #   * `code` (string, required)
+                #     The path in the repo (from repo root) for the lambda that
+                #     implements the endpoint.
+                #   * `funct_args` (mapping, optional)
+                #     Arguments to pass *as is* to the lambda function
+                #     constructor. The keys used need to map to actual argument
+                #     names of the pulumi lambda function constructor.
+                #     Additionally, most args will be ignored (e.g.
+                #     environment, role) as they are dynamically injected in
+                #     code or not used currently. If not provided, the handler
+                #     will default to  "index.index_handler" and the runtime
+                #     will default to "python3.10". The following arguments are
+                #     optional but supported:
+                #     * architectures (string[], defaults to ["x86_64"])
+                #     * description (string, defaults to "handler_name Lambda
+                #       Function")
+                #     * handler (string, defaults to "index.index_handler")
+                #     * memory_size (int, defaults to 128[unit is MB])
+                #     * runtime (string defaults to "python3.10")
+                #     * timeout (int, defaults to 3[unit is seconds])
                 apis:
-                    # Every element in this object will specify an individual
-                    # api to be deployed. Where the key is the api name and
-                    # each item should have:
-                    #   - desc: A description for the api. Will be used in
-                    #           description tags.
-                    #   - spec_file: An OpenApi 3.0.1 yaml specification. This
-                    #                should include *no* AWS id's, names,
-                    #                account info, etc
-                    #   - env_vars: a list of swimlane-exposed env vars that the
-                    #               API requires access to. the env vars will be
-                    #               passed into the environment of the lambda
-                    #               and basic permissions will be given to the
-                    #               lambda to access the resources referenced by
-                    #               the env var.
-                    #   - handlers: a list of objects containing
-                    #       - id:
-                    #           the id in the spec file that will be replaced
-                    #           with the arn of the created lambda function
-                    #       - name:
-                    #           a short name that will be used in resource
-                    #           creation (naming of the resources)
-                    #       - code:
-                    #           the path in the repo for the lambda that
-                    #           implements the endpoint
-                    #       - funct_args:
-                    #           arguments to pass *as is* to the lambda
-                    #           function constructor. the keys used need to map
-                    #           to actual argument names of the pulumi lambda
-                    #           function constructor. additionally, most args
-                    #           will be ignored (e.g. environment, role) as
-                    #           they are dynamically injected in code or not
-                    #           used currently. If not provided, the handler
-                    #           will default to  "index.index_handler" and the
-                    #           runtime will default to "python3.10". The
-                    #           following arguments are supported:
-                    #           - architectures (list, defaults to ["x86_64"])
-                    #           - description
-                    #           - handler (defaults to "index.index_handler")
-                    #           - memory_size (MB,  defaults to 128)
-                    #           - runtime (defaults to "python3.10")
-                    #           - timeout (seconds, defaults to 3)
                     dap:
                         desc: "Data Analysis Pipeline API"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
@@ -154,94 +263,138 @@ config:
                             - id: "list_daps_handler"
                               name: "lsdaps"
                               code: "assets/api/data-analysis-pipeline/handlers/list_daps.py"
+                              funct_args:
+                                  handler: "index.index_handler"
+                                  runtime: "python3.10"
+                                  architectures:
+                                      - "x86_64"
+                                  description: "lsdaps Lambda Funnction"
+                                  memory_size: 128
+                                  timeout: 3
                             - id: "list_dap_executors_handler"
                               name: "lsexec"
                               code: "assets/api/data-analysis-pipeline/handlers/list_dap_executors.py"
                             - id: "submit_dap_run_handler"
                               name: "sbmtdap"
                               code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
-            # static apps are deployed to s3 as html/js/css bundles and are
-            # exposed through an application load balancer. these may hit API
+            # `static_apps` (mapping[], optional)
+            # Contains configuration for static apps deployed as part of CAPE.
+            # Static apps are deployed to s3 as html/js/css bundles and are
+            # exposed through an application load balancer. These may hit API
             # endpoints (assuming the required permissions/roles are available),
-            # but have no server side functions. they are served as-is
+            # but have no server side functions. They are served as-is and only
+            # from S3.
+            # Each mapping in the list has the following schema:
+            # * `name` (string, required)
+            #    The name of the static app. This is used in book keeping and
+            #    resource naming. As it is used in resource naming it should be
+            #    kept as short as possible, but it must be unique across static
+            #    app names in the swimlane.
+            # * `fqdn` (string, required)
+            #   This is the FQDN for the static app. The domain must match the
+            #   swimlane's domain presently. The FQDN becomes the name of the S3
+            #   bucket, and this is a requirement for serving static apps from
+            #   S3.
+            # * `dir` (string, required)
+            #   The path to the directory in the repo (from repo root) where the
+            #   assets for the static app exist. This will be fully copied, so
+            #   ensure there are no items in the hierarchy that should not end
+            #   up in S3
             # TODO: ISSUE #128
             # TODO: ISSUE #166
+            # TODO: ISSUE #192
             static-apps:
                 - name: "dap-ui"
                   fqdn: "analysis-pipelines.cape-dev.org"
-                  # repo_dir is the root directory in the repo for this app's
-                  # files.
-                  # TODO: long-term we will not want to have these apps in the
-                  #       repo, but rather follow the pattern we use with ETL
-                  #       scripts using separate repos
                   dir: "./assets/web/static/dap-ui"
-            # instance-apps defines our list of applications for the swimlane
-            # that are deployed as EC2 instances. They are added to the
-            # application load balancer and all traffic to the configured
-            # hostname is forwarded by the ALB
+            # `instance_apps` (mapping, optional)
+            # Contains configuration for all swimlane apps that are deployed to
+            # EC2 instances.
+            # A list of applications for the swimlane that are deployed as EC2
+            # instances.
             # TODO: this is ever so slightly different than static apps in
             #       that we have at least one key that applies to all
             #       instances and then have a sub list for the actual
-            #       instances. would be great if the configs were more in
-            #       similar
+            #       instances (whereas static apps has no common keys and is
+            #       just a top-level list). would be great if the configs were
+            #       more similar
             instance-apps:
-                # the path to the public key that will be deployed to all
-                # instances for SSH. you must maintain the private key securely
-                # separately
+                # `pub-key` (string, required)
+                # The path to the public key that will be deployed to all
+                # instances for SSH. You must maintain the private key securely
+                # separately. We recommend using a subdirectory of
+                # `assets-untracked` in order to ensure no keys (public or not)
+                # end up in the repository.
                 pub-key: "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
-                # a list of instance configurations that will be used to create
-                # the instances and wire them to the ALB
+                # `instances` (mapping[], optional)
+                # A list of instance configurations that will be used to create
+                # the instances and wire them to the ALB.
+                # all instance configs have:
+                # * `name` (string, required)
+                #   Used in resource naming and book keeping. Must be unique
+                #   across instance apps
+                # * `image` (string, required)
+                #   The id of the AMI to use for the instance. This AMI must
+                #   already exist in AWS
+                # * `public_ip` (bool, optional)
+                #   True if a public ip should be associated with the instance,
+                #   False otherwise (defaults to False)
+                # * `instance_type` (string, required)
+                #   The EC2 instance type to use for the instance. Defaults to
+                #   "t3a.medium".
+                # * `subnet_name` (string, required)
+                #   The name of the subnet to launch the instance in. Must
+                #   match a subnet name in the swimlane's configuration
+                # * `subdomain` (string, required)
+                #   The subdomain to associate with the instance. This is
+                #   paired with the swimlane's domain, so if the `subdomain`
+                #   was "app1" and the swimlane's `domain_name` was
+                #   "cape-dev.org", the instance would be reachable at
+                #   "app1.cape-dev.org".
+                # * `port` (int, optional)
+                #   The port the ALB should forward traffic to on the instance.
+                #   In general, we assume the ALB is performing TLS termination
+                #   and thus this value defaults to 80. Note that if 443 is
+                #   desired, the certs will have to be installed on the instance
+                #   manually.
+                # * `protocol` (string, optional)
+                #   The protocol the ALB should forward traffic to the instance
+                #   with. In general, we assume the ALB is performing TLS
+                #   termination and thus this value defaults to "HTTP". Note
+                #   that is "HTTPS" is desired, the certs will have to be
+                #   installed on the instance manually.
+                # * `healthcheck` (mapping, optional)
+                #   This is a mapping of health check arguments that will be
+                #   passed to the target group constructor *as-is*. The keys
+                #   must match those expected in the pulumi docs:
+                #   https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
+                #   This defaults to None and will use the AWS defaults in that
+                #   case.
+                # * `user_data` (mapping, optional)
+                #   This is an optional mapping containing configuration for the
+                #   user data that will be passed into the instance on creation.
+                #   The mapping has the following schema:
+                #   * `template` (string, required)
+                #     The path to a jinja2 template that when rendered will be
+                #     the user data passed to the instance.
+                #   * `vars` (mapping, optional)
+                #     A mapping of vars that will be passed to the template
+                #     rendering. The schema of this mapping is completely
+                #     dependent on the template, and the vars will be passed
+                #     *as-is*. The key names must match the names of template
+                #     variables and the values must be appropriate for rendering
+                #     those variables. If you wish to use the user data template
+                #     without rendering, pass in an empty value for `vars`
+                #   * `rebuild_on_change` (boolean, optional)
+                #     A boolean stating if the instance should be rebuilt (i.e.
+                #     destroyed and recreated) on a detected change in user
+                #     data (defaults to False).
+                # * `services` (stgin[], optional)
+                #   A list of services that the instance will need access to
+                #   via an instance profile. *THIS IS QUITE SUBJECT TO CHANGE*
+                #   as we get into how we do policies and roles. Currently the
+                #   only supported value is "athena"
                 instances:
-                    # all instance configs have:
-                    # - name: used in resource naming and book keeping. must be
-                    #         unique across instance apps
-                    # - image: The id of the AMI to use for the instance
-                    # - public_ip: True if a public ip should be associated with
-                    #   the instance, False otherwise (defaults to False)
-                    # - instance_type: The EC2 instance type to use for the
-                    #                  instance
-                    # - subnet_name: The name of the subnet to launch the
-                    #                instance in. should match a subnet name in
-                    #                the swimlane's configuration
-                    # - subdomain: The subdomain to associate with the instance.
-                    #              This is paired with the swimlanes domain
-                    #              name, so if the subdomain was "app1" and the
-                    #              swimlane's domain_name was "cape-dev.org",
-                    #              the instance would be reachable at
-                    #              "app1.cape-dev.org"
-                    # - port: The port the ALB should forward traffic to. By
-                    #         default we assume the ALB is performing TLS
-                    #         termination and thus this value defaults to 80.
-                    #         Note that is 443 is desired, the certs will have
-                    #         to be installed on the instance manually.
-                    # - protocol: The protocol the ALB should forward traffic
-                    #             with. By default we assume the ALB is
-                    #             performing TLS termination and thus this
-                    #             value defaults to "HTTP". Note that is
-                    #             "HTTPS" is desired, the certs will have to be
-                    #             installed on the instance manually.
-                    # - healthcheck: This is a dictionary of health check
-                    #                arguments that will be passed to the target
-                    #                group constructor as-is. The keys must
-                    #                match those expected in the pulumi docs:
-                    #                https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
-                    #                This defaults to None and will use the AWS
-                    #                defaults in that case.
-                    # - user_data: This is an optional dictionary containing a
-                    #              path to a jinja2 template of user data to
-                    #              pass the instance, a dict of vars that will
-                    #              be passed to the template rendering, and a
-                    #              boolean stating if the instance should be
-                    #              rebuilt (destroyed and recreated) on a
-                    #              detected change in user data (defaults to
-                    #              False). To use user data with no rendering,
-                    #              use a template with no tags and an empty
-                    #              vars dict.
-                    # - services: this is a list of services that the instance
-                    #             will need access to via an instance profile.
-                    #             *THIS IS QUITE SUBJECT TO CHANGE* as we get
-                    #             into how we do policies and roles
-                    #
                     - name: "tljh"
                       image: "ami-05752f93029c09fa5"
                       public_ip: False
@@ -265,9 +418,18 @@ config:
                           rebuild_on_change: True
                       services:
                           - athena
-
+            # `vpn` (mapping, required)
+            # Contains configuration for the vpn for the swimlane.
+            # NOTE: At this time, we roll the VPN in with each swimlane. This
+            #       makes sense for development, but may not when actually
+            #       going to deploy somewhere with an established VPN
+            #       environment. This setup is subject to change, but some form
+            #       of VPN will be required to access all swimlanes (though some
+            #       resources in the eventual public swimlane will be exposed
+            #       publicly)
             vpn:
-                # This cidr-block is where vpn client ips will be allocated
+                # `cidr-block` (string, optional)
+                # The cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
                 # itself. This CIDR block cannot overlap with the VPC nor with
                 # the subnet being assoociated with the VPN endpoint.
@@ -276,25 +438,82 @@ config:
                 # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
                 # If not specified, this will default to "10.1.0.0/22"
                 cidr-block: "10.1.0.0/22"
-                # valid values are "tcp" and "udp". if not specified this will
+                # `transport-proto` (string, optional)
+                # Valid values are "tcp" and "udp". If not specified this will
                 # default to "udp"
                 transport-proto: "udp"
+
+                # `tls` (mapping, optional)
+                # The configuration for TLS for the swimlane's VPN.
+                # # If this mapping is not provided and valid, TLS will not be
+                # configured (or will have an invalid configuration) which will
+                # will lead to failure in deployment.
+                # NOTE: The VPN configured here is connected to as specified in
+                #       the AWS client VPN user guide:
+                #       https://docs.aws.amazon.com/vpn/latest/clientvpn-user/client-vpn-user-what-is.html
+                #       The ovpn client config files must be exported as covered
+                #       in the AWS client VPN admin guide:
+                #       https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/cvpn-working-endpoint-export.html
+                #       and given to all users needing to connect to VPN.
+                #       Additionally the ca cert, cert, and private key must all
+                #       be embedded in the ovpn config file. All of this is
+                #       managed externally to the CAPE infrastructure.
                 tls:
+                    # `dir` (string, required)
+                    # Path (relative to repo root) to the directory that
+                    # contains the TLS certs and keys. It is recommended to
+                    # make this a subdirectory of <repo_root>/assets-untracked
+                    # which is explicitly ignored by the git configuration (so
+                    # that these files never end up in version control).
                     dir: ./assets-untracked/tls/vpn
+                    # `ca-cert` (string, required)
+                    # The name of the cert chain file. At this time, we require
+                    # this to be a separate file (cannot be embedded in the
+                    # cert pem itself). The file should be in PEM format.
                     ca-cert: ca.crt
+                    # `server-key` (string, required)
+                    # The name of the key file. The file should be in PEM
+                    # format.
                     server-key: server.key
+                    # `server-cert` (string, required)
+                    # The name of the cert file. The file should be in PEM
+                    # format.
                     server-cert: server.crt
+            # `compute` (mapping, optional)
+            # Contains configuration about the available compute environments in
+            # CAPE. If this is not provided, an empty configuration will be used
+            # and no compute environments will be deployed
             compute:
+                # `environments` (mapping[], optional)
+                # A list of mappings, each containing the configuration of a
+                # specific compute environment. Each mapping in the list has the
+                # following schema:
+                # * `name` (string, required)
+                #   A name for the environment. Used for bookkeeping and must be
+                #   unique across all compute environments.
+                # * `image` (string, required)
+                #   The ID of the AWS AMI to launce the instances with. This
+                #   image must exist in AWS already.
+                # * `subnets` (string[], required)
+                #   A list of subnet names in which compute resources will be
+                #   launched. The subnet names must match the names of swimlane
+                #   subnets in this config file. At least one subnet must be
+                #   defined here.
+                # * `resources` (mapping, required)
+                #   A mapping of compute environment resource arguments to be
+                #   passed *as-is* to the compute environment constructor. The
+                #   key must exist, but the value may be empty if there are no
+                #   arguments to pass. The argument names must match those
+                #   expected in the pulumi docs:
+                #   https://www.pulumi.com/registry/packages/aws/api-docs/batch/computeenvironment/#computeenvironmentcomputeresources
+                #   Any supported argument listed here will be passed on as
+                #   configured.
                 environments:
                     - name: analysis
-                      # an AMI ID to use for each EC2 instance
                       image: ami-0cfe23bad78a802ea
-                      # a list of subnets that ec2 instances in the compute
-                      # environments live on
                       subnets:
                           - compute
                       resources:
-                          # a list of instance types to be able to request
                           instance_types:
                               [
                                   "c4.large",
@@ -303,17 +522,99 @@ config:
                                   "c4.4xlarge",
                                   "c4.8xlarge",
                               ]
-                          # the maximum number of vCPUs to have in the environment
                           max_vcpus: 16
-                          # (optional) the desired number of vCPUs to have in the environment
-                          # desired_vcpus: 8
-                          # (optional) the minimum number of vCPUs to have in the environment
-                          # min_vcpus: 8
-
+    # `cape-cod:datalakehouse` (mapping, required)
+    # Contains configuration specific to the data lake house (DLH). The DLH
+    # contains tributaries, which are compionents that consist of a pair of raw
+    # and clean data buckets (and automation resources for those buckets) and
+    # data pipelines that define transformations on data places in the raw
+    # bucket. This is all described in more detail below.
     cape-cod:datalakehouse:
         # NOTE: unless specified otherwise in here, all crawlers will run at
         #       0200 daily
+
+        # `tributaries` (mapping[], optional)
+        # Contains a list of mappings defining specific domains in the data
+        # lake house (e.g. HAI, genomics). Each tributary has its own raw/clean
+        # storage, etl scripts, lambda functions, etc.
         tributaries:
+            # The schema for each item of this list is:
+            # * `name` (string required)
+            #   The name of this tributary. This name is included in AWS
+            #   resource names, which have a very small character limit. So this
+            #   name should be kept as short as possible, but must be unique
+            #   among all tributaries
+            # * `buckets` (mapping, required)
+            #   This contains the configuration for the raw and clean buckets of
+            #   the tributary, including crawlers
+            #   * `raw` (mapping, required)
+            #     Contains the configuration for the raw bucket
+            #     * `name` (string, optional)
+            #       The name of the raw bucket. Defaults to
+            #       "{tributary_resource_name}-raw-vbkt"
+            #     * `crawler` (mapping, optional)
+            #       Contains the configuration for the bucket crawler. If no
+            #       configuration is given, no crawler will be created for the
+            #       bucket. Generally, we do not define crawlers for raw
+            #       buckets.
+            #       * `excludes` (string[], required)
+            #         A list of exclude patterns for the crawler. Leave the
+            #         empty for no exclusions. The rules for these patterns are
+            #         defined in the official aws docs (under exclude patterns)
+            #         https://docs.aws.amazon.com/glue/latest/dg/define-crawler-choose-data-sources.html
+            #       * `classifiers` (string[], optional)
+            #         A list of custom classifiers for the crawler. If not
+            #         provided the AWS schema detection will be allowed to
+            #         figure out what to use (which may not be possible
+            #         depending on the raw data schema). These classifiers must
+            #         exist either in AWS or as part of this deployment. The
+            #         only currently supported custom classifier is
+            #         cape-csv-standard-classifier
+            #       * `schedule` (string, optional)
+            #         The crantab-formatted schedule for the crawler. Defaults
+            #         to 0200 daily ("0 2 * * ? *"). Format details can be
+            #         found here: https://en.wikipedia.org/wiki/Cron
+            #   * `clean` (mapping, required)
+            #     Contains configuration for the clean bucket. The schema is the
+            #     same as the `raw` bucket section immediately preceding
+            #     `clean`.
+            # * `pipelines` (mapping, optional)
+            #   Contains configuration for the pipelines of the tributary.
+            #   * `data` (mapping, optional)
+            #     Contains configuration for data pipelines in the tributary
+            #     * `etl` (mapping[], optional)
+            #       A list of configurations for ETL data pipelines in the
+            #       tributary. Each list item has the following schema
+            #       * `name` (string, required)
+            #         A short name for the ETL script. Needs to be unique across
+            #         ETL scripts in the tributary. This value is used in AWS
+            #         resource names and thus should be kept as short as
+            #         possible.
+            #       * `script` (string, required)
+            #         The path in the common assets bucket where the ETL script
+            #         will be found. This is the deployed path, *not* the path
+            #         in the repo.
+            #       * `prefix` (string, required)
+            #         The object prefix to limit the ETL script to. If not
+            #         specified, the ETL script will apply to *all* objects
+            #         added to the bucket.
+            #       * `suffixes` (string[], optional)
+            #         A list of object (e.g. file) suffixes the ETL script
+            #         should be limited to. If not specified, the ETL script
+            #         will apply to all suffixes.
+            #       * `pymodules` (string[], optional)
+            #         A list of additional python modules to be passed into the
+            #         ETL script's runtime. These is specified in pip install
+            #         compatible version format (i.e.
+            #         `package_name[version_specifier]`). More information on
+            #         version specifiers van be found here:
+            #         https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
+            #       * `max_concurrent_runs` (int, optional)
+            #         The max number of concurrent runs for the ETL Job. If the
+            #         number of requested ETL runs is greater than this value,
+            #         ETL jobs will be queued until currently running jobs are
+            #         completed and the number of running jobs is < max.
+            #         Defaults to 5.
             - name: hai
               buckets:
                   raw:
@@ -325,6 +626,7 @@ config:
                           excludes:
                           classifiers:
                               - cape-csv-standard-classifier
+                          schedule: "0 2 * * ? *"
               pipelines:
                   data:
                       etl:
@@ -371,4 +673,4 @@ config:
                                 - fastq
                             pymodules:
                                 - pyfastx==2.1.0
-                            max_concurrent_runs: 5 # optional, 5 is the default
+                            max_concurrent_runs: 5
