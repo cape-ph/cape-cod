@@ -165,60 +165,21 @@ the public stack with your new encryption key.
 
 ### Config Values
 
-This section contains information about the set of config values available in
-the `pulumi` configuration.
+Our [public development config file](./Pulumi.cape-cod-dev.yaml) contains
+documentation and examples for every available config option we support. Please
+refer to this file when configuring your deployment.
 
-In the following table, nested keys are given in dotted notation. E.g. the
-name/key `cape-cod:meta.glue.etl.name` would map to `<THIS VALUE>` in the
-following YAML
+### Secret Asset Management
 
-```yaml
-cape-cod:meta:
-    glue:
-        etl:
-            - name: <THIS VALUE>
-```
-
-Some dotted names contain items such as `[something|something_else]`. In these
-cases both `something` and `something_else` are valid, though they are
-different. E.g. in the case of
-`cape-cod:datalakehouse.tributaries.buckets.[raw|clean]`, there are keys for
-both `cape-cod:datalakehouse.tributaries.buckets.raw` and
-`cape-cod:datalakehouse.tributaries.buckets.clean`, and the keys apply to
-different bucket configs.
-
-If a key is marked as optional but a lower level key is marked as required, this
-implies that if provided, the lower level key is required if the higher key is
-provided. E.g. `cape-cod:meta.glue.etl` is optional, but if any items are
-defined in that sequence, the key `cape-cod:meta.glue.etl.name` is required for
-each item.
-
-| name                                                                          | required?    | secret? | data format | description                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------- | ------------ | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cape-cod:meta`                                                               | **required** | no      | `mapping`   | Contains configuration that is used by a number of functional areas in the deployment. E.g. a common s3 bucket where ETL scripts and Lambda functions can be found.                                                                                                      |
-| `cape-cod:meta.glue`                                                          | _optional_   | no      | `mapping`   | Contains meta configuration related to aws glue.                                                                                                                                                                                                                         |
-| `cape-cod:meta.glue.etl`                                                      | _optional_   | no      | `mapping[]` | Contains meta configuration related to aws glue etl scripts.                                                                                                                                                                                                             |
-| `cape-cod:meta.glue.etl.name`                                                 | **required** | no      | `string`    | The name of the etl script. This will be used as part of the object name in storage as well as part of the name in the pulumi state.                                                                                                                                     |
-| `cape-cod:meta.glue.etl.key`                                                  | **required** | no      | `string`    | The key to use when placing this script in object storage. This should include any required prefixes.                                                                                                                                                                    |
-| `cape-cod:meta.glue.etl.srcpth`                                               | **required** | no      | `string`    | The source path of this script if copying from the deployment repo. **This key may become optional or be removed all together in the future. Ideally we will not have ETL scripts in this repo in the long run but rather have them pulled/pushed from other repos.**    |
-| `cape-cod:datalakehouse`                                                      | **required** | no      | `mapping`   | Contains configuration specific to the data lake house. The data lake house will have some common elements regardless of tributary config (e.g. data catalog, athena workgroup, etc).                                                                                    |
-| `cape-cod:datalakehouse.tributaries`                                          | _optional_   | no      | `mapping[]` | Contains configuration specific to a specific domain in the data lake house (e.g. HAI). Each tributary has its own raw/clean storage, etl scripts, lambda functions, etc.                                                                                                |
-| `cape-cod:datalakehouse.tributaries.name`                                     | **required** | no      | `string`    | The name of the tributary. This will be used as the base for a number of resource names and as a name in the pulumi state.                                                                                                                                               |
-| `cape-cod:datalakehouse.tributaries.buckets`                                  | _optional_   | no      | `mapping`   | A mapping of bucket config for the tributary.                                                                                                                                                                                                                            |
-| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean]`                     | _optional_   | no      | `mapping`   | A mapping of config for the raw/clean bucket for the tributary.                                                                                                                                                                                                          |
-| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].name`                | _optional_   | no      | `string`    | A name for the raw/clean bucket. If not provided a sensible default will be used.                                                                                                                                                                                        |
-| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler`             | _optional_   | no      | `mapping`   | Crawler config for the raw/clean bucket. Only needed if a crawler is needed for the raw bucket.                                                                                                                                                                          |
-| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler.exclude`     | _optional_   | no      | `string[]`  | A list of glob patterns the crawler should not crawl. More info on format can be found [in AWS's documentation][awscrawlerpaths].                                                                                                                                        |
-| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler.schedule`    | _optional_   | no      | `string`    | A cron-formatted string for the schedule of the crawler. The fastest possible schedule is every five minutes. More info can be found [in AWS's documentation][awscron].                                                                                                  |
-| `cape-cod:datalakehouse.tributaries.buckets.[raw\|clean].crawler.classifiers` | _optional_   | no      | `string[]`  | A list of custom classifiers for the crawler. If not provided the AWS schema detection will be allowed to figure out what to use (which may not be possible depending on the raw data schema). These classifiers must exist either in AWS or as part of this deployment. |
-| `cape-cod:datalakehouse.tributaries.pipelines`                                | _optional_   | no      | `mapping`   | Mapping of pipeline config for the tributary. We support different types of pipelines (e.g. data and analysis).                                                                                                                                                          |
-| `cape-cod:datalakehouse.tributaries.pipelines.data`                           | _optional_   | no      | `mapping`   | Mapping of data pipeline config for the tributary.                                                                                                                                                                                                                       |
-| `cape-cod:datalakehouse.tributaries.pipelines.data.etl`                       | _optional_   | no      | `mapping[]` | List of ETL (data pipeline) config mappings for the tributary.                                                                                                                                                                                                           |
-| `cape-cod:datalakehouse.tributaries.pipelines.data.etl.name`                  | **required** | no      | `string`    | A name for the ETL data pipeline. This will be used as the base for a number of resources as well as a base for names in the pulumi state.                                                                                                                               |
-| `cape-cod:datalakehouse.tributaries.pipelines.data.etl.script`                | **required** | no      | `string`    | The key for the script in the meta assets bucket (including any prefixes).                                                                                                                                                                                               |
-| `cape-cod:datalakehouse.tributaries.pipelines.data.etl.prefix`                | **required** | no      | `string`    | Any prefix in the raw bucket to limit the ETL to. The key may contain an empty value for no prefixes.                                                                                                                                                                    |
-| `cape-cod:datalakehouse.tributaries.pipelines.data.etl.suffixes`              | **required** | no      | `string[]`  | A list of suffixes to limit the ETL to. All suffixes will be passed through ETL if the list is empty.                                                                                                                                                                    |
-| `cape-cod:datalakehouse.tributaries.pipelines.data.etl.pymodules`             | **required** | no      | `string[]`  | A list of python modules (using [PEP 440](https://peps.python.org/pep-0440/) version specification if needed) to ensure are available for the ETL script. **NOTE** these will be installed as the ETL script is spun up, increasing execution time and monetary cost.    |
+**_WIP_** Managing a deployment of a system such as this requires management of
+files that should never end up in revision control. Eaxmples include TLS related
+files (e.g. private keys) and EC2 instance bootstrap scripts that may expose
+sensitive information. The CAPE infrastructure repo is configured with a
+`.gitignore` of the directory `<repo_root>/assets-untracked` in order to give
+the most basic form of protection to these assets. This may not be the best way
+for you and your deployment to manage it, but it is available. This is covered
+in some detail in the VPN README referenced in the
+[Additional Documentation](#additional-documentation) section below.
 
 ## 📐 Additional Documentation
 
