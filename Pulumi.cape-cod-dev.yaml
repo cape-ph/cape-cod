@@ -418,9 +418,18 @@ config:
                           rebuild_on_change: True
                       services:
                           - athena
-            # LEFTOFF
+            # `vpn` (mapping, required)
+            # Contains configuration for the vpn for the swimlane.
+            # NOTE: At this time, we roll the VPN in with each swimlane. This
+            #       makes sense for development, but may not when actually
+            #       going to deploy somewhere with an established VPN
+            #       environment. This setup is subject to change, but some form
+            #       of VPN will be required to access all swimlanes (though some
+            #       resources in the eventual public swimlane will be exposed
+            #       publicly)
             vpn:
-                # This cidr-block is where vpn client ips will be allocated
+                # `cidr-block` (string, optional)
+                # The cidr-block is where vpn client ips will be allocated
                 # from. This is different than the cidr block of the vpn subnet
                 # itself. This CIDR block cannot overlap with the VPC nor with
                 # the subnet being assoociated with the VPN endpoint.
@@ -429,25 +438,82 @@ config:
                 # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
                 # If not specified, this will default to "10.1.0.0/22"
                 cidr-block: "10.1.0.0/22"
-                # valid values are "tcp" and "udp". if not specified this will
+                # `transport-proto` (string, optional)
+                # Valid values are "tcp" and "udp". If not specified this will
                 # default to "udp"
                 transport-proto: "udp"
+
+                # `tls` (mapping, optional)
+                # The configuration for TLS for the swimlane's VPN.
+                # # If this mapping is not provided and valid, TLS will not be
+                # configured (or will have an invalid configuration) which will
+                # will lead to failure in deployment.
+                # NOTE: The VPN configured here is connected to as specified in
+                #       the AWS client VPN user guide:
+                #       https://docs.aws.amazon.com/vpn/latest/clientvpn-user/client-vpn-user-what-is.html
+                #       The ovpn client config files must be exported as covered
+                #       in the AWS client VPN admin guide:
+                #       https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/cvpn-working-endpoint-export.html
+                #       and given to all users needing to connect to VPN.
+                #       Additionally the ca cert, cert, and private key must all
+                #       be embedded in the ovpn config file. All of this is
+                #       managed externally to the CAPE infrastructure.
                 tls:
+                    # `dir` (string, required)
+                    # Path (relative to repo root) to the directory that
+                    # contains the TLS certs and keys. It is recommended to
+                    # make this a subdirectory of <repo_root>/assets-untracked
+                    # which is explicitly ignored by the git configuration (so
+                    # that these files never end up in version control).
                     dir: ./assets-untracked/tls/vpn
+                    # `ca-cert` (string, required)
+                    # The name of the cert chain file. At this time, we require
+                    # this to be a separate file (cannot be embedded in the
+                    # cert pem itself). The file should be in PEM format.
                     ca-cert: ca.crt
+                    # `server-key` (string, required)
+                    # The name of the key file. The file should be in PEM
+                    # format.
                     server-key: server.key
+                    # `server-cert` (string, required)
+                    # The name of the cert file. The file should be in PEM
+                    # format.
                     server-cert: server.crt
+            # `compute` (mapping, optional)
+            # Contains configuration about the available compute environments in
+            # CAPE. If this is not provided, an empty configuration will be used
+            # and no compute environments will be deployed
             compute:
+                # `environments` (mapping[], optional)
+                # A list of mappings, each containing the configuration of a
+                # specific compute environment. Each mapping in the list has the
+                # following schema:
+                # * `name` (string, required)
+                #   A name for the environment. Used for bookkeeping and must be
+                #   unique across all compute environments.
+                # * `image` (string, required)
+                #   The ID of the AWS AMI to launce the instances with. This
+                #   image must exist in AWS already.
+                # * `subnets` (string[], required)
+                #   A list of subnet names in which compute resources will be
+                #   launched. The subnet names must match the names of swimlane
+                #   subnets in this config file. At least one subnet must be
+                #   defined here.
+                # * `resources` (mapping, required)
+                #   A mapping of compute environment resource arguments to be
+                #   passed *as-is* to the compute environment constructor. The
+                #   key must exist, but the value may be empty if there are no
+                #   arguments to pass. The argument names must match those
+                #   expected in the pulumi docs:
+                #   https://www.pulumi.com/registry/packages/aws/api-docs/batch/computeenvironment/#computeenvironmentcomputeresources
+                #   Any supported argument listed here will be passed on as
+                #   configured.
                 environments:
                     - name: analysis
-                      # an AMI ID to use for each EC2 instance
                       image: ami-0cfe23bad78a802ea
-                      # a list of subnets that ec2 instances in the compute
-                      # environments live on
                       subnets:
                           - compute
                       resources:
-                          # a list of instance types to be able to request
                           instance_types:
                               [
                                   "c4.large",
@@ -456,12 +522,7 @@ config:
                                   "c4.4xlarge",
                                   "c4.8xlarge",
                               ]
-                          # the maximum number of vCPUs to have in the environment
                           max_vcpus: 16
-                          # (optional) the desired number of vCPUs to have in the environment
-                          # desired_vcpus: 8
-                          # (optional) the minimum number of vCPUs to have in the environment
-                          # min_vcpus: 8
     # `cape-cod:datalakehouse` (mapping, required)
     # Contains configuration specific to the data lake house (DLH). The DLH
     # contains tributaries, which are compionents that consist of a pair of raw
