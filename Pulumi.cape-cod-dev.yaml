@@ -151,7 +151,7 @@ config:
                   cidr-block: 10.0.2.0/24
                   routes:
                       - "public"
-                - name: vpn1
+                - name: vpn
                   cidr-block: 10.0.3.0/24
                   az: "us-east-2b"
                   routes:
@@ -382,7 +382,7 @@ config:
                 #     rendering. The schema of this mapping is completely
                 #     dependent on the template, and the vars will be passed
                 #     *as-is*. The key names must match the names of template
-                #     variables and the values must be appropriate for redering
+                #     variables and the values must be appropriate for rendering
                 #     those variables. If you wish to use the user data template
                 #     without rendering, pass in an empty value for `vars`
                 #   * `rebuild_on_change` (boolean, optional)
