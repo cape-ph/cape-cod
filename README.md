@@ -179,7 +179,7 @@ sensitive information. The CAPE infrastructure repo is configured with a
 the most basic form of protection to these assets. This may not be the best way
 for you and your deployment to manage it, but it is available. This is covered
 in some detail in the VPN README referenced in the
-[Additional Documentation](#additional-documentation) section below.
+[Additional Documentation](#-additional-documentation) section below.
 
 ## 📐 Additional Documentation
 
