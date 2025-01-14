@@ -14,5 +14,4 @@ datalake_house = DatalakeHouse(
 private_swimlane = PrivateSwimlane(
     f"{capeinfra.stack_ns}-pvsl",
     desc_name=f"{capeinfra.CAPE_STACK_NS} private swimlane",
-    data_catalog=datalake_house.catalog,
 )

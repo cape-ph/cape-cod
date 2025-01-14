@@ -676,7 +676,7 @@ config:
                                 - tabula-py==2.9.3
                                 - pypdf==4.3.1
                           - name: bactopia-results
-                            scripts: glue/etl/etl_bactopia_results.py
+                            script: glue/etl/etl_bactopia_results.py
                             src: result_raw
                             sink: result_clean
                             prefix: pipeline-output/bactopia-runs
