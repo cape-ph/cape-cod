@@ -4,13 +4,11 @@ import pulumi_aws as aws
 
 @pulumi.runtime.test
 def test_catalog(mock_datalake):
-    def check_catalog(args):
-        catalog_database, catalog_name = args
+    def check_catalog_bucket(args):
+        [catalog_database] = args
 
-        assert catalog_name == f"{mock_datalake.name}-catalog"
-        assert type(catalog_database) is aws.glue.CatalogDatabase
+        assert type(catalog_database) is aws.s3.BucketV2
 
     return pulumi.Output.all(
-        mock_datalake.catalog.catalog_database,
-        mock_datalake.catalog.name,
-    ).apply(check_catalog)
+        mock_datalake.catalog_bucket,
+    ).apply(check_catalog_bucket)
