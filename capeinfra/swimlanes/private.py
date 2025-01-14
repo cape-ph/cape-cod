@@ -24,14 +24,11 @@ from capeinfra.iam import (
     get_instance_profile,
     get_nextflow_executor_policy,
     get_sqs_lambda_dap_submit_policy,
-    get_sqs_lambda_glue_trigger_policy,
-    get_sqs_notifier_policy,
     get_vpce_api_invoke_policy,
 )
 
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
-from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.objectstorage import VersionedBucket
@@ -128,7 +125,6 @@ class PrivateSwimlane(ScopedSwimlane):
         self._create_hosted_domain()
         self.create_vpn()
         self.prepare_nextflow_executor()
-        self.create_dap_results_s3()
 
     @property
     def type_name(self) -> str:
@@ -175,7 +171,7 @@ class PrivateSwimlane(ScopedSwimlane):
             # we don't want to end up with the same thing in the list more than
             # once. could go with a set or filter, or we could just check if
             # it's in there before adding...
-            if not self._exposed_env_vars[ev]["resource_name"] in res:
+            if self._exposed_env_vars[ev]["resource_name"] not in res:
                 res.append(self._exposed_env_vars[ev]["resource_name"])
 
         self.apis[api_name]["deploy"] = CapeRestApi(
@@ -1000,240 +996,3 @@ class PrivateSwimlane(ScopedSwimlane):
                     )
                 ),
             )
-
-    # TODO: ISSUE #144
-    def create_dap_results_s3(self):
-        """Create an S3 bucket for the data analysis pipeline results.
-
-        This method also creates and ETL and crawler for the bucket.
-
-        NOTE: This is a temporary implementation. We do not intend for this to
-              remain in this format as it's very copy/paste from the tributary
-              setup.
-        """
-
-        # NOTE: not adding any of this to the config till we know how we want to
-        #       handle results/output s3 longer term in ISSUE #145
-        short_name = disemvowel("dapresults")
-        crawler_cfg = {
-            "classifiers": ["cape-csv-standard-classifier"],
-        }
-        etl_cfg = {
-            "name": "dap_results",
-            "script": "glue/etl/etl_bactopia_results.py",
-            # TODO: in the case of tributary ETL jobs, the prefix is added to
-            #       the dynamo table item for the xform and then is used
-            #       manually in the ETL script itself (due to difficulty having
-            #       different jobs run for different overlapping prefixes in
-            #       aws). in this case we're going to add it to the bucket
-            #       notification because we only have one etl for pipeline
-            #       output at this point and we only want the notifications in
-            #       that prefix. this will not work long term (if we have one
-            #       output location for all pipelines, which probably isn't a
-            #       good idea anyway). Regardless of what we do, the different
-            #       usages of prefix seems complicated and inconsistent.
-            "prefix": "pipeline-output/bactopia-runs",
-            "suffixes": ["tsv"],
-            # NOTE: no additional pythonmodules at this point
-        }
-
-        base_bucket_name = f"{self.basename}-{short_name}"
-        raw_bucket_name = f"{base_bucket_name}-raw-vbkt"
-        self.raw_dap_results_bucket = VersionedBucket(
-            raw_bucket_name,
-            desc_name=f"{self.desc_name} Temporary DAP Results Raw Output Bucket",
-            opts=ResourceOptions(parent=self),
-        )
-        clean_bucket_name = f"{base_bucket_name}-clean-vbkt"
-        self.clean_dap_results_bucket = VersionedBucket(
-            clean_bucket_name,
-            desc_name=f"{self.desc_name} Temporary DAP Results Clean Output Bucket",
-            opts=ResourceOptions(parent=self),
-        )
-
-        if self.data_catalog is not None:
-            DataCrawler(
-                f"{clean_bucket_name}-crwl",
-                self.clean_dap_results_bucket.bucket,
-                self.data_catalog.catalog_database,
-                opts=ResourceOptions(parent=self),
-                desc_name=(
-                    f"{self.desc_name} Temporary DAP Results data crawler"
-                ),
-                config=crawler_cfg,
-            )
-
-        # this queue is where all notifications of new objects added to the
-        # temporary DAP results bucket will go
-        self.dap_results_data_queue = aws.sqs.Queue(
-            # TODO: ISSUE #68
-            f"{self.basename}-daprsltsq",
-            name=f"{self.basename}-daprsltsq.fifo",
-            content_based_deduplication=True,
-            fifo_queue=True,
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Temporary DAP results data "
-                    "notification queue"
-                )
-            },
-        )
-
-        # setup ETL job for the DAP results
-        # NOTE: depending how we implement results handling, we may need to add
-        #       a dynamo abstraction like we have for raw data ETLs. If we have
-        #       a single ETL per pipeline and we tie the results s3 buckets to
-        #       pipelines, we probably wouldn't need that.
-        dap_results_etl_job = EtlJob(
-            f"{self.basename}-ETL-{short_name}",
-            self.raw_dap_results_bucket.bucket,
-            self.clean_dap_results_bucket.bucket,
-            capeinfra.meta.automation_assets_bucket.bucket,
-            opts=ResourceOptions(parent=self),
-            desc_name=(f"{self.desc_name} DAP results ETL job"),
-            config=etl_cfg,
-        )
-
-        # Lambda SQS Target setup
-        self.sqs_dap_results_trigger_role = get_inline_role(
-            f"{self.basename}-{short_name}-sqstrgrole",
-            f"{self.desc_name} Temporary DAP results data SQS trigger role",
-            "lmbd",
-            "lambda.amazonaws.com",
-            Output.all(
-                qname=self.dap_results_data_queue.name,
-                job_names=[dap_results_etl_job.job.name],
-            ).apply(
-                lambda args: get_sqs_lambda_glue_trigger_policy(
-                    args["qname"], args["job_names"]
-                )
-            ),
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Create our Lambda function that triggers the given glue job
-        self.dap_results_qmsg_handler = aws.lambda_.Function(
-            f"{self.basename}-{short_name}-sqslmbdtrgfnct",
-            role=self.sqs_dap_results_trigger_role.arn,
-            layers=[capeinfra.meta.capepy.lambda_layer.arn],
-            code=AssetArchive(
-                {
-                    # TODO: ISSUE #150 this script is usable as is for any glue
-                    #       job sqs handler, with the caveat that the glue job
-                    #       has to support a RAW_BUCKET_NAME and OBJECT_KEY
-                    #       env var (and the same sqs message format). it might
-                    #       be worth changing the job spec to take a
-                    #       `SRC_BUCKET_NAME` instead of `RAW` since not all
-                    #       sources will be really raw data.
-                    "index.py": FileAsset(
-                        "./assets/lambda/sqs_etl_job_trigger_lambda.py"
-                    )
-                }
-            ),
-            runtime="python3.10",
-            # in this case, the zip file for the lambda deployment is
-            # being created by this code. and the zip file will be
-            # called index. so the handler must be start with `index`
-            # and the actual function in the script must be named
-            # the same as the value here
-            handler="index.index_handler",
-            environment={
-                "variables": {
-                    "QUEUE_NAME": self.dap_results_data_queue.name,
-                }
-            },
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Temporary DAP results sqs message "
-                    "lambda trigger function"
-                )
-            },
-        )
-
-        aws.lambda_.EventSourceMapping(
-            f"{self.basename}-{short_name}-sqslmbdatrgr",
-            event_source_arn=self.dap_results_data_queue.arn,
-            function_name=self.dap_results_qmsg_handler.arn,
-            function_response_types=["ReportBatchItemFailures"],
-        )
-
-        # Bucket notification setup
-        # get a role for the raw bucket trigger
-        self.dap_results_bucket_trigger_role = get_inline_role(
-            f"{self.basename}-{short_name}-s3trgrole",
-            f"{self.desc_name} Temporary DAP Results data S3 bucket trigger role",
-            "lmbd",
-            "lambda.amazonaws.com",
-            Output.all(
-                qname=self.dap_results_data_queue.name,
-            ).apply(lambda args: get_sqs_notifier_policy(args["qname"])),
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Create our Lambda function that triggers the given glue job
-        new_object_handler = aws.lambda_.Function(
-            f"{self.basename}-{short_name}-lmbdtrgfnct",
-            role=self.dap_results_bucket_trigger_role.arn,
-            layers=[capeinfra.meta.capepy.lambda_layer.arn],
-            code=AssetArchive(
-                {
-                    "index.py": FileAsset(
-                        "./assets/lambda/new_dap_results_queue_notifier_lambda.py"
-                    )
-                }
-            ),
-            runtime="python3.10",
-            # in this case, the zip file for the lambda deployment is
-            # being created by this code. and the zip file will be
-            # called index. so the handler must be start with `index`
-            # and the actual function in the script must be named
-            # the same as the value here
-            handler="index.index_handler",
-            environment={
-                "variables": {
-                    "QUEUE_NAME": self.dap_results_data_queue.name,
-                    "ETL_JOB_ID": dap_results_etl_job.job.name,
-                }
-            },
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Temporary DAP Results data lambda "
-                    "trigger function"
-                )
-            },
-        )
-
-        # Give our function permission to invoke
-        new_obj_handler_permission = aws.lambda_.Permission(
-            f"{self.basename}-{short_name}S3-allow-lmbd",
-            action="lambda:InvokeFunction",
-            function=new_object_handler.arn,
-            principal="s3.amazonaws.com",
-            source_arn=self.raw_dap_results_bucket.bucket.arn,
-            opts=ResourceOptions(parent=self),
-        )
-
-        aws.s3.BucketNotification(
-            f"{self.basename}-{short_name}-s3ntfn",
-            bucket=self.raw_dap_results_bucket.bucket.id,
-            lambda_functions=[
-                aws.s3.BucketNotificationLambdaFunctionArgs(
-                    events=["s3:ObjectCreated:*"],
-                    lambda_function_arn=new_object_handler.arn,
-                    # TODO: ISSUE #144 This filter will be affected by how we do
-                    #       this long term. We can filter one prefix, so for now
-                    #       all pipelines should write output to sub-prefixes
-                    #       under `pipeline-output/`
-                    filter_prefix=f"{dap_results_etl_job.config['prefix']}/",
-                    filter_suffix=f".{sfx}",
-                )
-                for sfx in dap_results_etl_job.config["suffixes"]
-            ],
-            opts=ResourceOptions(
-                depends_on=[new_obj_handler_permission], parent=self
-            ),
-        )

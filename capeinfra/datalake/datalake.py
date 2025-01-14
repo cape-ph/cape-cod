@@ -62,15 +62,6 @@ class DatalakeHouse(CapeComponentResource):
             tags={"desc_name": f"{self.desc_name} data catalog s3 bucket"},
         )
 
-        # and the metadata catalog database itself
-        self.catalog = CatalogDatabase(
-            catalog_name,
-            self.catalog_bucket,
-            location=f"{catalog_name}-database",
-            opts=ResourceOptions(parent=self),
-            desc_name=f"{self.desc_name} data catalog database",
-        )
-
         athena_prefix = f"{self.name}-athena"
 
         # like the catalog, athena results require an object storage location
@@ -144,7 +135,7 @@ class DatalakeHouse(CapeComponentResource):
             self.tributaries.append(
                 Tributary(
                     f"{self.name}-T-{trib_name}",
-                    self.catalog.catalog_database,
+                    self.catalog_bucket,
                     self.etl_attr_ddb_table,
                     self.aws_region,
                     config=trib_config,
@@ -189,22 +180,19 @@ class Tributary(CapeComponentResource):
     """Represents a single domain in the data lake.
 
     A tributary in the CAPE datalake sense is an encapsulation of:
-      - an object storage location for raw data.
-      - an object storage location for clean data.
-      - a lambda job that kicks off when raw data lands. this may kick off lots
-        of other things, but should result in *something* going into the clean
-        object storage
+      - a collection of buckets for storing objects which can be source and sink
+        locations for data pipelines.
+      - a lambda job that kicks off when data lands in a source location. this
+        may kick off lots of other things, but should result in *something* going
+        into a sink object storage
       - one or more ETL jobs
-      - any crawlers that should run when data hits raw/clean
+      - any crawlers that should run when data hits a bucket
     """
-
-    RAW = "raw"
-    CLEAN = "clean"
 
     def __init__(
         self,
         name: str,
-        db: aws.glue.CatalogDatabase,
+        catalog_bucket: aws.s3.BucketV2,
         etl_attrs_ddb_table: aws.dynamodb.Table,
         aws_region: str,
         *args,
@@ -214,25 +202,35 @@ class Tributary(CapeComponentResource):
         super().__init__("capeinfra:datalake:Tributary", name, *args, **kwargs)
 
         self.name = f"{name}"
-        self.catalog = db
+        catalog_name = f"{self.name}-catalog"
+        self.catalog = CatalogDatabase(
+            catalog_name,
+            catalog_bucket,
+            location=f"{catalog_name}-database",
+            opts=ResourceOptions(parent=self),
+            desc_name=f"{self.desc_name} data catalog database",
+        )
         self.aws_region = aws_region
 
-        # configure the raw/clean buckets for the tributary. this will go down
+        # configure the buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
         self.buckets = {}
-        for bucket_type in [Tributary.RAW, Tributary.CLEAN]:
-            self.configure_bucket(bucket_type)
+        for bucket_id in self.config.get("buckets", default={}):
+            self.configure_bucket(bucket_id)
 
-        # this queue is where all notifications of new objects added to the raw
-        # bucket will go
-        self.raw_data_queue = aws.sqs.Queue(
+        # this queue is where all notifications of new objects added to any
+        # buckets which are source locations for pipelines
+        self.src_data_queue = aws.sqs.Queue(
             # TODO: ISSUE #68
-            f"{self.name}-rawq",
-            name=f"{self.name}-rawq.fifo",
+            f"{self.name}-srcq",
+            name=f"{self.name}-srcq.fifo",
             content_based_deduplication=True,
             fifo_queue=True,
-            tags={"desc_name": f"{self.desc_name} raw data notification queue"},
+            tags={
+                "desc_name": f"{self.desc_name} source data notification queue"
+            },
         )
+        self.sources = set()
 
         # setup all configured ETL jobs and add items to the DDB table for each.
         jobs = self.configure_etl(etl_attrs_ddb_table)
@@ -241,39 +239,40 @@ class Tributary(CapeComponentResource):
         self.configure_sqs_lambda_target(jobs)
 
         # Bucket notification setup
-        self.configure_raw_bucket_notifications(etl_attrs_ddb_table)
+        self.configure_src_bucket_notifications(etl_attrs_ddb_table)
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs({"tributary_name": self.name})
 
-    def configure_bucket(self, bucket_type: str):
-        """Creates/configures a raw or clean bucket based on config values.
+    def configure_bucket(self, bucket_id: str):
+        """Creates/configures a bucket based on config values.
 
         If a crawler is configured for the bucket, this will be added as well.
 
         Args:
-            bucket_type: The type ('raw'/'clean') of the bucket being created.
+            bucket_id: The id of the bucket being created.
         """
-        bucket_config = self.config.get("buckets", bucket_type)
+        bucket_config = self.config.get("buckets", bucket_id)
         bucket_name = bucket_config.get(
-            "name", default=f"{self.name}-{bucket_type}-vbkt"
+            "name", default=f"{self.name}-{bucket_id}-vbkt"
         )
         print(f"Bucket: {bucket_name}")
-        self.buckets[bucket_type] = VersionedBucket(
+        self.buckets[bucket_id] = VersionedBucket(
             bucket_name,
-            desc_name=f"{self.desc_name} {bucket_type}",
+            desc_name=f"{self.desc_name} {bucket_id}",
             opts=ResourceOptions(parent=self),
         )
 
-        if bucket_config.get("crawler"):
+        crawler_config = bucket_config.get("crawler")
+        if crawler_config:
             DataCrawler(
                 f"{bucket_name}-crwl",
-                self.buckets[bucket_type].bucket,
-                self.catalog,
+                self.buckets[bucket_id].bucket,
+                self.catalog.catalog_database,
                 opts=ResourceOptions(parent=self),
-                desc_name=f"{self.desc_name} {bucket_type} data crawler",
-                config=bucket_config["crawler"],
+                desc_name=f"{self.desc_name} {bucket_id} data crawler",
+                config=crawler_config,
             )
 
     def configure_etl(self, etl_attrs_ddb_table: aws.dynamodb.Table):
@@ -291,18 +290,18 @@ class Tributary(CapeComponentResource):
         for cfg in self.config.get("pipelines", "data", "etl", default=[]):
             job = EtlJob(
                 f"{self.name}-ETL-{cfg['name']}",
-                self.buckets[Tributary.RAW].bucket,
-                self.buckets[Tributary.CLEAN].bucket,
+                self.buckets[cfg.src].bucket,
+                self.buckets[cfg.sink].bucket,
                 capeinfra.meta.automation_assets_bucket.bucket,
                 opts=ResourceOptions(parent=self),
-                desc_name=(f"{self.desc_name} raw to clean ETL job"),
+                desc_name=(f"{self.desc_name} {cfg['name']} ETL job"),
                 config=cfg,
             )
 
             jobs.append(job)
 
             # put the ETL job configuration into the tributary attributes table
-            # for the raw bucket
+            # for the source bucket
             aws.dynamodb.TableItem(
                 f"{self.name}-{job.config['name']}-ddbitem",
                 table_name=etl_attrs_ddb_table.name,
@@ -313,7 +312,7 @@ class Tributary(CapeComponentResource):
                 item=Output.json_dumps(
                     {
                         "bucket_name": {
-                            "S": self.buckets[Tributary.RAW].bucket.id,
+                            "S": self.buckets[cfg.src].bucket.id,
                         },
                         "prefix": {"S": job.config["prefix"]},
                         "etl_job": {"S": job.job.id},
@@ -329,6 +328,7 @@ class Tributary(CapeComponentResource):
                 ),
                 opts=ResourceOptions(parent=self),
             )
+            self.sources.add(cfg.src)
 
         return jobs
 
@@ -338,14 +338,14 @@ class Tributary(CapeComponentResource):
         Args:
             jobs: A list of configured EtlJobs that will be used by this Lambda.
         """
-        # get a role for the raw bucket trigger
+        # get a role for the source bucket triggers
         self.sqs_trigger_role = get_inline_role(
             f"{self.name}-sqstrgrole",
-            f"{self.desc_name} raw data SQS trigger role",
+            f"{self.desc_name} source data SQS trigger role",
             "lmbd",
             "lambda.amazonaws.com",
             Output.all(
-                qname=self.raw_data_queue.name,
+                qname=self.src_data_queue.name,
                 job_names=[j.job.name for j in jobs],
             ).apply(
                 lambda args: get_sqs_lambda_glue_trigger_policy(
@@ -377,7 +377,7 @@ class Tributary(CapeComponentResource):
             handler="index.index_handler",
             environment={
                 "variables": {
-                    "QUEUE_NAME": self.raw_data_queue.name,
+                    "QUEUE_NAME": self.src_data_queue.name,
                 }
             },
             opts=ResourceOptions(parent=self),
@@ -388,29 +388,29 @@ class Tributary(CapeComponentResource):
 
         aws.lambda_.EventSourceMapping(
             f"{self.name}-sqslmbdatrgr",
-            event_source_arn=self.raw_data_queue.arn,
+            event_source_arn=self.src_data_queue.arn,
             function_name=self.qmsg_handler.arn,
             function_response_types=["ReportBatchItemFailures"],
         )
 
-    def configure_raw_bucket_notifications(
+    def configure_src_bucket_notifications(
         self, etl_attrs_ddb_table: aws.dynamodb.Table
     ):
-        """Configures notifications on the raw data bucket to invoke a function.
+        """Configures notifications on the source data buckets to invoke a function.
 
         Args:
             etl_attrs_ddb_table: The NOSQL table containing the ETL attributes
                                  for the data lake. The function being setup
                                  here will need to read from this table.
         """
-        # get a role for the raw bucket trigger
-        self.raw_bucket_trigger_role = get_inline_role(
+        # get a role for the source bucket trigger
+        self.src_bucket_trigger_role = get_inline_role(
             f"{self.name}-s3trgrole",
-            f"{self.desc_name} raw data S3 bucket trigger role",
+            f"{self.desc_name} source data S3 bucket trigger role",
             "lmbd",
             "lambda.amazonaws.com",
             Output.all(
-                qname=self.raw_data_queue.name,
+                qname=self.src_data_queue.name,
                 etl_attr_ddb_table_name=etl_attrs_ddb_table.name,
             ).apply(
                 lambda args: get_sqs_notifier_policy(
@@ -424,7 +424,7 @@ class Tributary(CapeComponentResource):
         # Create our Lambda function that triggers the given glue job
         new_object_handler = aws.lambda_.Function(
             f"{self.name}-lmbdtrgfnct",
-            role=self.raw_bucket_trigger_role.arn,
+            role=self.src_bucket_trigger_role.arn,
             layers=[capeinfra.meta.capepy.lambda_layer.arn],
             code=AssetArchive(
                 {
@@ -442,37 +442,38 @@ class Tributary(CapeComponentResource):
             handler="index.index_handler",
             environment={
                 "variables": {
-                    "QUEUE_NAME": self.raw_data_queue.name,
+                    "QUEUE_NAME": self.src_data_queue.name,
                     "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.name,
                     "DDB_REGION": self.aws_region,
                 }
             },
             opts=ResourceOptions(parent=self),
             tags={
-                "desc_name": f"{self.desc_name} raw data lambda trigger function"
+                "desc_name": f"{self.desc_name} source data lambda trigger function"
             },
         )
 
         # Give our function permission to invoke
-        new_obj_handler_permission = aws.lambda_.Permission(
-            f"{self.name}-rawS3-allow-lmbd",
-            action="lambda:InvokeFunction",
-            function=new_object_handler.arn,
-            principal="s3.amazonaws.com",
-            source_arn=self.buckets[Tributary.RAW].bucket.arn,
-            opts=ResourceOptions(parent=self),
-        )
+        for src in self.sources:
+            new_obj_handler_permission = aws.lambda_.Permission(
+                f"{self.name}-{src}-allow-lmbd",
+                action="lambda:InvokeFunction",
+                function=new_object_handler.arn,
+                principal="s3.amazonaws.com",
+                source_arn=self.buckets[src].bucket.arn,
+                opts=ResourceOptions(parent=self),
+            )
 
-        aws.s3.BucketNotification(
-            f"{self.name}-raw-s3ntfn",
-            bucket=self.buckets[Tributary.RAW].bucket.id,
-            lambda_functions=[
-                aws.s3.BucketNotificationLambdaFunctionArgs(
-                    events=["s3:ObjectCreated:*"],
-                    lambda_function_arn=new_object_handler.arn,
-                )
-            ],
-            opts=ResourceOptions(
-                depends_on=[new_obj_handler_permission], parent=self
-            ),
-        )
+            aws.s3.BucketNotification(
+                f"{self.name}-{src}-s3ntfn",
+                bucket=self.buckets[src].bucket.id,
+                lambda_functions=[
+                    aws.s3.BucketNotificationLambdaFunctionArgs(
+                        events=["s3:ObjectCreated:*"],
+                        lambda_function_arn=new_object_handler.arn,
+                    )
+                ],
+                opts=ResourceOptions(
+                    depends_on=[new_obj_handler_permission], parent=self
+                ),
+            )

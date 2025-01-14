@@ -617,21 +617,30 @@ config:
             #         Defaults to 5.
             - name: hai
               buckets:
-                  raw:
+                  input_raw:
                       name:
                       crawler:
-                  clean:
+                  input_clean:
                       name:
                       crawler:
+                          prefix: input # prefixes for tables in the database
                           excludes:
                           classifiers:
                               - cape-csv-standard-classifier
                           schedule: "0 2 * * ? *"
+                  result_raw:
+                      name:
+                  result_clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
               pipelines:
                   data:
                       etl:
                           - name: tnl
                             script: glue/etl/etl_tnl_alert.py
+                            src: input_raw
+                            sink: input_clean
                             prefix: tnl
                             suffixes:
                                 - xlsx
@@ -639,6 +648,8 @@ config:
                                 - openpyxl==3.1.2
                           - name: gphl-cre
                             script: glue/etl/etl_gphl_cre_alert.py
+                            src: input_raw
+                            sink: input_clean
                             prefix: gphl-cre
                             suffixes:
                                 - docx
@@ -646,25 +657,43 @@ config:
                                 - python-docx==1.1.2
                           - name: gphl-sequencing
                             script: glue/etl/etl_gphl_sequencing_alert.py
+                            src: input_raw
+                            sink: input_clean
                             prefix: gphl-sequencing
                             suffixes:
                                 - pdf
                             pymodules:
                                 - tabula-py==2.9.3
                                 - pypdf==4.3.1
+                          - name: bactopia-results
+                            scripts: glue/etl/etl_bactopia_results.py
+                            src: result_raw
+                            sink: result_clean
+                            prefix: pipeline-output/bactopia-runs
+                            suffixes:
+                                - tsv
             - name: genomics
               buckets:
-                  raw:
+                  input_raw:
                       name:
                       crawler:
-                  clean:
+                  input_clean:
                       name:
                       crawler:
                           classifiers:
+                          prefix: input # prefixes for tables in the database
+                  result_raw:
+                      name:
+                  result_clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
               pipelines:
                   data:
                       etl:
                           - name: fastx
+                            src: input_raw
+                            sink: input_clean
                             script: glue/etl/etl_fasta_fastq.py
                             prefix: fastx
                             suffixes:
