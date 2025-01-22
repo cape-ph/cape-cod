@@ -675,13 +675,6 @@ config:
                             pymodules:
                                 - tabula-py==2.9.3
                                 - pypdf==4.3.1
-                          - name: bactopia-results
-                            script: glue/etl/etl_bactopia_results.py
-                            src: result-raw
-                            sink: result-clean
-                            prefix: pipeline-output/bactopia-runs
-                            suffixes:
-                                - tsv
             - name: genomics
               buckets:
                   input-raw:
@@ -713,3 +706,10 @@ config:
                             pymodules:
                                 - pyfastx==2.1.0
                             max_concurrent_runs: 5
+                          - name: bactopia-results
+                            script: glue/etl/etl_bactopia_results.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: pipeline-output/bactopia-runs
+                            suffixes:
+                                - tsv
