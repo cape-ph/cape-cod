@@ -105,6 +105,9 @@ class DataCrawler(CapeComponentResource):
             if CUSTOM_CLASSIFIERS.get(c)
         ]
 
+        table_prefix = self.config["prefix"]
+        if table_prefix is not None:
+            table_prefix = f"{table_prefix}_"
         self.crawler = aws.glue.Crawler(
             f"{self.name}-gcrwl",
             role=self.crawler_role.arn,
@@ -120,7 +123,7 @@ class DataCrawler(CapeComponentResource):
             ],
             classifiers=custom_classifiers,
             schedule=f"cron({self.config['schedule']})",
-            table_prefix=self.config["prefix"],
+            table_prefix=table_prefix,
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Data Crawler"},
         )
