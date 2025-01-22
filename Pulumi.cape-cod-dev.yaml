@@ -627,10 +627,10 @@ config:
             #         Defaults to 5.
             - name: hai
               buckets:
-                  input_raw:
+                  input-raw:
                       name:
                       crawler:
-                  input_clean:
+                  input-clean:
                       name:
                       crawler:
                           prefix: input # prefixes for tables in the database
@@ -638,9 +638,9 @@ config:
                           classifiers:
                               - cape-csv-standard-classifier
                           schedule: "0 2 * * ? *"
-                  result_raw:
+                  result-raw:
                       name:
-                  result_clean:
+                  result-clean:
                       name:
                       crawler:
                           prefix: result # prefixes for tables in the database
@@ -649,8 +649,8 @@ config:
                       etl:
                           - name: tnl
                             script: glue/etl/etl_tnl_alert.py
-                            src: input_raw
-                            sink: input_clean
+                            src: input-raw
+                            sink: input-clean
                             prefix: tnl
                             suffixes:
                                 - xlsx
@@ -658,8 +658,8 @@ config:
                                 - openpyxl==3.1.2
                           - name: gphl-cre
                             script: glue/etl/etl_gphl_cre_alert.py
-                            src: input_raw
-                            sink: input_clean
+                            src: input-raw
+                            sink: input-clean
                             prefix: gphl-cre
                             suffixes:
                                 - docx
@@ -667,8 +667,8 @@ config:
                                 - python-docx==1.1.2
                           - name: gphl-sequencing
                             script: glue/etl/etl_gphl_sequencing_alert.py
-                            src: input_raw
-                            sink: input_clean
+                            src: input-raw
+                            sink: input-clean
                             prefix: gphl-sequencing
                             suffixes:
                                 - pdf
@@ -677,24 +677,24 @@ config:
                                 - pypdf==4.3.1
                           - name: bactopia-results
                             script: glue/etl/etl_bactopia_results.py
-                            src: result_raw
-                            sink: result_clean
+                            src: result-raw
+                            sink: result-clean
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
             - name: genomics
               buckets:
-                  input_raw:
+                  input-raw:
                       name:
                       crawler:
-                  input_clean:
+                  input-clean:
                       name:
                       crawler:
                           classifiers:
                           prefix: input # prefixes for tables in the database
-                  result_raw:
+                  result-raw:
                       name:
-                  result_clean:
+                  result-clean:
                       name:
                       crawler:
                           prefix: result # prefixes for tables in the database
@@ -702,8 +702,8 @@ config:
                   data:
                       etl:
                           - name: fastx
-                            src: input_raw
-                            sink: input_clean
+                            src: input-raw
+                            sink: input-clean
                             script: glue/etl/etl_fasta_fastq.py
                             prefix: fastx
                             suffixes:
