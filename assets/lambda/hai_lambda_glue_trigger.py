@@ -18,7 +18,7 @@ def index_handler(event, context):
     """
 
     glue_job_name = os.getenv("GLUE_JOB_NAME")
-    raw_bucket_name = os.getenv("RAW_BUCKET_NAME")
+    raw_bucket_name = os.getenv("SRC_BUCKET_NAME")
 
     # TODO this should be removed before any real deployment (dev is ok)
     print(
@@ -34,10 +34,10 @@ def index_handler(event, context):
         for rec in event["Records"]:
             run_id = glue_client.start_job_run(
                 JobName=glue_job_name,
-                # NOTE: CLEAN_BUCKET_NAME is a default parameter the job will
+                # NOTE: SINK_BUCKET_NAME is a default parameter the job will
                 #       always run with
                 Arguments={
-                    "--RAW_BUCKET_NAME": raw_bucket_name,
+                    "--SRC_BUCKET_NAME": raw_bucket_name,
                     "--OBJECT_KEY": BucketNotificationRecord(rec).key,
                 },
             )

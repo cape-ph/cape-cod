@@ -30,7 +30,7 @@ def index_handler(event, context):
             run_id = glue_client.start_job_run(
                 JobName=etl.job,
                 Arguments={
-                    "--RAW_BUCKET_NAME": etl.bucket,
+                    "--SRC_BUCKET_NAME": etl.bucket,
                     "--OBJECT_KEY": etl.key,
                 },
             )

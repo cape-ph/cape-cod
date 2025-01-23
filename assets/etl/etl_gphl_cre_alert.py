@@ -16,7 +16,7 @@ clean_obj_key = etl_job.parameters["OBJECT_KEY"].replace(".docx", ".csv")
 
 # the response should contain a StreamingBody object that needs to be converted
 # to a file like object to make the docx library happy
-document = Document(io.BytesIO(etl_job.get_raw_file()))
+document = Document(io.BytesIO(etl_job.get_src_file()))
 
 # NOTE: this document is assumed to contain a single table that needs to be
 #       processed and nothing else. The file consists of:
@@ -67,4 +67,4 @@ interim["State_Lab_ID"] = data["Lab ID"]
 # write out the transformed data
 with io.StringIO() as csv_buff:
     interim.to_csv(csv_buff, index=False)
-    etl_job.write_clean_file(csv_buff.getvalue(), clean_obj_key)
+    etl_job.write_sink_file(csv_buff.getvalue(), clean_obj_key)

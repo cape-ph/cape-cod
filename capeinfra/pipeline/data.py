@@ -281,7 +281,7 @@ class EtlJob(CapeComponentResource):
                 self.config["pymodules"]
             )
 
-        default_args["--CLEAN_BUCKET_NAME"] = self.sink_bucket.bucket
+        default_args["--SINK_BUCKET_NAME"] = self.sink_bucket.bucket
 
         # FIXME: FIGURE OUT HOW TO DEAL WITH OUTPUT[str] WITH ADDITIONAL PYTHON
         # MODULES, CURRENTLY BREAKS THE INSTALLATION OF THE WHEEL
@@ -357,7 +357,7 @@ class EtlJob(CapeComponentResource):
                     "GLUE_JOB_NAME": self.job.name,
                     # TODO: RENAME TO SRC_BUCKET_NAME and populate through ETL
                     # scripts
-                    "RAW_BUCKET_NAME": self.src_bucket.bucket,
+                    "SRC_BUCKET_NAME": self.src_bucket.bucket,
                 }
             },
             opts=ResourceOptions(parent=self),
