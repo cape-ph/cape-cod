@@ -79,6 +79,11 @@ def index_handler(event, context):
         response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
 
+        # BUG: Loop through all possible prefixes to identify all ETLs
+        # Example: /path/to/some/file.csv
+        #   /path/to/some
+        #   /path/to
+        #   /path
         for rec in event["Records"]:
             bucket_notif = BucketNotificationRecord(rec)
             # deconstruct the key (s3 name, prefix, suffix)
