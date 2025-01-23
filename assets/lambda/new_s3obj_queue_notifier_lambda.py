@@ -79,11 +79,6 @@ def index_handler(event, context):
         response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
 
-        # BUG: Loop through all possible prefixes to identify all ETLs
-        # Example: /path/to/some/file.csv
-        #   /path/to/some
-        #   /path/to
-        #   /path
         for rec in event["Records"]:
             bucket_notif = BucketNotificationRecord(rec)
             # deconstruct the key (s3 name, prefix, suffix)
@@ -100,26 +95,28 @@ def index_handler(event, context):
             #       to work for items with no extension
             _, _, suffix = objname.rpartition(".")
 
-            # grab the filtering criteria from dynamodb and see if we care about
-            # this object
-            etl_attrs = ddb_table.get_etls(bucket_notif.bucket, prefix)
+            while prefix:
+                # grab the filtering criteria from dynamodb and see if we care about
+                # this object
+                etl_attrs = ddb_table.get_etls(bucket_notif.bucket, prefix)
 
-            if etl_attrs:
-                # if the file passes criteria, add message to queue_name
-                if suffix in etl_attrs["suffixes"]:
-                    # we care about this object. go ahead and queue a message
-                    qmsg = {
-                        "bucket": bucket_notif.bucket,
-                        "key": bucket_notif.key,
-                    }
-                    qmsg.setdefault("etl_job", etl_attrs.get("etl_job"))
+                if etl_attrs:
+                    # if the file passes criteria, add message to queue_name
+                    if suffix in etl_attrs["suffixes"]:
+                        # we care about this object. go ahead and queue a message
+                        qmsg = {
+                            "bucket": bucket_notif.bucket,
+                            "key": bucket_notif.key,
+                        }
+                        qmsg.setdefault("etl_job", etl_attrs.get("etl_job"))
 
-                    send_etl_message(ddb_table, queue_name, queue_url, qmsg)
-                    processed_oi.append(bucket_notif)
+                        send_etl_message(ddb_table, queue_name, queue_url, qmsg)
+                        processed_oi.append(bucket_notif)
+                    else:
+                        ignored_oi.append(bucket_notif)
                 else:
                     ignored_oi.append(bucket_notif)
-            else:
-                ignored_oi.append(bucket_notif)
+                prefix, _, _ = prefix.rpartition("/")
 
         # Make our return message containing info about the processed and
         # ignored objects
