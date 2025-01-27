@@ -86,7 +86,7 @@ print(f"Processing new object: {alert_obj_key}")
 with io.StringIO() as sio_buff:
     writer = csv.writer(sio_buff)
     reader = csv.reader(
-        io.StringIO(etl_job.get_raw_file().decode("utf-8")), delimiter="\t"
+        io.StringIO(etl_job.get_src_file().decode("utf-8")), delimiter="\t"
     )
 
     # NOTE: based on file name matching above, we should never end up where an
@@ -122,4 +122,4 @@ with io.StringIO() as sio_buff:
 
             writer.writerow(row)
 
-    etl_job.write_clean_file(sio_buff.getvalue(), clean_obj_key)
+    etl_job.write_sink_file(sio_buff.getvalue(), clean_obj_key)

@@ -571,9 +571,12 @@ config:
             #         only currently supported custom classifier is
             #         cape-csv-standard-classifier
             #       * `schedule` (string, optional)
-            #         The crantab-formatted schedule for the crawler. Defaults
+            #         The crontab-formatted schedule for the crawler. Defaults
             #         to 0200 daily ("0 2 * * ? *"). Format details can be
             #         found here: https://en.wikipedia.org/wiki/Cron
+            #       * `prefix` (string, optional)
+            #         A prefix to be added to the beginning of table names made
+            #         by the crawler
             #   * `clean` (mapping, required)
             #     Contains configuration for the clean bucket. The schema is the
             #     same as the `raw` bucket section immediately preceding
@@ -590,6 +593,13 @@ config:
             #         ETL scripts in the tributary. This value is used in AWS
             #         resource names and thus should be kept as short as
             #         possible.
+            #       * `src` (string, required)
+            #         The id of the bucket which is operating as the location
+            #         for source files which will be inputted into the pipeline
+            #       * `sink` (string, required)
+            #         The id of the bucket which is operating as the location
+            #         for sink location where files where be outputted from the
+            #         pipeline
             #       * `script` (string, required)
             #         The path in the common assets bucket where the ETL script
             #         will be found. This is the deployed path, *not* the path
@@ -617,21 +627,30 @@ config:
             #         Defaults to 5.
             - name: hai
               buckets:
-                  raw:
+                  input-raw:
                       name:
                       crawler:
-                  clean:
+                  input-clean:
                       name:
                       crawler:
+                          prefix: input # prefixes for tables in the database
                           excludes:
                           classifiers:
                               - cape-csv-standard-classifier
                           schedule: "0 2 * * ? *"
+                  result-raw:
+                      name:
+                  result-clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
               pipelines:
                   data:
                       etl:
                           - name: tnl
                             script: glue/etl/etl_tnl_alert.py
+                            src: input-raw
+                            sink: input-clean
                             prefix: tnl
                             suffixes:
                                 - xlsx
@@ -639,6 +658,8 @@ config:
                                 - openpyxl==3.1.2
                           - name: gphl-cre
                             script: glue/etl/etl_gphl_cre_alert.py
+                            src: input-raw
+                            sink: input-clean
                             prefix: gphl-cre
                             suffixes:
                                 - docx
@@ -646,6 +667,8 @@ config:
                                 - python-docx==1.1.2
                           - name: gphl-sequencing
                             script: glue/etl/etl_gphl_sequencing_alert.py
+                            src: input-raw
+                            sink: input-clean
                             prefix: gphl-sequencing
                             suffixes:
                                 - pdf
@@ -654,17 +677,26 @@ config:
                                 - pypdf==4.3.1
             - name: genomics
               buckets:
-                  raw:
+                  input-raw:
                       name:
                       crawler:
-                  clean:
+                  input-clean:
                       name:
                       crawler:
                           classifiers:
+                          prefix: input # prefixes for tables in the database
+                  result-raw:
+                      name:
+                  result-clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
               pipelines:
                   data:
                       etl:
                           - name: fastx
+                            src: input-raw
+                            sink: input-clean
                             script: glue/etl/etl_fasta_fastq.py
                             prefix: fastx
                             suffixes:
@@ -674,3 +706,10 @@ config:
                             pymodules:
                                 - pyfastx==2.1.0
                             max_concurrent_runs: 5
+                          - name: bactopia-results
+                            script: glue/etl/etl_bactopia_results.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: pipeline-output/bactopia-runs
+                            suffixes:
+                                - tsv

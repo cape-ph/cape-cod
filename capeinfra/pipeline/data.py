@@ -50,6 +50,8 @@ class DataCrawler(CapeComponentResource):
             # NOTE: at this time, all given exclusions apply to all buckets the
             # crawler is set up for.
             "excludes": [],
+            # a prefix for the catalog table names
+            "prefix": None,
         }
 
     def __init__(
@@ -103,6 +105,9 @@ class DataCrawler(CapeComponentResource):
             if CUSTOM_CLASSIFIERS.get(c)
         ]
 
+        table_prefix = self.config["prefix"]
+        if table_prefix is not None:
+            table_prefix = f"{table_prefix}_"
         self.crawler = aws.glue.Crawler(
             f"{self.name}-gcrwl",
             role=self.crawler_role.arn,
@@ -118,6 +123,7 @@ class DataCrawler(CapeComponentResource):
             ],
             classifiers=custom_classifiers,
             schedule=f"cron({self.config['schedule']})",
+            table_prefix=table_prefix,
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Data Crawler"},
         )
@@ -215,8 +221,8 @@ class EtlJob(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        raw_bucket: aws.s3.BucketV2,
-        clean_bucket: aws.s3.BucketV2,
+        src_bucket: aws.s3.BucketV2,
+        sink_bucket: aws.s3.BucketV2,
         script_bucket: aws.s3.BucketV2,
         *args,
         default_args: dict = {},
@@ -240,8 +246,8 @@ class EtlJob(CapeComponentResource):
         super().__init__("capeinfra:datalake:Job", name, *args, **kwargs)
 
         self.name = f"{name}"
-        self.raw_bucket = raw_bucket
-        self.clean_bucket = clean_bucket
+        self.src_bucket = src_bucket
+        self.sink_bucket = sink_bucket
 
         self.etl_role = get_inline_role(
             self.name,
@@ -249,14 +255,14 @@ class EtlJob(CapeComponentResource):
             "",
             "glue.amazonaws.com",
             Output.all(
-                raw_bucket=raw_bucket.bucket,
-                clean_bucket=clean_bucket.bucket,
+                src_bucket=src_bucket.bucket,
+                sink_bucket=sink_bucket.bucket,
                 script_bucket=script_bucket.bucket,
                 assets_bucket=capeinfra.meta.automation_assets_bucket.bucket.bucket,
             ).apply(
                 lambda args: get_etl_job_s3_policy(
-                    args["raw_bucket"],
-                    args["clean_bucket"],
+                    args["src_bucket"],
+                    args["sink_bucket"],
                     args["script_bucket"],
                     self.config["script"],
                     args["assets_bucket"],
@@ -275,7 +281,7 @@ class EtlJob(CapeComponentResource):
                 self.config["pymodules"]
             )
 
-        default_args["--CLEAN_BUCKET_NAME"] = self.clean_bucket.bucket
+        default_args["--SINK_BUCKET_NAME"] = self.sink_bucket.bucket
 
         # FIXME: FIGURE OUT HOW TO DEAL WITH OUTPUT[str] WITH ADDITIONAL PYTHON
         # MODULES, CURRENTLY BREAKS THE INSTALLATION OF THE WHEEL
@@ -349,7 +355,9 @@ class EtlJob(CapeComponentResource):
             environment={
                 "variables": {
                     "GLUE_JOB_NAME": self.job.name,
-                    "RAW_BUCKET_NAME": self.raw_bucket.bucket,
+                    # TODO: RENAME TO SRC_BUCKET_NAME and populate through ETL
+                    # scripts
+                    "SRC_BUCKET_NAME": self.src_bucket.bucket,
                 }
             },
             opts=ResourceOptions(parent=self),
@@ -362,7 +370,7 @@ class EtlJob(CapeComponentResource):
             action="lambda:InvokeFunction",
             function=etl_function.arn,
             principal="s3.amazonaws.com",
-            source_arn=self.raw_bucket.arn,
+            source_arn=self.src_bucket.arn,
             opts=ResourceOptions(parent=self),
         )
 

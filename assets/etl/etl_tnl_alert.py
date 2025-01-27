@@ -44,7 +44,7 @@ OUT_COL_NAMES = [
 #       - a 1 column header row that can be ignored
 #       - another header row that contains all the column names for the table
 #       - rows of data
-data = pd.read_excel(etl_job.get_raw_file(), engine="openpyxl", skiprows=1)
+data = pd.read_excel(etl_job.get_src_file(), engine="openpyxl", skiprows=1)
 
 # strip out the ingorable header and reset the index
 data[1:].reset_index(drop=True, inplace=True)
@@ -118,7 +118,7 @@ interim["State_Lab_ID"] = data["State_Lab_ID"]
 # write out the transformed data
 with io.StringIO() as csv_buff:
     interim.to_csv(csv_buff, index=False)
-    etl_job.write_clean_file(
+    etl_job.write_sink_file(
         csv_buff.getvalue(),
         etl_job.parameters["OBJECT_KEY"].replace(".xlsx", ".csv"),
     )

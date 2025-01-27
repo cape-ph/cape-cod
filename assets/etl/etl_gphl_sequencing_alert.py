@@ -16,7 +16,7 @@ clean_obj_key = etl_job.parameters["OBJECT_KEY"].replace(".pdf", ".csv")
 
 # the response should contain a StreamingBody object that needs to be converted
 # to a file like object to make the pdf libraries happy
-f = io.BytesIO(etl_job.get_raw_file())
+f = io.BytesIO(etl_job.get_src_file())
 
 try:
     # get the report date from the 4th line of the pdf
@@ -65,4 +65,4 @@ interim["Date Reported"] = date_reported
 # write out the transformed data
 with io.StringIO() as csv_buff:
     interim.to_csv(csv_buff, index=False)
-    etl_job.write_clean_file(csv_buff.getvalue(), clean_obj_key)
+    etl_job.write_sink_file(csv_buff.getvalue(), clean_obj_key)

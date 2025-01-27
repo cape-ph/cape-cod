@@ -52,7 +52,7 @@ def handle_fasta(fname):
     fa = pyfastx.Fasta(fname)
 
     return {
-        "raw_object": f"s3://{etl_job.parameters['RAW_BUCKET_NAME']}/{alert_obj_key}",
+        "raw_object": f"s3://{etl_job.parameters['SRC_BUCKET_NAME']}/{alert_obj_key}",
         "file_name": fname,
         "format": FastxTypes.FASTA.value,
         "fasta_type": fa.type,
@@ -78,7 +78,7 @@ def handle_fastq(fname):
     fq = pyfastx.Fastq(fname)
 
     return {
-        "raw_object": f"s3://{etl_job.parameters['RAW_BUCKET_NAME']}/{alert_obj_key}",
+        "raw_object": f"s3://{etl_job.parameters['SRC_BUCKET_NAME']}/{alert_obj_key}",
         "file_name": fname,
         "format": FastxTypes.FASTQ.value,
         "num_sequences": len(fq),
@@ -101,7 +101,7 @@ obj_name = extract_objname_from_objkey()
 
 # the response should contain a StreamingBody object that needs to be converted
 # to a file like object to make the docx library happy
-f = io.BytesIO(etl_job.get_raw_file())
+f = io.BytesIO(etl_job.get_src_file())
 
 # we now have the file in memory, but need to write it locally because the
 # pyfastx library only deals with file paths and not file-likes
@@ -136,4 +136,4 @@ clean_obj_key = f"{alert_obj_key[0:alert_obj_key.find('.')]}.{frmt}.json"
 # write out our "clean" data
 with io.StringIO() as buff:
     json.dump(info, buff)
-    etl_job.write_clean_file(buff.getvalue(), clean_obj_key)
+    etl_job.write_sink_file(buff.getvalue(), clean_obj_key)
