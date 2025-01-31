@@ -114,27 +114,16 @@ config:
             # The full cidr block that will be given to the private swimlane.
             # Defaults to "10.0.0.0/24"
             cidr-block: 10.0.0.0/16
-            # `public-subnet` (mapping, optional)
-            # Contains the configuration of the public subnet. If not provided,
-            # a default public subnet configuration will be used. The public
-            # subnet is special and there will be one per VPC. This is required
-            # to house a NAT for the VPC that allows traffic egress to the
-            # internet.
-            public-subnet:
-                # `cidr-block` (string, optional)
-                # The cidr block that will be given to the public subnet of the
-                # swimlane. Defaults to "10.0.0.0/24"
-                cidr-block: 10.0.1.0/24
-            # `private-subnets` (mapping[], optional)
+            # `subnets` (mapping[], optional)
             # A list of configurations for the private subnets of the swimlane.
-            # If not provided, not privat subnets will be configured. All list
-            # items have the following schema:
+            # If not provided, no private subnets will be configured but a
+            # public subnet will be. All list items have the following schema:
             # * `name` (string, required)
             #   A short name for the subnet. This should be unique across all
-            #   private subnets in the swimlane. No private subnet may be named
-            #   "public"
+            #   subnets in the swimlane. The name "public" is special (see TODO
+            #   for ISSUE #131 below)
             # * `cidr-block` (string, required)
-            #   The cidr block given to the private subnet
+            #   The cidr block given to the subnet
             # * `routes` (string[], optional)
             #   A list of subnet names for which this subnet should be able to
             #   route to (via routing table). The special name "public" may be
@@ -146,7 +135,20 @@ config:
             #   the default availability zone will be used. This is generally
             #   only needed when setting up redundant private subnets for
             #   something like VPN
-            private-subnets:
+            # TODO: ISSUE #131
+            # We need to change this up to have a type per subnet. Types should
+            # be used instead of names (such as vpn1/2 where we currently need
+            # to know the name of a subnet when defining resundant pairs in
+            # different az's). Additionally, until issue 131 is in, the name
+            # "public" is special. If not provided, a default public subnet
+            # configuration will be used. This is required to house a NAT for
+            # the VPC that allows traffic egress to the internet.
+            # TODO: ISSUE #118
+            # We will be redoing the subnet addressing in the near future (after
+            # #109 and #131)
+            subnets:
+                - name: public
+                  cidr-block: 10.0.1.0/24
                 - name: compute
                   cidr-block: 10.0.2.0/24
                   routes:
@@ -156,12 +158,6 @@ config:
                   az: "us-east-2b"
                   routes:
                       - "public"
-                # TODO: ISSUE #118
-                #       We really don't want this kind of name coupling for
-                #       redundancy of subnets (or anything else). we should
-                #       change how these are specified so redundant subnets are
-                #       defined under the same blocks. This is just being done
-                #       for quick demo turn around
                 - name: vpn2
                   cidr-block: 10.0.4.0/24
                   az: "us-east-2c"
