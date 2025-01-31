@@ -65,10 +65,7 @@ class PrivateSwimlane(ScopedSwimlane):
             #       as we do not provide default certs in this repo. we want
             #       pulumi to fail if this is not provided.
             "tls": None,
-            "public-subnet": {
-                "cidr-block": "10.0.0.0/24",
-            },
-            "private-subnets": [],
+            "subnets": [{"name": "public", "cidr-block": "10.0.1.0/24"}],
             "static-apps": [],
             "api": {
                 "subdomain": "api",
@@ -481,8 +478,8 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_alb(
             self.APPLICATION_ALB,
             [
-                self.private_subnets["vpn"],
-                self.private_subnets["vpn2"],
+                self.subnets["vpn"],
+                self.subnets["vpn2"],
             ],
             self.domain_cert.acmcert,
         )
@@ -520,8 +517,8 @@ class PrivateSwimlane(ScopedSwimlane):
         self.create_alb(
             self.API_ALB,
             [
-                self.private_subnets["vpn"],
-                self.private_subnets["vpn2"],
+                self.subnets["vpn"],
+                self.subnets["vpn2"],
             ],
             self.domain_cert.acmcert,
         )
@@ -554,8 +551,8 @@ class PrivateSwimlane(ScopedSwimlane):
             vpc_endpoint_type="Interface",
             # TODO: ISSUE #131
             subnet_ids=[
-                self.private_subnets["vpn"].id,
-                self.private_subnets["vpn2"].id,
+                self.subnets["vpn"].id,
+                self.subnets["vpn2"].id,
             ],
             # TODO: ISSUE #112
             tags={
@@ -634,8 +631,8 @@ class PrivateSwimlane(ScopedSwimlane):
             private_dns_enabled=True,
             # TODO: ISSUE #131
             subnet_ids=[
-                self.private_subnets["vpn"].id,
-                self.private_subnets["vpn2"].id,
+                self.subnets["vpn"].id,
+                self.subnets["vpn2"].id,
             ],
             # TODO: ISSUE #112
             tags={
@@ -743,7 +740,7 @@ class PrivateSwimlane(ScopedSwimlane):
                     ami=aicfg["image"],
                     associate_public_ip_address=aicfg.get("public_ip", False),
                     instance_type=aicfg.get("instance_type", "t3a.medium"),
-                    subnet_id=self.private_subnets[aicfg["subnet_name"]].id,
+                    subnet_id=self.subnets[aicfg["subnet_name"]].id,
                     key_name=self.ec2inst_keypair.key_name,
                     # TODO: ISSUE #112
                     vpc_security_group_ids=[self.vpc.default_security_group_id],
@@ -812,7 +809,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # and DNS for the zone
         self.create_private_hosted_dns(
-            [self.private_subnets["vpn"], self.private_subnets["vpn2"]]
+            [self.subnets["vpn"], self.subnets["vpn2"]]
         )
 
     # TODO: ISSUE #100
@@ -895,7 +892,7 @@ class PrivateSwimlane(ScopedSwimlane):
         subnet_association = aws.ec2clientvpn.NetworkAssociation(
             f"{self.basename}-vpnassctn",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
-            subnet_id=self.private_subnets["vpn"].id,
+            subnet_id=self.subnets["vpn"].id,
             opts=ResourceOptions(
                 depends_on=[self.client_vpn_endpoint],
                 parent=self.client_vpn_endpoint,
@@ -919,7 +916,7 @@ class PrivateSwimlane(ScopedSwimlane):
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
             # access vpn subnet only
             target_network_cidr=(
-                self.private_subnets["vpn"].cidr_block.apply(lambda cb: f"{cb}")
+                self.subnets["vpn"].cidr_block.apply(lambda cb: f"{cb}")
             ),
             # access whole vpc
             # target_network_cidr=(self.vpc.cidr_block.apply(lambda cb: f"{cb}")),
@@ -945,7 +942,7 @@ class PrivateSwimlane(ScopedSwimlane):
             f"{self.basename}-inet-rt",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
             destination_cidr_block="0.0.0.0/0",
-            target_vpc_subnet_id=self.private_subnets["vpn"].id,
+            target_vpc_subnet_id=self.subnets["vpn"].id,
             opts=ResourceOptions(
                 depends_on=[subnet_association, auth_rule_inet]
             ),

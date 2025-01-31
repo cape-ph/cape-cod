@@ -39,7 +39,7 @@ class ScopedSwimlane(CapeComponentResource):
         )
         self._inet_gw = None
         self.basename = basename
-        self.private_subnets = dict[str, aws.ec2.Subnet]()
+        self.subnets = dict[str, aws.ec2.Subnet]()
         self.compute_environments = dict[str, BatchCompute]()
         self.albs = {}
         self.domain_name = self.config.get("domain")
@@ -59,8 +59,7 @@ class ScopedSwimlane(CapeComponentResource):
 
         self.create_domain_cert()
         self.create_vpc()
-        self.create_public_subnet()
-        self.create_private_subnets()
+        self.create_subnets()
         self.create_compute_environments()
         self.register_outputs({f"{self.basename}-vpc-id": self.vpc.id})
 
@@ -140,19 +139,22 @@ class ScopedSwimlane(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-    def create_public_subnet(self):
+    def _create_public_subnet(self, cidr_block):
         """Default implementation of public subnet creation for a swimlane.
 
         The default implementation sets up the subnet as configured and adds a
         NAT gateway for private subnet instances to send requests to the
         internet. Additionally all outgoing traffic is routed to the swimlane's
         internet gateway.
+
+        Args:
+            cidr_block: The cidr block for the public subnet
         """
         pubsn_name = f"{self.vpc_name}-pubsn"
-        self.public_subnet = aws.ec2.Subnet(
+        public_subnet = aws.ec2.Subnet(
             pubsn_name,
             vpc_id=self.vpc.id,
-            cidr_block=self.config.get("public-subnet", "cidr-block"),
+            cidr_block=cidr_block,
             map_public_ip_on_launch=True,
             tags={
                 "Name": pubsn_name,
@@ -164,7 +166,7 @@ class ScopedSwimlane(CapeComponentResource):
 
         self.nat_gateway = aws.ec2.NatGateway(
             f"{self.vpc_name}-natgw",
-            subnet_id=self.public_subnet.id,
+            subnet_id=public_subnet.id,
             allocation_id=eip.id,
         )
 
@@ -183,11 +185,13 @@ class ScopedSwimlane(CapeComponentResource):
 
         aws.ec2.RouteTableAssociation(
             f"{pubsn_name}-rtassn",
-            subnet_id=self.public_subnet.id,
+            subnet_id=public_subnet.id,
             route_table_id=public_rt.id,
         )
 
-    def create_private_subnets(self):
+        self.subnets["public"] = public_subnet
+
+    def create_subnets(self):
         """Default implementation of private subnet creation for a swimlane.
 
         The default implementation sets up the subnets as configured and routes
@@ -199,11 +203,30 @@ class ScopedSwimlane(CapeComponentResource):
         # to iteration below...
         named_pscs = {
             psnc["name"]: psnc
-            for psnc in self.config.get("private-subnets", default=[])
+            for psnc in self.config.get("subnets", default=[])
         }
 
+        # TODO: ISSUE #131
+        # During issue #131 this should be refactored to have the common code
+        # shared between create_public_subnet and this method combined. Took
+        # the shortcut of leaving create_public_subnet as-is during
+        # implementation of #109. this change will probably lead to the name of
+        # the public subnet changing, which will be a difference in `pulumi
+        # preview`, avoiding that for now.
+        # During this change, keep in mind that the public subnet must be
+        # created first (as other subnets will need to route to the nat
+        # gateway). We will also need to support multiple public subnets (e.g.
+        # one per az)
+        pub_sn_cfg = named_pscs.pop("public")
+        self._create_public_subnet(pub_sn_cfg["cidr-block"])
+
         # TODO: ISSUE #118
-        for psnc in self.config.get("private-subnets", default=[]):
+        for psnc in self.config.get("subnets", default=[]):
+            # TODO: ISSUE #131
+            # temp bypass of public subnet since it was handled above
+            if psnc["name"] == "public":
+                continue
+
             psnc = CapeConfig(psnc)
             config_sn_name = psnc.get("name")
             # devowel the configured name to try to save some characters in max
@@ -257,7 +280,7 @@ class ScopedSwimlane(CapeComponentResource):
                 route_table_id=subnet_rt.id,
             )
 
-            self.private_subnets[config_sn_name] = subnet
+            self.subnets[config_sn_name] = subnet
 
     def create_compute_environments(self):
         """Default implementation of compute environment creation for a swimlane.
@@ -271,7 +294,7 @@ class ScopedSwimlane(CapeComponentResource):
             self.compute_environments[name] = BatchCompute(
                 name,
                 vpc=self.vpc,
-                subnets=self.private_subnets,
+                subnets=self.subnets,
                 config=env,
             )
 
