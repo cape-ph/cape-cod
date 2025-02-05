@@ -124,13 +124,33 @@ config:
             #   for ISSUE #131 below)
             # * `cidr-block` (string, required)
             #   The cidr block given to the subnet
+            # * `type`: (string, required)
+            #   a string representing the type of subnet. some types are
+            #   special and they're strings are reserved. known types are:
+            #   * `nat`: the subnet will be given a nat gateway. at present,
+            #     this gateway will be an internet gateway and the NAT will be
+            #     for internet egress. no other gateways are yet supported
+            #     (meaning no private NAT)
+            #   * `compute`: there is no special handling for this type at this
+            #     time, but the name is reserved for the future
+            #   * `app`: there is no special handling for this type at this
+            #     time, but the name is reserved for the future
+            #   * `vpn`: any subnet marks as the VPN type will be configured to
+            #     be a target of the external client VPN setup.
+            # * `make_public`: (boolean, optional)
+            #   A boolean stating if the subnet should be made public (have an
+            #   associated public IP address). This defaults to False. In the
+            #   CAPE reference architecture, only subnets of type `nat` are
+            #   configured as public. If there is not an explicit need for a
+            #   subnet to be public (and then only if you understand the
+            #   security implications) then the subnet should be kept private
             # * `routes` (string[], optional)
             #   A list of subnet names for which this subnet should be able to
             #   route to (via routing table). The special name "public" may be
             #   used to allow routing to the public subnet for the swimlane (if
             #   public is not explicitly specified, the subnet will have no
             #   internet access).
-            # * `az` (string optional)
+            # * `az` (string, optional)
             #   An explicit availability zone for the subnet. If not provided,
             #   the default availability zone will be used. This is generally
             #   only needed when setting up redundant private subnets for
@@ -147,20 +167,28 @@ config:
             # We will be redoing the subnet addressing in the near future (after
             # #109 and #131)
             subnets:
+                # TODO: name being left 'public' for now to make sure typing
+                #       doesn't introduce `pulumi preview` changes. we don't
+                #       want to leave the name `public` forever though
                 - name: public
                   cidr-block: 10.0.1.0/24
+                  type: nat
+                  make_public: True
                 - name: compute
                   cidr-block: 10.0.2.0/24
+                  type: compute
                   routes:
                       - "public"
                 - name: vpn
                   cidr-block: 10.0.3.0/24
                   az: "us-east-2b"
+                  type: vpn
                   routes:
                       - "public"
                 - name: vpn2
                   cidr-block: 10.0.4.0/24
                   az: "us-east-2c"
+                  type: vpn
                   routes:
                       - "public"
             # `api` (mapping, optional)
