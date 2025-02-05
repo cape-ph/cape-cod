@@ -1,3 +1,16 @@
+# extensions for constant reusable values. these are *not* direct config values
+# for pulumi, but are used in various sections. changing the value here will
+# change all usages of the anchors elsewhere
+
+# availability zone 1
+x-az-1: &az1
+    az: "us-east-2b"
+# availability zone 2
+x-az-2: &az2
+    az: "us-east-2c"
+
+# actual config follows
+
 # `encryptionsalt` (string, required)
 # This key is added and managed by pulumi. this should not be modified outside
 # of that context, and is specific to your pulumi setup
@@ -179,15 +192,19 @@ config:
                   type: compute
                   routes:
                       - "public"
+                # - name: vpnaz1
                 - name: vpn
                   cidr-block: 10.0.3.0/24
-                  az: "us-east-2b"
+                  # az: "us-east-2b"
+                  <<: *az1
                   type: vpn
                   routes:
                       - "public"
+                # - name: vpnaz2
                 - name: vpn2
                   cidr-block: 10.0.4.0/24
-                  az: "us-east-2c"
+                  <<: *az2
+                  #az: "us-east-2c"
                   type: vpn
                   routes:
                       - "public"
