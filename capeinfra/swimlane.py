@@ -1,6 +1,7 @@
 """Module for swimlane related abstractions."""
 
 from abc import abstractmethod
+from enum import StrEnum
 
 import pulumi_aws as aws
 from pulumi import ResourceOptions, warn
@@ -13,6 +14,28 @@ from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.loadbalancer import AppLoadBalancer
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource, CapeConfig
+
+
+class SubnetType(StrEnum):
+    """Enum of all reserved subnet types for a swimlane.
+
+    Types are as follows:
+        * `nat`: the subnet will be given a nat gateway. at present, this
+                 this gateway will be an internet gateway and the NAT will be
+                 for internet egress. no other gateways are yet supported
+                 (meaning no private NAT)
+        * `compute`: there is no special handling for this type at this time,
+                     but the name is reserved for the future
+        * `app`: there is no special handling for this type at this time, but
+                 the name is reserved for the future
+        * `vpn`: any subnet marked as the VPN type will be configured to be a
+                 target of the external client VPN setup.
+    """
+
+    nat = "nat"
+    compute = "compute"
+    vpn = "vpn"
+    app = "app"
 
 
 class ScopedSwimlane(CapeComponentResource):
@@ -39,7 +62,10 @@ class ScopedSwimlane(CapeComponentResource):
         )
         self._inet_gw = None
         self.basename = basename
-        self.subnets = dict[str, aws.ec2.Subnet]()
+
+        # self.subnets keys are subnet names and values are tuples of subnet
+        # type (str) and subnet object (aws.ec2.Subnet)
+        self.subnets = dict[str, tuple[str, aws.ec2.Subnet]]()
         self.compute_environments = dict[str, BatchCompute]()
         self.albs = {}
         self.domain_name = self.config.get("domain")
@@ -107,6 +133,16 @@ class ScopedSwimlane(CapeComponentResource):
 
         return self._inet_gw
 
+    def get_subnets_by_type(self, sn_type: str) -> dict[str, aws.ec2.Subnet]:
+        """Get a dict of subnet names to subnets of a given type.
+
+        Args:
+            sn_type: The subnet type to filter for.
+        """
+        return {
+            name: sn for name, (t, sn) in self.subnets.items() if t == sn_type
+        }
+
     def create_domain_cert(self):
         """Create the domain wildcard cert for the swimlane."""
         # NOTE:not handling exception that could be thrown here as we want the
@@ -139,7 +175,7 @@ class ScopedSwimlane(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-    def _create_public_subnet(self, cidr_block):
+    def _create_public_subnet(self, cidr_block: str, sn_type: str):
         """Default implementation of public subnet creation for a swimlane.
 
         The default implementation sets up the subnet as configured and adds a
@@ -189,7 +225,7 @@ class ScopedSwimlane(CapeComponentResource):
             route_table_id=public_rt.id,
         )
 
-        self.subnets["public"] = public_subnet
+        self.subnets["public"] = (sn_type, public_subnet)
 
     def create_subnets(self):
         """Default implementation of private subnet creation for a swimlane.
@@ -217,8 +253,10 @@ class ScopedSwimlane(CapeComponentResource):
         # created first (as other subnets will need to route to the nat
         # gateway). We will also need to support multiple public subnets (e.g.
         # one per az)
+        # TODO: during ISSUE #131, handle the make_public config option
+        #       (defaults to False) and make AZ required
         pub_sn_cfg = named_pscs.pop("public")
-        self._create_public_subnet(pub_sn_cfg["cidr-block"])
+        self._create_public_subnet(pub_sn_cfg["cidr-block"], pub_sn_cfg["type"])
 
         # TODO: ISSUE #118
         for psnc in self.config.get("subnets", default=[]):
@@ -280,7 +318,7 @@ class ScopedSwimlane(CapeComponentResource):
                 route_table_id=subnet_rt.id,
             )
 
-            self.subnets[config_sn_name] = subnet
+            self.subnets[config_sn_name] = (psnc["type"], subnet)
 
     def create_compute_environments(self):
         """Default implementation of compute environment creation for a swimlane.
@@ -294,7 +332,7 @@ class ScopedSwimlane(CapeComponentResource):
             self.compute_environments[name] = BatchCompute(
                 name,
                 vpc=self.vpc,
-                subnets=self.subnets,
+                subnets=self.get_subnets_by_type(SubnetType.compute),
                 config=env,
             )
 
