@@ -2,6 +2,7 @@
 
 from abc import abstractmethod
 from enum import StrEnum
+from typing import Any
 
 import pulumi_aws as aws
 from pulumi import ResourceOptions, warn
@@ -227,6 +228,23 @@ class ScopedSwimlane(CapeComponentResource):
 
         self.subnets["public"] = (sn_type, public_subnet)
 
+    def _check_subnet_configs(self, sn_configs: dict[str, dict[str, Any]]):
+        """Check the subnet configuration values for baseline requirements.
+
+        Args:
+            sn_configs: A dict of subnet config dicts keyed on subnet name.
+        """
+
+        for name, cfg in sn_configs.items():
+            # we require an AZ to be specified for all subnets. we are not
+            # checking the validity of the az, nor that redundant subnets
+            # are in different AZs or anything else like that. maybe one day
+            if "az" not in cfg:
+                raise KeyError(
+                    f"Config for subnet {name} does not contain required key "
+                    "'az'"
+                )
+
     def create_subnets(self):
         """Default implementation of private subnet creation for a swimlane.
 
@@ -255,6 +273,10 @@ class ScopedSwimlane(CapeComponentResource):
         # one per az)
         # TODO: during ISSUE #131, handle the make_public config option
         #       (defaults to False) and make AZ required
+
+        # make sure subnets meet baseline to continue
+        self._check_subnet_configs(named_pscs)
+
         pub_sn_cfg = named_pscs.pop("public")
         self._create_public_subnet(pub_sn_cfg["cidr-block"], pub_sn_cfg["type"])
 
