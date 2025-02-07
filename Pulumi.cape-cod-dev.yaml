@@ -187,24 +187,22 @@ config:
                   cidr-block: 10.0.1.0/24
                   type: nat
                   make_public: True
+                  <<: *az1
                 - name: compute
                   cidr-block: 10.0.2.0/24
                   type: compute
+                  <<: *az1
                   routes:
                       - "public"
-                # - name: vpnaz1
-                - name: vpn
+                - name: vpnaz1
                   cidr-block: 10.0.3.0/24
-                  # az: "us-east-2b"
                   <<: *az1
                   type: vpn
                   routes:
                       - "public"
-                # - name: vpnaz2
-                - name: vpn2
+                - name: vpnaz2
                   cidr-block: 10.0.4.0/24
                   <<: *az2
-                  #az: "us-east-2c"
                   type: vpn
                   routes:
                       - "public"
