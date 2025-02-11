@@ -32,7 +32,7 @@ from capeinfra.iam import (
 from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.objectstorage import VersionedBucket
-from capeinfra.swimlane import ScopedSwimlane
+from capeinfra.swimlane import ScopedSwimlane, SubnetType
 from capeinfra.util.file import file_as_string
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capeinfra.util.naming import disemvowel
@@ -477,10 +477,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.create_alb(
             self.APPLICATION_ALB,
-            [
-                self.subnets["vpn"],
-                self.subnets["vpn2"],
-            ],
+            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
             self.domain_cert.acmcert,
         )
 
@@ -516,10 +513,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.create_alb(
             self.API_ALB,
-            [
-                self.subnets["vpn"],
-                self.subnets["vpn2"],
-            ],
+            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
             self.domain_cert.acmcert,
         )
 
@@ -549,10 +543,9 @@ class PrivateSwimlane(ScopedSwimlane):
             vpc_id=self.vpc.id,
             service_name=f"com.amazonaws.{aws.get_region().name}.s3",
             vpc_endpoint_type="Interface",
-            # TODO: ISSUE #131
             subnet_ids=[
-                self.subnets["vpn"].id,
-                self.subnets["vpn2"].id,
+                s.id
+                for _, s in self.get_subnets_by_type(SubnetType.VPN).items()
             ],
             # TODO: ISSUE #112
             tags={
@@ -629,10 +622,9 @@ class PrivateSwimlane(ScopedSwimlane):
             service_name=f"com.amazonaws.{aws.get_region().name}.execute-api",
             vpc_endpoint_type="Interface",
             private_dns_enabled=True,
-            # TODO: ISSUE #131
             subnet_ids=[
-                self.subnets["vpn"].id,
-                self.subnets["vpn2"].id,
+                s.id
+                for _, s in self.get_subnets_by_type(SubnetType.VPN).items()
             ],
             # TODO: ISSUE #112
             tags={
@@ -734,13 +726,14 @@ class PrivateSwimlane(ScopedSwimlane):
 
             # now create the instance
             # TODO: ISSUE #184
+            _, subnet = self.subnets[aicfg["subnet_name"]]
             self.instance_apps[aicfg["name"]] = {
                 "instance": aws.ec2.Instance(
                     f"{self.basename}-{aicfg['name']}-ec2i",
                     ami=aicfg["image"],
                     associate_public_ip_address=aicfg.get("public_ip", False),
                     instance_type=aicfg.get("instance_type", "t3a.medium"),
-                    subnet_id=self.subnets[aicfg["subnet_name"]].id,
+                    subnet_id=subnet.id,
                     key_name=self.ec2inst_keypair.key_name,
                     # TODO: ISSUE #112
                     vpc_security_group_ids=[self.vpc.default_security_group_id],
@@ -809,7 +802,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # and DNS for the zone
         self.create_private_hosted_dns(
-            [self.subnets["vpn"], self.subnets["vpn2"]]
+            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
         )
 
     # TODO: ISSUE #100
@@ -886,67 +879,66 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
-        # The client endpoint needs to be associated with a subnet, so associate
-        # it with the configured "vpn" subnet.
-        # TODO: ISSUE #100
-        subnet_association = aws.ec2clientvpn.NetworkAssociation(
-            f"{self.basename}-vpnassctn",
-            client_vpn_endpoint_id=self.client_vpn_endpoint.id,
-            subnet_id=self.subnets["vpn"].id,
-            opts=ResourceOptions(
-                depends_on=[self.client_vpn_endpoint],
-                parent=self.client_vpn_endpoint,
-            ),
-        )
-
-        # By default, the client endpoint will get a route to the VPC itself. we
-        # need to also authorize the endpoint to route traffic to the VPN subnet
-        # and to the internet (through the VPN subnet). This requires an auth
-        # rule and a route for the internet case and just an auth rule for the
-        # VPN case
-
-        # NOTE: leaving as 2 explicit auth rule creations instead of
-        # trying to reduce DRY violation in a loop or something on purpose. Do
-        # not know how this is going to shake out in the long term and we may
-        # end up with more/fewer rules. :shrug: we can refactor when that
-        # becomes clear
-
-        aws.ec2clientvpn.AuthorizationRule(
-            f"{self.basename}-vpn-authzrl",
-            client_vpn_endpoint_id=self.client_vpn_endpoint.id,
-            # access vpn subnet only
-            target_network_cidr=(
-                self.subnets["vpn"].cidr_block.apply(lambda cb: f"{cb}")
-            ),
-            # access whole vpc
-            # target_network_cidr=(self.vpc.cidr_block.apply(lambda cb: f"{cb}")),
-            # TODO: ISSUE #101
-            authorize_all_groups=True,
-            opts=ResourceOptions(parent=self.client_vpn_endpoint),
-        )
-
+        # For client VPN, all traffic egress to the internet will be allowed
         auth_rule_inet = aws.ec2clientvpn.AuthorizationRule(
-            f"{self.basename}-inet-authzrl",
+            f"{self.basename}-vpninet-authzrl",
             client_vpn_endpoint_id=self.client_vpn_endpoint.id,
-            # access vpn subnet only
+            # access internet
             target_network_cidr="0.0.0.0/0",
-            # access whole vpc
-            # target_network_cidr=(self.vpc.cidr_block.apply(lambda cb: f"{cb}")),
             # TODO: ISSUE #101
             authorize_all_groups=True,
             opts=ResourceOptions(parent=self.client_vpn_endpoint),
         )
 
-        # Route to internet (egress only)
-        aws.ec2clientvpn.Route(
-            f"{self.basename}-inet-rt",
-            client_vpn_endpoint_id=self.client_vpn_endpoint.id,
-            destination_cidr_block="0.0.0.0/0",
-            target_vpc_subnet_id=self.subnets["vpn"].id,
-            opts=ResourceOptions(
-                depends_on=[subnet_association, auth_rule_inet]
-            ),
-        )
+        # associate the VPN endpoint with all VPN subnets and setup auth
+        # rules/routes for the vpn subnets
+        for sn_name, sn in self.get_subnets_by_type(SubnetType.VPN).items():
+
+            # The client endpoint needs to be associated with one or more
+            # subnets
+            # TODO: ISSUE #100
+            subnet_association = aws.ec2clientvpn.NetworkAssociation(
+                f"{self.basename}-{sn_name}assctn",
+                client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+                subnet_id=sn.id,
+                opts=ResourceOptions(
+                    depends_on=[self.client_vpn_endpoint],
+                    parent=self.client_vpn_endpoint,
+                ),
+            )
+
+            # By default, the client endpoint will get a route to the VPC itself. we
+            # need to also authorize the endpoint to route traffic to the VPN
+            # subnets and to the internet (through the VPN subnets). This requires
+            # an auth rule and a route for the internet case and just an auth rule
+            # for the VPN case
+
+            # NOTE: leaving as 2 explicit auth rule creations instead of
+            # trying to reduce DRY violation in a loop or something on purpose. Do
+            # not know how this is going to shake out in the long term and we may
+            # end up with more/fewer rules. :shrug: we can refactor when that
+            # becomes clear
+
+            aws.ec2clientvpn.AuthorizationRule(
+                f"{self.basename}-{sn_name}-authzrl",
+                client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+                # access vpn subnet only
+                target_network_cidr=(sn.cidr_block.apply(lambda cb: f"{cb}")),
+                # TODO: ISSUE #101
+                authorize_all_groups=True,
+                opts=ResourceOptions(parent=self.client_vpn_endpoint),
+            )
+
+            # Route to internet (egress only)
+            aws.ec2clientvpn.Route(
+                f"{self.basename}-{sn_name}inet-rt",
+                client_vpn_endpoint_id=self.client_vpn_endpoint.id,
+                destination_cidr_block="0.0.0.0/0",
+                target_vpc_subnet_id=sn.id,
+                opts=ResourceOptions(
+                    depends_on=[subnet_association, auth_rule_inet]
+                ),
+            )
 
     # TODO: ISSUE #115
     # Generalize this to work for all "head node"/"job submission"-like EC2

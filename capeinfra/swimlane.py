@@ -1,6 +1,8 @@
 """Module for swimlane related abstractions."""
 
 from abc import abstractmethod
+from enum import Enum
+from typing import Any
 
 import pulumi_aws as aws
 from pulumi import ResourceOptions, warn
@@ -13,6 +15,32 @@ from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.loadbalancer import AppLoadBalancer
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource, CapeConfig
+
+
+# TODO: ISSUE #198
+class SubnetType(str, Enum):
+    """Enum of all reserved subnet types for a swimlane.
+
+    The order of members of the enum is important. At a minimum it implies the
+    order the subnets should be created in.
+
+    Types are as follows:
+        * `nat`: the subnet will be given a nat gateway. at present, this
+                 this gateway will be an internet gateway and the NAT will be
+                 for internet egress. no other gateways are yet supported
+                 (meaning no private NAT)
+        * `vpn`: any subnet marked as the VPN type will be configured to be a
+                 target of the external client VPN setup.
+        * `compute`: there is no special handling for this type at this time,
+                     but the name is reserved for the future
+        * `app`: there is no special handling for this type at this time, but
+                 the name is reserved for the future
+    """
+
+    NAT = "nat"
+    VPN = "vpn"
+    COMPUTE = "compute"
+    APP = "app"
 
 
 class ScopedSwimlane(CapeComponentResource):
@@ -39,7 +67,15 @@ class ScopedSwimlane(CapeComponentResource):
         )
         self._inet_gw = None
         self.basename = basename
-        self.subnets = dict[str, aws.ec2.Subnet]()
+
+        # self.subnets keys are subnet names and values are tuples of subnet
+        # type (str) and subnet object (aws.ec2.Subnet)
+        self.subnets = dict[str, tuple[str, aws.ec2.Subnet]]()
+        # self.az_assets keys are availability zone strings and values are
+        # dicts of assets used in that az that other resources may need access
+        # to. e.g. self.az_assets["us-east-2b"]["inet_nat_gw"] is the internet
+        # facing nat gateway for az "us=east-2b"
+        self.az_assets = dict[str, dict[str, Any]]()
         self.compute_environments = dict[str, BatchCompute]()
         self.albs = {}
         self.domain_name = self.config.get("domain")
@@ -107,6 +143,16 @@ class ScopedSwimlane(CapeComponentResource):
 
         return self._inet_gw
 
+    def get_subnets_by_type(self, sn_type: str) -> dict[str, aws.ec2.Subnet]:
+        """Get a dict of subnet names to subnets of a given type.
+
+        Args:
+            sn_type: The subnet type to filter for.
+        """
+        return {
+            name: sn for name, (t, sn) in self.subnets.items() if t == sn_type
+        }
+
     def create_domain_cert(self):
         """Create the domain wildcard cert for the swimlane."""
         # NOTE:not handling exception that could be thrown here as we want the
@@ -139,57 +185,244 @@ class ScopedSwimlane(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-    def _create_public_subnet(self, cidr_block):
-        """Default implementation of public subnet creation for a swimlane.
+    # TODO: ISSUE #198
+    def _setup_nat_subnet(
+        self, basename: str, az: str, routes: list, subnet: aws.ec2.Subnet
+    ):
+        """Associate the given subnet with a NAT GW pointed at an internet GW.
 
-        The default implementation sets up the subnet as configured and adds a
-        NAT gateway for private subnet instances to send requests to the
-        internet. Additionally all outgoing traffic is routed to the swimlane's
-        internet gateway.
+        No check is made that this subnet is in fact public facing. The NAT GW
+        is setup for internet egress only.
 
         Args:
-            cidr_block: The cidr block for the public subnet
+            basename: The string to use as the base for the resource names
+            az: The name of the availability zone to create the nat in.
+            subnet: The subnet to associate with an internet facing NAT GW.
+        Returns:
+            A new list of routes for the subent with the internet egress route
+            first in the list.
         """
-        pubsn_name = f"{self.vpc_name}-pubsn"
-        public_subnet = aws.ec2.Subnet(
-            pubsn_name,
-            vpc_id=self.vpc.id,
-            cidr_block=cidr_block,
-            map_public_ip_on_launch=True,
-            tags={
-                "Name": pubsn_name,
-                "desc_name": f"{self.desc_name} public subnet",
-            },
-        )
 
-        eip = aws.ec2.Eip(f"{self.vpc_name}-nat-eip")
+        eip = aws.ec2.Eip(f"{basename}-nateip")
 
-        self.nat_gateway = aws.ec2.NatGateway(
-            f"{self.vpc_name}-natgw",
-            subnet_id=public_subnet.id,
+        nat_gateway = aws.ec2.NatGateway(
+            f"{basename}-natgw",
+            subnet_id=subnet.id,
             allocation_id=eip.id,
         )
 
-        public_rt = aws.ec2.RouteTable(
-            f"{pubsn_name}-rt",
+        # we want to return a new list of routes with the internet egress route
+        # being first, and all routes we were given initially after that
+        nat_sn_routes = [
+            {
+                # all outgoing traffic in the public subnet goes to the
+                # internet gateway
+                "cidr_block": "0.0.0.0/0",
+                "gateway_id": self.internet_gateway.id,
+            }
+        ]
+
+        nat_sn_routes.extend(routes)
+
+        # NOTE: this is a little bit obnoxious. we pass in the AZ string to
+        #       this method even though we should have access to it via the
+        #       subnet object. reason being is that it's an Output property
+        #       on the subnet, and if we use it as a key into az_assets (using
+        #       apply()) it might not be resolved by the time we create another
+        #       subnet that needs to route to it. so we bypass the resolution
+        #       time by passing in a string that we know will exist when needed
+        self.az_assets.setdefault(az, {}).setdefault("inet_nat_gw", nat_gateway)
+
+        return nat_sn_routes
+
+    # TODO: ISSUE #198
+    def _check_subnet_configs(
+        self,
+        sn_configs: dict[str, dict[str, Any]],
+        required_keys: list[str] = ["az"],
+    ):
+        """Check the subnet configuration values for baseline requirements.
+
+        By default, we require an AZ to be specified for all subnets. We are
+        not checking the validity of the az, nor that redundant subnets are
+        in different AZs or anything else like that. In the event that a
+        subclass overrides this default implementation, 'az' needs to be
+        included or there could be issues in subnet creation.
+
+        Args:
+            sn_configs: A dict of subnet config dicts keyed on subnet name.
+            required_keys: A list of required config keys. If any are missing,
+                           deployment will halt due to a KeyError
+        Raises:
+            KeyError: on missing required config key.
+        """
+
+        for name, cfg in sn_configs.items():
+            for rq in required_keys:
+                if rq not in cfg:
+                    raise KeyError(
+                        f"Config for subnet {name} does not contain required key "
+                        f"'{rq}'"
+                    )
+
+    # TODO: ISSUE #198
+    def _resolve_subnet_dependencies(
+        self, sn_configs: dict[str, dict[str, Any]]
+    ):
+        """Return creation-ordered dict of {name:subnet_config}.
+
+        This is a very naive implementation of a dependency resolver. Right now
+        we just ensure order based on subnet type, with nat subnets being
+        handled first as we need their nat gateways available for internet
+        egress for other subnets.
+
+        Args:
+            sn_configs: Unordered dict of format {sn_name: sn_config}.
+        Returns:
+            A dict who's insertion order is the order in which subnets should be
+            created.
+        """
+        ordered_subnet_configs = {}
+        processed_keys = []
+
+        # SubnetType members are in the order we're going to create subnets in.
+        # As we use a string enum for that, we can't really sort the items based
+        # on the enum as it wants to use lexicographical sort. We could make
+        # ge/le methods in the enum class to support that i guess, but we could
+        # also just accept a small performance hit for multiple loops here as
+        # it will just slow the deployment down by a tad. In reality we may
+        # come up with a better dependency resolution algo anyway that could
+        # make any optimizaion done now useless anyway. So multiple loops it
+        # is...
+
+        # first insert all the subnets with known types from our enumeration
+        # NOTE: the for...in here is in the order we want due to how SubnetType
+        #       is created. Don't go mucking with the order of types.
+        for sn_type in SubnetType:
+            for sn_name, sn_cfg in sn_configs.items():
+                if sn_type == sn_cfg.get("type", None):
+                    ordered_subnet_configs[sn_name] = sn_cfg
+                    processed_keys.append(sn_name)
+
+        # now add everything else that has a type we don't know about
+        ordered_subnet_configs.update(
+            {k: v for k, v in sn_configs.items() if k not in processed_keys}
+        )
+
+        # and return the sorted dict
+        return ordered_subnet_configs
+
+    # TODO: ISSUE #198
+    def _create_route_list(self, sn_name: str, rte_cfgs: dict[str, dict]):
+        """Return a list of routes formatted for creating a route table.
+
+        Args:
+            sn_name: The name of the subnet the routes are being created for.
+            rte_cfgs: A dict of the form {subnet_cfg_name: subnet_cfg} used for
+                      creating routes based on names from the config file.
+        Returns:
+            A list of dicts containing cidr_block and a an id of a gateway to
+            route to. This will have a different key based on if the gateway is
+            a NAT (`nat_gateway_id`) or another subnet (`gateway_id`).
+        """
+
+        routes = []
+
+        for rte, rcfg in rte_cfgs.items():
+            if rcfg is None:
+                warn(
+                    f"Subnet {sn_name} is configured to have a route to "
+                    f"a subnet ({rte}) that is not found. This route will "
+                    "be ignored."
+                )
+                continue
+            # NOTE: special handling for the NAT routes. we
+            #       assume in this case we're reouting all traffic to the
+            #       NAT. this may be a bad assumption in the future
+            if rcfg["type"] == SubnetType.NAT:
+                # in this case, we need to add a route to the nat gateway
+                # for the availiblity zone that routed to subnet is created
+                # in
+                # NOTE: this does allow a subnet in one AZ to route to a
+                #       subnet in a different AZ if configured that way.
+                routes.append(
+                    {
+                        # all outgoing traffic in the compute subnet goes to the
+                        # NAT gateway
+                        "cidr_block": "0.0.0.0/0",
+                        "nat_gateway_id": self.az_assets[rcfg["az"]][
+                            "inet_nat_gw"
+                        ].id,
+                    }
+                )
+            else:
+                # in this case we assume we're setting up a route from a
+                # private VPC subnet to another private VPC subnet, so local
+                # routing
+                routes.append(
+                    {
+                        "cidr_block": rcfg["cidr_block"],
+                        "gateway_id": "local",
+                    }
+                )
+
+        return routes
+
+    # TODO: ISSUE #198
+    def _create_subnet_route_table(
+        self, sn_res_name: str, routes: list, subnet: aws.ec2.Subnet
+    ):
+        """Create the route table for the subnet with the given routes list.
+
+        Args:
+            sn_res_name: The resource name of the subnet. Used as a prefix in
+                         ComponentResource naming.
+            routes: List of route definition dicts. Dicts contain a `cidr_block`
+                    item and a gateway id (with key depending on gateway type)
+                    to route traffic for that CIDR to.
+            subnet: The subnet object the route table is being constructed for.
+        """
+        subnet_rt = aws.ec2.RouteTable(
+            f"{sn_res_name}-rt",
             vpc_id=self.vpc.id,
-            routes=[
-                {
-                    # all outgoing traffic in the public subnet goes to the
-                    # internet gateway
-                    "cidr_block": "0.0.0.0/0",
-                    "gateway_id": self.internet_gateway.id,
-                }
-            ],
+            routes=routes,
         )
 
         aws.ec2.RouteTableAssociation(
-            f"{pubsn_name}-rtassn",
-            subnet_id=public_subnet.id,
-            route_table_id=public_rt.id,
+            f"{sn_res_name}-rtassn",
+            subnet_id=subnet.id,
+            route_table_id=subnet_rt.id,
         )
 
-        self.subnets["public"] = public_subnet
+    # TODO: ISSUE #198
+    def _setup_subnet(
+        self,
+        sn_res_name: str,
+        sn_cfg: dict[str, Any],
+        rte_cfgs: dict[str, dict],
+        subnet: aws.ec2.Subnet,
+    ):
+        """Handle setup and routing for subnet types.
+
+        Only NAT subnets are currently handled specially.
+
+        Args:
+            sn_type: The type of subnet being handled.
+            sn_res_name: The resource name of the subnet.
+            az: The availability zone the subnet is being configured in.
+            subnet: The subnet object requiring special setup.
+        """
+
+        routes = self._create_route_list(sn_cfg["name"], rte_cfgs)
+
+        if sn_cfg["type"] == SubnetType.NAT:
+            # add a NAT gateway and get a new list of routes that includes
+            # routing to the nat
+            routes = self._setup_nat_subnet(
+                sn_res_name, sn_cfg["az"], routes, subnet
+            )
+
+        self._create_subnet_route_table(sn_res_name, routes, subnet)
 
     def create_subnets(self):
         """Default implementation of private subnet creation for a swimlane.
@@ -200,87 +433,60 @@ class ScopedSwimlane(CapeComponentResource):
         """
 
         # we need this to create a lookup for route configuration in addition
-        # to iteration below...
+        # to iteration below. we will need to create the nat (public) subnets
+        # first as we will need their nat gateway ids for any other subnets
+        # requiring agress to the internet
         named_pscs = {
             psnc["name"]: psnc
             for psnc in self.config.get("subnets", default=[])
         }
 
-        # TODO: ISSUE #131
-        # During issue #131 this should be refactored to have the common code
-        # shared between create_public_subnet and this method combined. Took
-        # the shortcut of leaving create_public_subnet as-is during
-        # implementation of #109. this change will probably lead to the name of
-        # the public subnet changing, which will be a difference in `pulumi
-        # preview`, avoiding that for now.
-        # During this change, keep in mind that the public subnet must be
-        # created first (as other subnets will need to route to the nat
-        # gateway). We will also need to support multiple public subnets (e.g.
-        # one per az)
-        pub_sn_cfg = named_pscs.pop("public")
-        self._create_public_subnet(pub_sn_cfg["cidr-block"])
+        # make sure subnets meet baseline to continue
+        self._check_subnet_configs(named_pscs)
+
+        # get an ordered version of this dict so that we can make the subnets in
+        # an order without dependency issues
+
+        ordered_pscs = self._resolve_subnet_dependencies(named_pscs)
 
         # TODO: ISSUE #118
-        for psnc in self.config.get("subnets", default=[]):
-            # TODO: ISSUE #131
-            # temp bypass of public subnet since it was handled above
-            if psnc["name"] == "public":
-                continue
+        for sn_name, sn_cfg in ordered_pscs.items():
+            sn_cfg = CapeConfig(sn_cfg)
 
-            psnc = CapeConfig(psnc)
-            config_sn_name = psnc.get("name")
             # devowel the configured name to try to save some characters in max
-            # string lengths for identifiers when constructing the subnet name
-            sn_name = f"{self.basename}-{disemvowel(config_sn_name)}sn"
+            # string lengths for identifiers when constructing the subnet
+            # resource name
+            sn_res_name = f"{self.basename}-{disemvowel(sn_name)}sn"
+
+            # Unless specified as True, subnets will be private
+            is_public = sn_cfg.get("public", False)
+
+            # TODO: ISSUE #198
             subnet = aws.ec2.Subnet(
-                sn_name,
-                cidr_block=psnc.get("cidr-block"),
+                sn_res_name,
+                cidr_block=sn_cfg.get("cidr-block"),
                 vpc_id=self.vpc.id,
-                availability_zone=psnc.get("az"),
+                availability_zone=sn_cfg.get("az"),
+                map_public_ip_on_launch=is_public,
                 tags={
-                    "Name": sn_name,
-                    "desc_name": f"{self.desc_name} analysis {sn_name} subnet",
+                    "Name": f"{sn_res_name} ({sn_name})",
+                    "desc_name": (
+                        f"{self.desc_name} {sn_name} ("
+                        f"{'public' if is_public else 'private'} "
+                        f"{sn_cfg['type']}) subnet"
+                    ),
                 },
             )
 
-            routes = []
-            for rte in psnc.get("routes", default=[]):
-                # NOTE: special handling for the public subnet route. we
-                #       assume in this case we're reouting all traffic to the
-                #       NAT. this may be a bad assumption in the future
-                if rte == "public":
-                    routes.append(
-                        {
-                            # all outgoing traffic in the compute subnet goes to the
-                            # NAT gateway
-                            "cidr_block": "0.0.0.0/0",
-                            "nat_gateway_id": self.nat_gateway.id,
-                        }
-                    )
-                else:
-                    # in this case we assume we're setting up a route from a
-                    # private VPC subnet to another private VPC subnet, so local
-                    # routing
-                    routes.append(
-                        {
-                            "cidr_block": named_pscs[rte]["cidr_block"],
-                            "gateway_id": "local",
-                        }
-                    )
+            rte_cfgs = {}
 
-            subnet_rt = aws.ec2.RouteTable(
-                f"{sn_name}-rt",
-                vpc_id=self.vpc.id,
-                routes=routes,
-            )
+            for rte in sn_cfg.get("routes", default=[]):
+                rte_cfgs[rte] = ordered_pscs.get(rte, None)
 
-            aws.ec2.RouteTableAssociation(
-                f"{sn_name}-rtassn",
-                subnet_id=subnet.id,
-                route_table_id=subnet_rt.id,
-            )
+            # do any type-specific setup for the subnet
+            self._setup_subnet(sn_res_name, sn_cfg, rte_cfgs, subnet)
 
-            self.subnets[config_sn_name] = subnet
+            self.subnets[sn_name] = (sn_cfg["type"], subnet)
 
     def create_compute_environments(self):
         """Default implementation of compute environment creation for a swimlane.
@@ -294,7 +500,7 @@ class ScopedSwimlane(CapeComponentResource):
             self.compute_environments[name] = BatchCompute(
                 name,
                 vpc=self.vpc,
-                subnets=self.subnets,
+                subnets=self.get_subnets_by_type(SubnetType.COMPUTE),
                 config=env,
             )
 
