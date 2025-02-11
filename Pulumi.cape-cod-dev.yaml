@@ -150,7 +150,7 @@ config:
             #     time, but the name is reserved for the future
             #   * `vpn`: any subnet marks as the VPN type will be configured to
             #     be a target of the external client VPN setup.
-            # * `make_public`: (boolean, optional)
+            # * `public`: (boolean, optional)
             #   A boolean stating if the subnet should be made public (have an
             #   associated public IP address). This defaults to False. In the
             #   CAPE reference architecture, only subnets of type `nat` are
@@ -186,7 +186,7 @@ config:
                 - name: public
                   cidr-block: 10.0.1.0/24
                   type: nat
-                  make_public: True
+                  public: True
                   <<: *az1
                 - name: compute
                   cidr-block: 10.0.2.0/24
