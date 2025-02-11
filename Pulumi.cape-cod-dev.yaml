@@ -163,7 +163,7 @@ config:
             #   used to allow routing to the public subnet for the swimlane (if
             #   public is not explicitly specified, the subnet will have no
             #   internet access).
-            # * `az` (string, optional)
+            # * `az` (string, required)
             #   An explicit availability zone for the subnet. If not provided,
             #   the default availability zone will be used. This is generally
             #   only needed when setting up redundant private subnets for
@@ -205,6 +205,10 @@ config:
                   <<: *az2
                   type: vpn
                   routes:
+                      # TODO: ISSUE #118
+                      # this is currently routing the vpn subnet in az2 to the
+                      # nat in az1. when we redo the network in #118 we need to
+                      # change this route to be to the az2 nat subnet
                       - "public"
             # `api` (mapping, optional)
             # Contains the configuration for apis and the API application load
