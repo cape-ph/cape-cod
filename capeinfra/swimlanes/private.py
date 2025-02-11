@@ -477,7 +477,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.create_alb(
             self.APPLICATION_ALB,
-            [s for _, s in self.get_subnets_by_type(SubnetType.vpn).items()],
+            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
             self.domain_cert.acmcert,
         )
 
@@ -513,7 +513,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.create_alb(
             self.API_ALB,
-            [s for _, s in self.get_subnets_by_type(SubnetType.vpn).items()],
+            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
             self.domain_cert.acmcert,
         )
 
@@ -545,7 +545,7 @@ class PrivateSwimlane(ScopedSwimlane):
             vpc_endpoint_type="Interface",
             subnet_ids=[
                 s.id
-                for _, s in self.get_subnets_by_type(SubnetType.vpn).items()
+                for _, s in self.get_subnets_by_type(SubnetType.VPN).items()
             ],
             # TODO: ISSUE #112
             tags={
@@ -624,7 +624,7 @@ class PrivateSwimlane(ScopedSwimlane):
             private_dns_enabled=True,
             subnet_ids=[
                 s.id
-                for _, s in self.get_subnets_by_type(SubnetType.vpn).items()
+                for _, s in self.get_subnets_by_type(SubnetType.VPN).items()
             ],
             # TODO: ISSUE #112
             tags={
@@ -802,7 +802,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # and DNS for the zone
         self.create_private_hosted_dns(
-            [s for _, s in self.get_subnets_by_type(SubnetType.vpn).items()],
+            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
         )
 
     # TODO: ISSUE #100
@@ -892,7 +892,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # associate the VPN endpoint with all VPN subnets and setup auth
         # rules/routes for the vpn subnets
-        for sn_name, sn in self.get_subnets_by_type(SubnetType.vpn).items():
+        for sn_name, sn in self.get_subnets_by_type(SubnetType.VPN).items():
 
             # The client endpoint needs to be associated with one or more
             # subnets
