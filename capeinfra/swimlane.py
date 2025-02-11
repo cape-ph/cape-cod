@@ -1,7 +1,7 @@
 """Module for swimlane related abstractions."""
 
 from abc import abstractmethod
-from enum import StrEnum, auto
+from enum import Enum
 from typing import Any
 
 import pulumi_aws as aws
@@ -18,7 +18,7 @@ from capepulumi import CapeComponentResource, CapeConfig
 
 
 # TODO: ISSUE #198
-class SubnetType(StrEnum):
+class SubnetType(str, Enum):
     """Enum of all reserved subnet types for a swimlane.
 
     The order of members of the enum is important. At a minimum it implies the
@@ -37,10 +37,10 @@ class SubnetType(StrEnum):
                  the name is reserved for the future
     """
 
-    NAT = auto()
-    VPN = auto()
-    COMPUTE = auto()
-    APP = auto()
+    NAT = "nat"
+    VPN = "vpn"
+    COMPUTE = "compute"
+    APP = "app"
 
 
 class ScopedSwimlane(CapeComponentResource):
