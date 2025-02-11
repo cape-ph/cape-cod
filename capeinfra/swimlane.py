@@ -459,7 +459,7 @@ class ScopedSwimlane(CapeComponentResource):
             sn_res_name = f"{self.basename}-{disemvowel(sn_name)}sn"
 
             # Unless specified as True, subnets will be private
-            is_public = sn_cfg.get("make_public", False)
+            is_public = sn_cfg.get("public", False)
 
             # TODO: ISSUE #198
             subnet = aws.ec2.Subnet(
