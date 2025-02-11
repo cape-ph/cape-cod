@@ -464,7 +464,6 @@ class ScopedSwimlane(CapeComponentResource):
             # TODO: ISSUE #198
             subnet = aws.ec2.Subnet(
                 sn_res_name,
-                # TODO: ISSUE #198
                 cidr_block=sn_cfg.get("cidr-block"),
                 vpc_id=self.vpc.id,
                 availability_zone=sn_cfg.get("az"),
