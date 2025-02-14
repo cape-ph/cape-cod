@@ -1,16 +1,3 @@
-# extensions for constant reusable values. these are *not* direct config values
-# for pulumi, but are used in various sections. changing the value here will
-# change all usages of the anchors elsewhere
-
-# availability zone 1
-x-az-1: &az1
-    az: "us-east-2b"
-# availability zone 2
-x-az-2: &az2
-    az: "us-east-2c"
-
-# actual config follows
-
 # `encryptionsalt` (string, required)
 # This key is added and managed by pulumi. this should not be modified outside
 # of that context, and is specific to your pulumi setup
@@ -34,6 +21,14 @@ config:
     # The AWS region the deployment will go into. As of now, CAPE supports a
     # single requion only
     aws:region: us-east-2
+    cape-cod:aws:
+        availability-zones:
+            # availability zone 1
+            az1: &az1
+                az: "us-east-2b"
+            # availability zone 2
+            az2: &az2
+                az: "us-east-2c"
     # `cape-cod:meta` (mapping, required)
     # Contains configuration that is used by a number of functional areas in
     # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
