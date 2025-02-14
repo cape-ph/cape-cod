@@ -33,6 +33,10 @@ class BatchCompute(CapeComponentResource):
 
         Args:
             name: The name for the resource.
+            vpc: The VPC object the BatchCompute will be created for.
+            subnets: A dict of subnets names (from configuration) to subnet
+                     objects which are associated with the BatchCompute
+                     environment.
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
@@ -99,13 +103,7 @@ class BatchCompute(CapeComponentResource):
 
         # self.key_pair = aws.ec2.KeyPair(f"{self.name}-kypr")
 
-        env_subnets = []
-        for subnet_name in self.config.get("subnets"):
-            subnet = subnets.get(subnet_name)
-            assert (
-                subnet is not None
-            ), f"Unknown subnet in compute environment {name}: {subnet_name}"
-            env_subnets.append(subnet.id)
+        env_subnets = [sn.id for _, sn in subnets.items()]
 
         self.compute_environment = aws.batch.ComputeEnvironment(
             f"{self.name}-btch",

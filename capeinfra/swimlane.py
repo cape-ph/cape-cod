@@ -449,7 +449,6 @@ class ScopedSwimlane(CapeComponentResource):
 
         ordered_pscs = self._resolve_subnet_dependencies(named_pscs)
 
-        # TODO: ISSUE #118
         for sn_name, sn_cfg in ordered_pscs.items():
             sn_cfg = CapeConfig(sn_cfg)
 
@@ -497,12 +496,13 @@ class ScopedSwimlane(CapeComponentResource):
         """
         for env in self.config.get("compute", "environments", default=[]):
             name = env.get("name")
-            self.compute_environments[name] = BatchCompute(
-                name,
-                vpc=self.vpc,
-                subnets=self.get_subnets_by_type(SubnetType.COMPUTE),
-                config=env,
-            )
+            for sn_type in env.get("subnet_types"):
+                self.compute_environments[name] = BatchCompute(
+                    name,
+                    vpc=self.vpc,
+                    subnets=self.get_subnets_by_type(sn_type),
+                    config=env,
+                )
 
     def create_hosted_domain(self, domain_name: str):
         """Create a private hosted domain for the swimlane.
@@ -540,7 +540,6 @@ class ScopedSwimlane(CapeComponentResource):
             direction="INBOUND",
             # TODO: ISSUE #112
             security_group_ids=[self.vpc.default_security_group_id],
-            # TODO: ISSUE #118
             ip_addresses=[
                 aws.route53.ResolverEndpointIpAddressArgs(subnet_id=sn.id)
                 for sn in subnets

@@ -474,10 +474,9 @@ class PrivateSwimlane(ScopedSwimlane):
         Static (S3) and instance based applications share the same load
         balancer.
         """
-
         self.create_alb(
             self.APPLICATION_ALB,
-            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
+            [s for _, s in self.get_subnets_by_type(SubnetType.APP).items()],
             self.domain_cert.acmcert,
         )
 
@@ -513,7 +512,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         self.create_alb(
             self.API_ALB,
-            [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
+            [s for _, s in self.get_subnets_by_type(SubnetType.APP).items()],
             self.domain_cert.acmcert,
         )
 
@@ -726,41 +725,49 @@ class PrivateSwimlane(ScopedSwimlane):
 
             # now create the instance
             # TODO: ISSUE #184
-            _, subnet = self.subnets[aicfg["subnet_name"]]
-            self.instance_apps[aicfg["name"]] = {
-                "instance": aws.ec2.Instance(
-                    f"{self.basename}-{aicfg['name']}-ec2i",
-                    ami=aicfg["image"],
-                    associate_public_ip_address=aicfg.get("public_ip", False),
-                    instance_type=aicfg.get("instance_type", "t3a.medium"),
-                    subnet_id=subnet.id,
-                    key_name=self.ec2inst_keypair.key_name,
-                    # TODO: ISSUE #112
-                    vpc_security_group_ids=[self.vpc.default_security_group_id],
-                    tags={
-                        # NOTE: This is like the VPC in that to set the name to be
-                        #       displayed in the AWS console you must do it via the
-                        #       tag "Name"
-                        "Name": f"{self.basename}-{aicfg['name']}-ec2i",
-                        "desc_name": (
-                            f"{self.desc_name} {aicfg['name']} application EC2 "
-                            "instance"
+            for snt in aicfg["subnet_types"]:
+                subnets = self.get_subnets_by_type(snt)
+                for snn, sn in subnets.items():
+                    self.instance_apps[aicfg["name"]] = {
+                        "instance": aws.ec2.Instance(
+                            f"{self.basename}-{snn}-{aicfg['name']}-ec2i",
+                            ami=aicfg["image"],
+                            associate_public_ip_address=aicfg.get(
+                                "public_ip", False
+                            ),
+                            instance_type=aicfg.get(
+                                "instance_type", "t3a.medium"
+                            ),
+                            subnet_id=sn.id,
+                            key_name=self.ec2inst_keypair.key_name,
+                            # TODO: ISSUE #112
+                            vpc_security_group_ids=[
+                                self.vpc.default_security_group_id
+                            ],
+                            tags={
+                                # NOTE: This is like the VPC in that to set the name to be
+                                #       displayed in the AWS console you must do it via the
+                                #       tag "Name"
+                                "Name": f"{self.basename}-{aicfg['name']}-ec2i",
+                                "desc_name": (
+                                    f"{self.desc_name} {aicfg['name']} application EC2 "
+                                    "instance"
+                                ),
+                            },
+                            user_data=user_data,
+                            user_data_replace_on_change=rebuild_on_ud_change,
+                            iam_instance_profile=(
+                                instance_profile.name
+                                if instance_profile is not None
+                                else None
+                            ),
+                            opts=ResourceOptions(parent=self),
                         ),
-                    },
-                    user_data=user_data,
-                    user_data_replace_on_change=rebuild_on_ud_change,
-                    iam_instance_profile=(
-                        instance_profile.name
-                        if instance_profile is not None
-                        else None
-                    ),
-                    opts=ResourceOptions(parent=self),
-                ),
-                "fqdn": f"{aicfg['subdomain']}.{self.domain_name}",
-                "port": aicfg.get("port", None),
-                "proto": aicfg.get("protocol", None),
-                "hc_args": aicfg.get("healthcheck", None),
-            }
+                        "fqdn": f"{aicfg['subdomain']}.{self.domain_name}",
+                        "port": aicfg.get("port", None),
+                        "proto": aicfg.get("protocol", None),
+                        "hc_args": aicfg.get("healthcheck", None),
+                    }
 
         # TODO:
         # - figure out if we need an instance profile
@@ -801,6 +808,9 @@ class PrivateSwimlane(ScopedSwimlane):
         )
 
         # and DNS for the zone
+        # TODO: This feels like DNS should be associated with all our subnets
+        #       (except maybe NAT). Though we associate only with VPN subnets
+        #       here, all internal DNS succeeds regardless of subnet.
         self.create_private_hosted_dns(
             [s for _, s in self.get_subnets_by_type(SubnetType.VPN).items()],
         )
