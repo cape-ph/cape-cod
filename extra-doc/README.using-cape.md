@@ -65,7 +65,8 @@ you may see something like the following when attempting to hit an API:
 }
 ```
 
-If encountered go the to the AWS console page for APIs and manually re-deploy
-the API in question. This will often solve the issue until the next deployment.
+If encountered go the to the AWS console page for the API gateway and manually
+re-deploy the API in question. This will often solve the issue until the next
+deployment.
 
 ## General User Use Cases
