@@ -18,24 +18,21 @@ route).
 
 ### CAPE UI Routes
 
-| Name                                                   | Route                                              | Description                                                  |
-| ------------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------ |
-| CAPE Pipeline UI                                       | https://analysis-pipelines.cape-dev.org/index.html | UI for scheduling analysis pipelines (e.g. running bactopia) |
-| ------------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------ |
+| Name             | Route                                              | Description                                                  |
+| ---------------- | -------------------------------------------------- | ------------------------------------------------------------ |
+| CAPE Pipeline UI | https://analysis-pipelines.cape-dev.org/index.html | UI for scheduling analysis pipelines (e.g. running bactopia) |
 
 ### API Routes
 
-| Name                                               | Route                            | Description                                                                                                                                                                                                                                            |
-| -------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CAPE Dev DAP API Root                              | https://api.cape-dev.org/dap-dev | Root path for development data analysis pipeline APIs. Contains endpoints such as `analysispipelines` (GET available analysis pipelines), `pipelineexecutors` (GET available pipeline executors), and `analysispipeline` (POST to schedule a pipeline) |
-| -------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Name                  | Route                            | Description                                                                                                                                                                                                                                            |
+| --------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CAPE Dev DAP API Root | https://api.cape-dev.org/dap-dev | Root path for development data analysis pipeline APIs. Contains endpoints such as `analysispipelines` (GET available analysis pipelines), `pipelineexecutors` (GET available pipeline executors), and `analysispipeline` (POST to schedule a pipeline) |
 
 ### Tool Routes
 
-| Name             | Route                            | Description                       |
-| ---------------- | -------------------------------- | --------------------------------- |
-| CAPE JupyterHub  | https://jupyterhub.cape-dev.org/ | URL To access JupyterHub for CAPE |
-| ---------------- | -------------------------------- | --------------------------------- |
+| Name            | Route                            | Description                       |
+| --------------- | -------------------------------- | --------------------------------- |
+| CAPE JupyterHub | https://jupyterhub.cape-dev.org/ | URL To access JupyterHub for CAPE |
 
 ## Admin User Use Cases
 
