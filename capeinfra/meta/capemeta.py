@@ -34,6 +34,7 @@ class CapeMeta(CapeComponentResource):
             )
 
         self.capepy = CapePy(self.automation_assets_bucket)
+        self.users = CapeUsers()
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -75,3 +76,40 @@ class CapePy(CapeComponentResource):
             code=FileArchive("./assets/capepy/capepy_layer.zip"),
             opts=ResourceOptions(parent=self),
         )
+
+
+class CapeUsers(CapeComponentResource):
+    def __init__(self, **kwargs):
+        self.name = "cape-users"
+        super().__init__(
+            "capeinfra:meta:capemeta:CapeUsers",
+            self.name,
+            desc_name="Resources for user management in the CAPE infrastructure",
+            **kwargs,
+        )
+
+        self.user_pool = aws.cognito.UserPool(
+            "cape-users",
+            name="cape-users",
+            account_recovery_setting={
+                "recovery_mechanisms": [
+                    {"name": "verified_email", "priority": 1}
+                ]
+            },
+            admin_create_user_config={"allow_admin_create_user_only": True},
+            password_policy={
+                "minimum_length": 8,
+                "require_lowercase": True,
+                "require_numbers": True,
+                "require_symbols": True,
+                "require_uppercase": True,
+                "temporary_password_validity_days": 5,
+            },
+            auto_verified_attributes=["email"],
+            username_attributes=["email"],
+        )
+
+        # TODO: configure external providers with IdentifyProvider
+        # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
+        #                              provider_name="GTRI", provider_type="OIDC",
+        #                              ...)
