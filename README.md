@@ -12,21 +12,21 @@ a work in progress.
 
 The CAPE infrastructure currently consists of:
 
--   A system-wide object store for reusable ETL scripts and Lambda functions
-    (this is currently used to prime the system and may not always be around).
--   A data lake for any number of configurable domains (called `Tributaries`)
-    which have their own raw and clean object storage and feed the lake over all
-    via shared data catalog.
--   More to come
+- A system-wide object store for reusable ETL scripts and Lambda functions (this
+  is currently used to prime the system and may not always be around).
+- A data lake for any number of configurable domains (called `Tributaries`)
+  which have their own raw and clean object storage and feed the lake over all
+  via shared data catalog.
+- More to come
 
 ## 🦠 Requirements
 
--   [Python 3.10+](https://www.python.org/)
--   [Pulumi](https://www.pulumi.com/)
--   [AWS CLI](https://aws.amazon.com/cli/)
--   An AWS account with the ability to create most resources. We're actively
-    adding more as we go and just having the ability to create what we currently
-    use may not be the full list in the long term.
+- [Python 3.10+](https://www.python.org/)
+- [Pulumi](https://www.pulumi.com/)
+- [AWS CLI](https://aws.amazon.com/cli/)
+- An AWS account with the ability to create most resources. We're actively
+  adding more as we go and just having the ability to create what we currently
+  use may not be the full list in the long term.
 
 ## 🧫 Setup
 
@@ -183,8 +183,9 @@ in some detail in the VPN README referenced in the
 
 ## 📐 Additional Documentation
 
--   [Debug VPN Deployment/Setup](./extra-doc/README.vpn.md)
--   [Writeup of some queuing considerations](./extra-doc/README.queuing.md)
+- [General CAPE Usage](./extra-doc/README.using-cape.md)
+- [Debug VPN Deployment/Setup](./extra-doc/README.vpn.md)
+- [Writeup of some queuing considerations](./extra-doc/README.queuing.md)
 
 ## 🗒️ Links
 
