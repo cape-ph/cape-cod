@@ -34,6 +34,7 @@ class CapeMeta(CapeComponentResource):
             )
 
         self.capepy = CapePy(self.automation_assets_bucket)
+        self.users = CapeUsers()
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -75,3 +76,111 @@ class CapePy(CapeComponentResource):
             code=FileArchive("./assets/capepy/capepy_layer.zip"),
             opts=ResourceOptions(parent=self),
         )
+
+
+class CapeUsers(CapeComponentResource):
+    def __init__(self, **kwargs):
+        self.name = "cape-users"
+        super().__init__(
+            "capeinfra:meta:capemeta:CapeUsers",
+            self.name,
+            desc_name="Resources for user management in the CAPE infrastructure",
+            **kwargs,
+        )
+
+        self.user_pool = aws.cognito.UserPool(
+            "cape-users",
+            name="cape-users",
+            account_recovery_setting={
+                "recovery_mechanisms": [
+                    {"name": "verified_email", "priority": 1}
+                ]
+            },
+            admin_create_user_config={"allow_admin_create_user_only": True},
+            password_policy={
+                "minimum_length": 8,
+                "require_lowercase": True,
+                "require_numbers": True,
+                "require_symbols": True,
+                "require_uppercase": True,
+                "temporary_password_validity_days": 5,
+            },
+            auto_verified_attributes=["email"],
+            username_attributes=["email"],
+        )
+
+        # Create basic groups
+        self.groups = {
+            name: aws.cognito.UserGroup(
+                f"group-{name}",
+                name=name,
+                user_pool_id=self.user_pool.id,
+                **options,
+            )
+            for name, options in (
+                {
+                    "Admins": {
+                        "description": "Administrator group",
+                        "precedence": 1,
+                    }
+                }
+            ).items()
+        }
+
+        # Create local admin users with temporary password
+        self.admins = []
+        for email in [
+            "micah.halter@gtri.gatech.edu",
+        ]:
+            admin = aws.cognito.User(
+                f"user-{email}",
+                user_pool_id=self.user_pool.id,
+                username=email,
+                temporary_password="1CapeCodAdmin!",
+                attributes={
+                    "email": email,
+                    "email_verified": "true",
+                },
+            )
+            self.admins.append(admin)
+            aws.cognito.UserInGroup(
+                f"user-admin-{email}",
+                user_pool_id=self.user_pool.id,
+                group_name=self.groups["Admins"].name,
+                username=admin.username,
+            )
+
+        # TODO: configure external providers with IdentifyProvider
+        # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
+        #                              provider_name="GTRI", provider_type="OIDC",
+        #                              ...)
+
+        # Create app clients (jupyerhub, eventually add cape-ui)
+        self.clients = {
+            client: aws.cognito.UserPoolClient(
+                f"client-{client}",
+                name=client,
+                user_pool_id=self.user_pool.id,
+                generate_secret=True,
+                allowed_oauth_flows_user_pool_client=True,
+                allowed_oauth_flows=["code"],
+                supported_identity_providers=["COGNITO"],
+                **options,  # pyright: ignore
+            )
+            for client, options in (
+                {
+                    "jupyterhub": {
+                        "callback_urls": [
+                            "https://jupyterhub.cape-dev.org/hub/oauth_callback"
+                        ],
+                        "allowed_oauth_scopes": ["openid", "email"],
+                    }
+                }
+            ).items()
+        }
+
+        # TODO: Create identity pool cape-identities
+
+        # TODO: add cognito IDP to identity pool and add default mappings for basic role
+
+        # TODO: add cognito IDP mappings for special claims to more specific roles
