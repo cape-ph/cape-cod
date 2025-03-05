@@ -109,7 +109,78 @@ class CapeUsers(CapeComponentResource):
             username_attributes=["email"],
         )
 
+        # Create basic groups
+        self.groups = {
+            name: aws.cognito.UserGroup(
+                f"group-{name}",
+                name=name,
+                user_pool_id=self.user_pool.id,
+                **options,
+            )
+            for name, options in (
+                {
+                    "Admins": {
+                        "description": "Administrator group",
+                        "precedence": 1,
+                    }
+                }
+            ).items()
+        }
+
+        # Create local admin users with temporary password
+        self.admins = []
+        for email in [
+            "micah.halter@gtri.gatech.edu",
+        ]:
+            admin = aws.cognito.User(
+                f"user-{email}",
+                user_pool_id=self.user_pool.id,
+                username=email,
+                temporary_password="1CapeCodAdmin!",
+                attributes={
+                    "email": email,
+                    "email_verified": "true",
+                },
+            )
+            self.admins.append(admin)
+            aws.cognito.UserInGroup(
+                f"user-admin-{email}",
+                user_pool_id=self.user_pool.id,
+                group_name=self.groups["Admins"].name,
+                username=admin.username,
+            )
+
         # TODO: configure external providers with IdentifyProvider
         # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
         #                              provider_name="GTRI", provider_type="OIDC",
         #                              ...)
+
+        # Create app clients (jupyerhub, eventually add cape-ui)
+        self.clients = {
+            client: aws.cognito.UserPoolClient(
+                f"client-{client}",
+                name=client,
+                user_pool_id=self.user_pool.id,
+                generate_secret=True,
+                allowed_oauth_flows_user_pool_client=True,
+                allowed_oauth_flows=["code"],
+                supported_identity_providers=["COGNITO"],
+                **options,  # pyright: ignore
+            )
+            for client, options in (
+                {
+                    "jupyterhub": {
+                        "callback_urls": [
+                            "https://jupyterhub.cape-dev.org/hub/oauth_callback"
+                        ],
+                        "allowed_oauth_scopes": ["openid", "email"],
+                    }
+                }
+            ).items()
+        }
+
+        # TODO: Create identity pool cape-identities
+
+        # TODO: add cognito IDP to identity pool and add default mappings for basic role
+
+        # TODO: add cognito IDP mappings for special claims to more specific roles
