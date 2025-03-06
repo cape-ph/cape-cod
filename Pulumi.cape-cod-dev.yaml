@@ -34,6 +34,48 @@ config:
     # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
     # functions can be found.
     cape-cod:meta:
+        # `principals` (mapping, required)
+        # Contains local users and groups required for any cape deployment.
+        # TODO: any issue specifying princpals at this level? will we need
+        #       differing assets for each swimlane? i don't *think* so as the
+        #       roles attached to the groups should really be the only
+        #       swimlane specific things, right?
+        principals:
+            # `groups`  (mapping[], required)
+            # Contains group specifications that are required for all cape
+            # deployments. Each list item will have the following keys
+            # * `name` (string, required) - The name of the group. Must be
+            #   unique.
+            # * `description` (string, optional) - A description for the group.
+            # * `precedence`: The precedence of the group when determining
+            #   which group to use on authentication. Lower precedence wins.
+            #   Groups may have the same precedence provided they can be
+            #   deconflicted when ambiguous.
+            #   TODO: how to deconflict same precedence doc
+            # TODO: do we need to do role association (e.g. by name) here?
+            groups:
+                - name: Admins
+                  description: CAPE administrators group.
+                  precedence: 1
+            # `group_extra` (string, optional)
+            # Path to a csv file containing deployment-specific groups to create
+            group_extra: "./assets-untracked/principals/groups.csv"
+            # `users`  (mapping[], required)
+            # Contains user specifications that are required for all cape
+            # deployments. Each list item will have the following keys
+            # * `email` (string, required) - The unique email address for the
+            #   user. This will be the username of any user.
+            # * `groups` (string[], optional) - A list of group names to
+            #   associate the user with. The named group must either be
+            #   created in the `groups` block or in the `group_extra` file
+            #   above
+            users:
+                - email: cape.admin@example.com
+                  groups:
+                      - Admins
+            # `user_extra` (string, optional)
+            # Path to a csv file containing deployment-specific users to create
+            user_extra: "./assets-untracked/principals/users.csv"
         # `glue` (mapping, optional)
         # Contains meta configuration related to aws glue.
         glue:
