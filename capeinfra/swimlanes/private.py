@@ -685,7 +685,22 @@ class PrivateSwimlane(ScopedSwimlane):
             if ud_info is not None:
                 rebuild_on_ud_change = ud_info["rebuild_on_change"]
                 template = get_j2_template_from_path(ud_info["template"])
-                user_data = template.render(**ud_info["vars"])
+
+                user_data = Output.all(
+                    auth_domain_prefix=capeinfra.meta.users.user_pool.domain,
+                    jupyterhub_client_id=capeinfra.meta.users.clients[
+                        "jupyterhub"
+                    ].id,
+                    jupyterhub_client_secret=capeinfra.meta.users.clients[
+                        "jupyterhub"
+                    ].client_secret,
+                ).apply(
+                    lambda args: template.render(
+                        **ud_info["vars"],
+                        **args,
+                        auth_domain=f"https://{args['auth_domain_prefix']}.auth.us-east-2.amazoncognito.com",
+                    )
+                )
 
             # TODO: ISSUE #186
             instance_profile = None
