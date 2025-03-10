@@ -34,7 +34,7 @@ class CapeMeta(CapeComponentResource):
             )
 
         self.capepy = CapePy(self.automation_assets_bucket)
-        self.users = CapeUsers()
+        self.users = CapeUsers(config=self.config.get("principals", default={}))
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -78,7 +78,36 @@ class CapePy(CapeComponentResource):
         )
 
 
+# TODO: may want to rename this CapePrincipals as that encompases users and
+#       groups
 class CapeUsers(CapeComponentResource):
+
+    @property
+    def default_config(self) -> dict:
+        """Implementation of abstract property `default_config`.
+
+        The default user/group config only contains an Admins group and a
+        default local admin user.
+
+        Returns:
+            The default config dict for the user/group config
+        """
+        return {
+            "groups": [
+                {
+                    "name": "Admins",
+                    "description": "CAPE administrators group.",
+                    "precedence": 1,
+                }
+            ],
+            "users": [
+                {
+                    "email": "cape.admin@example.com",
+                    "groups": ["Admins"],
+                }
+            ],
+        }
+
     def __init__(self, **kwargs):
         self.name = "cape-users"
         super().__init__(
@@ -109,46 +138,49 @@ class CapeUsers(CapeComponentResource):
             username_attributes=["email"],
         )
 
-        # Create basic groups
-        self.groups = {
-            name: aws.cognito.UserGroup(
-                f"group-{name}",
-                name=name,
+        self.groups = {}
+        for grpcfg in self.config.get("groups", default=[]):
+            # Create basic groups
+            self.groups[grpcfg["name"]] = aws.cognito.UserGroup(
+                f"group-{grpcfg['name']}",
+                name=grpcfg["name"],
                 user_pool_id=self.user_pool.id,
-                **options,
+                description=grpcfg["description"],
+                precedence=grpcfg["precedence"],
             )
-            for name, options in (
-                {
-                    "Admins": {
-                        "description": "Administrator group",
-                        "precedence": 1,
-                    }
-                }
-            ).items()
-        }
 
-        # Create local admin users with temporary password
-        self.admins = []
-        for email in [
-            "micah.halter@gtri.gatech.edu",
-        ]:
-            admin = aws.cognito.User(
+        self.local_users = []
+        # TODO: our local users and groups have names that don't match the
+        #       format used by our other resources
+        for usrcfg in self.config.get("users", default=[]):
+            email = usrcfg["email"]
+
+            usr = aws.cognito.User(
                 f"user-{email}",
                 user_pool_id=self.user_pool.id,
                 username=email,
-                temporary_password="1CapeCodAdmin!",
+                # NOTE: user will be prompted to change on first login
+                temporary_password="1CapeCodUser!",
                 attributes={
                     "email": email,
+                    # TODO: this is for now. we do not have email verification
+                    # going and we will have to trust what is put in
                     "email_verified": "true",
                 },
             )
-            self.admins.append(admin)
-            aws.cognito.UserInGroup(
-                f"user-admin-{email}",
-                user_pool_id=self.user_pool.id,
-                group_name=self.groups["Admins"].name,
-                username=admin.username,
-            )
+            # TODO: originally this was written tracking admin users, and not
+            #       all local users. do we have reason to track admins only (or
+            #       any local users for that matter). need to know what the use
+            #       case intended was
+            self.local_users.append(usr)
+            for gname in usrcfg["groups"]:
+
+                aws.cognito.UserInGroup(
+                    f"uig-{email}-{gname}",
+                    user_pool_id=self.user_pool.id,
+                    group_name=self.groups[gname].name,
+                    username=usr.username,
+                )
 
         # TODO: configure external providers with IdentifyProvider
         # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
