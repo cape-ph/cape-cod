@@ -57,9 +57,14 @@ config:
                 - name: Admins
                   description: CAPE administrators group.
                   precedence: 1
+
             # `group_extra` (string, optional)
-            # Path to a csv file containing deployment-specific groups to create
-            group_extra: "./assets-untracked/principals/groups.csv"
+            # Path to a csv file containing deployment-specific groups to
+            # create. May be a full path or relative to repo root. This file can
+            # be keps out of the repo using something like the assets-untracked
+            # mechanism discussed in the readme.
+            # groups_extra: "./assets-untracked/principals/groups.csv"
+
             # `users`  (mapping[], required)
             # Contains user specifications that are required for all cape
             # deployments. Each list item will have the following keys
@@ -73,9 +78,14 @@ config:
                 - email: cape.admin@example.com
                   groups:
                       - Admins
+
             # `user_extra` (string, optional)
-            # Path to a csv file containing deployment-specific users to create
-            user_extra: "./assets-untracked/principals/users.csv"
+            # Path to a csv file containing deployment-specific users to
+            # create. May be a full path or relative to repo root. This file can
+            # be keps out of the repo using something like the assets-untracked
+            # mechanism discussed in the readme.
+            # users_extra: "./assets-untracked/principals/users.csv"
+
         # `glue` (mapping, optional)
         # Contains meta configuration related to aws glue.
         glue:
