@@ -1,5 +1,8 @@
 """Contains resources used by the whole CAPE infra deployment."""
 
+import csv
+from typing import Any
+
 import pulumi_aws as aws
 from pulumi import FileArchive, FileAsset, Output, ResourceOptions
 
@@ -34,7 +37,9 @@ class CapeMeta(CapeComponentResource):
             )
 
         self.capepy = CapePy(self.automation_assets_bucket)
-        self.users = CapeUsers(config=self.config.get("principals", default={}))
+        self.users = CapePrincipals(
+            config=self.config.get("principals", default={})
+        )
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
@@ -78,9 +83,8 @@ class CapePy(CapeComponentResource):
         )
 
 
-# TODO: may want to rename this CapePrincipals as that encompases users and
-#       groups
-class CapeUsers(CapeComponentResource):
+class CapePrincipals(CapeComponentResource):
+    """Class that handles config-based local user and group creation/association."""
 
     @property
     def default_config(self) -> dict:
@@ -109,9 +113,9 @@ class CapeUsers(CapeComponentResource):
         }
 
     def __init__(self, **kwargs):
-        self.name = "cape-users"
+        self.name = "cape-principals"
         super().__init__(
-            "capeinfra:meta:capemeta:CapeUsers",
+            "capeinfra:meta:capemeta:CapePrincipals",
             self.name,
             desc_name="Resources for user management in the CAPE infrastructure",
             **kwargs,
@@ -139,48 +143,32 @@ class CapeUsers(CapeComponentResource):
         )
 
         self.groups = {}
+
         for grpcfg in self.config.get("groups", default=[]):
             # Create basic groups
-            self.groups[grpcfg["name"]] = aws.cognito.UserGroup(
-                f"group-{grpcfg['name']}",
-                name=grpcfg["name"],
-                user_pool_id=self.user_pool.id,
-                description=grpcfg["description"],
-                precedence=grpcfg["precedence"],
-            )
+            self._add_cape_group(grpcfg)
 
         self.local_users = []
+
         # TODO: our local users and groups have names that don't match the
         #       format used by our other resources
         for usrcfg in self.config.get("users", default=[]):
-            email = usrcfg["email"]
 
-            usr = aws.cognito.User(
-                f"user-{email}",
-                user_pool_id=self.user_pool.id,
-                username=email,
-                # NOTE: user will be prompted to change on first login
-                temporary_password="1CapeCodUser!",
-                attributes={
-                    "email": email,
-                    # TODO: this is for now. we do not have email verification
-                    # going and we will have to trust what is put in
-                    "email_verified": "true",
-                },
-            )
-            # TODO: originally this was written tracking admin users, and not
-            #       all local users. do we have reason to track admins only (or
-            #       any local users for that matter). need to know what the use
-            #       case intended was
-            self.local_users.append(usr)
-            for gname in usrcfg["groups"]:
+            self._add_cape_user(usrcfg, self.user_pool.id)
 
-                aws.cognito.UserInGroup(
-                    f"uig-{email}-{gname}",
-                    user_pool_id=self.user_pool.id,
-                    group_name=self.groups[gname].name,
-                    username=usr.username,
-                )
+        # now that we've loaded our groups and local users from the config file,
+        # we're going to also grab the extras files (untracked files containing
+        # stuff that shouldn't be in the repo) and create users and groups from
+        # those.
+
+        extra_grps_file = self.config.get("groups_extra", default=None)
+        extra_usrs_file = self.config.get("users_extra", default=None)
+
+        if extra_grps_file is not None:
+            self.load_groups_file(extra_grps_file)
+
+        if extra_usrs_file is not None:
+            self.load_users_file(extra_usrs_file, self.user_pool.id)
 
         # TODO: configure external providers with IdentifyProvider
         # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
@@ -216,3 +204,157 @@ class CapeUsers(CapeComponentResource):
         # TODO: add cognito IDP to identity pool and add default mappings for basic role
 
         # TODO: add cognito IDP mappings for special claims to more specific roles
+
+    def _add_cape_group(self, grpcfg: dict[str, Any]):
+        """Create a CAPE group and add it to the local tracking dict.
+
+        The config dict has the form:
+        {
+            "name": <group name: str>,
+            "description": <description: str>,
+            "precedence": <group precedence: int>,
+        }
+
+        Args:
+            grpcfg: The configuration dict for the group.
+        """
+        gname = grpcfg["name"]
+
+        self.groups[gname] = aws.cognito.UserGroup(
+            f"group-{gname}",
+            user_pool_id=self.user_pool.id,
+            **grpcfg,
+        )
+
+    def _add_cape_user(self, usrcfg: dict[str, Any], user_pool_id: Output):
+        """Create a CAPE user and add it to the local tracking list.
+
+        The config dict has the form:
+        {
+            "email": <user email (which is username): str>,
+            "groups": <group names list: list[str]>,
+        }
+
+        The groups named in the list must already exist or be in the process of
+        being deployed. The user will be added to these groups whgen created.
+
+        Args:
+            usrcfg: The configuration dict for the user.
+            user_pool_id: The id of the user pool to add the user to.
+        """
+        # TODO: parameterize in config?
+        default_temp_pass = "1CapeCodUser!"
+
+        email = usrcfg["email"]
+
+        usr = aws.cognito.User(
+            f"user-{email}",
+            user_pool_id=user_pool_id,
+            username=email,
+            # NOTE: user will be prompted to change on first login
+            temporary_password=default_temp_pass,
+            attributes={
+                "email": email,
+                # TODO: this is for now. we do not have email verification
+                # going and we will have to trust what is put in the config
+                "email_verified": "true",
+            },
+        )
+
+        self.local_users.append(usr)
+        for gname in usrcfg.get("groups", []):
+            self._add_user_to_group(email, gname, user_pool_id)
+            aws.cognito.UserInGroup(
+                f"uig-{email}-{gname}",
+                user_pool_id=self.user_pool.id,
+                group_name=self.groups[gname].name,
+                username=usr.username,
+            )
+
+    def _add_user_to_group(self, uname, gname, user_pool_id):
+        """Add a CAPE user to a CAPE group.
+
+        Args:
+            uname: The username (email) of the user.
+            gname: The name of the group.
+            user_pool_id: The id of the user pool the user exists in.
+        """
+        # NOTE: this is really broken out only in case we need to add logic here
+        #       or use it ouside the flow of adding a user from scratch. If
+        #       those things are never needed, this can really fold into the
+        #       _add_cognito_user method.
+        aws.cognito.UserInGroup(
+            f"uig-{gname}-{uname}",
+            user_pool_id=user_pool_id,
+            group_name=gname,
+            username=uname,
+        )
+
+    def load_groups_file(self, filepth):
+        """Load an arbitrary csv file of groups and add them to CAPE.
+
+        csv file columns are: ["name", "description", "precedence"]
+
+        Args:
+            filepth: The path to the file of extra group definitions (either
+            full path or relative to repo root)
+        Raises:
+            ValueError - On File containing the wrong set of column headers.
+            FileNotFoundException - If the provided file path is not correct.
+        """
+        # Doing basic column checking to make sure the file is well formed.
+        expected_cols = ["name", "description", "precedence"]
+
+        with open(filepth) as grpcsv:
+            grpreader = csv.reader(grpcsv, skipinitialspace=True)
+            # our first row will be column names. grab em and make sure we have
+            # the set we expect.
+            grpfile_cols = next(grpreader)
+
+            if set(expected_cols) != set(grpfile_cols):
+                raise ValueError(
+                    f"CAPE extra groups file is malformed. Expected column "
+                    f"headers {expected_cols} but received {grpfile_cols}."
+                )
+
+            for row in grpreader:
+                grpcfg = dict(zip(grpfile_cols, row))
+                self._add_cape_group(grpcfg)
+
+    def load_users_file(self, filepth: str, user_pool_id: Output):
+        """Load an arbitrary csv file of users and add them to CAPE.
+
+        csv file columns are: ["email", "groups"] where `groups` is a colon
+        separated string of group names the user needs to be added to. These
+        groups must exist or be in the process of being deployed from this
+        pulumi repo.
+
+        Args:
+            filepth: The path to the file of extra user definitions (either
+            full path or relative to repo root)
+            user_pool_id: The user pool id the user will be added to.
+        Raises:
+            ValueError - On File containing the wrong set of column headers.
+            FileNotFoundException - If the provided file path is not correct.
+        """
+        # Doing basic column checking to make sure the file is well formed.
+        expected_cols = ["email", "groups"]
+
+        with open(filepth) as usrcsv:
+            usrreader = csv.reader(usrcsv, skipinitialspace=True)
+            # our first row will be column names. grab em and make sure we have
+            # the set we expect
+
+            usrfile_cols = next(usrreader)
+            if set(expected_cols) != set(usrfile_cols):
+                raise ValueError(
+                    f"CAPE extra users file is malformed. Expected column "
+                    f"headers {expected_cols} but received {usrfile_cols}."
+                )
+
+            for row in usrreader:
+                # the groups column will be a comma separated string that we need
+                # to break out into list of strings
+                email, grps = row
+                usrcfg = {"email": email, "groups": grps.split(":")}
+                self._add_cape_user(usrcfg, user_pool_id)
