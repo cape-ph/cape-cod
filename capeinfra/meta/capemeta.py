@@ -267,9 +267,12 @@ class CapePrincipals(CapeComponentResource):
 
         self.local_users.append(usr)
         for gname in usrcfg.get("groups", []):
-            self._add_user_to_group(email, gname, user_pool_id)
+            # self._add_user_to_group(email, gname, user_pool_id)
+            self._add_user_to_group(
+                usr.username, self.groups[gname].name, user_pool_id
+            )
 
-    def _add_user_to_group(self, uname, gname, user_pool_id):
+    def _add_user_to_group(self, uname: Output, gname: Output, user_pool_id):
         """Add a CAPE user to a CAPE group.
 
         Args:
