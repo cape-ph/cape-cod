@@ -6,6 +6,7 @@ from typing import Any
 import pulumi_aws as aws
 from pulumi import FileArchive, FileAsset, Output, ResourceOptions
 
+import capeinfra
 from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
 
@@ -150,10 +151,7 @@ class CapePrincipals(CapeComponentResource):
 
         self.local_users = []
 
-        # TODO: our local users and groups have names that don't match the
-        #       format used by our other resources
         for usrcfg in self.config.get("users", default=[]):
-
             self._add_cape_user(usrcfg, self.user_pool.id)
 
         # now that we've loaded our groups and local users from the config file,
@@ -221,7 +219,7 @@ class CapePrincipals(CapeComponentResource):
         gname = grpcfg["name"]
 
         self.groups[gname] = aws.cognito.UserGroup(
-            f"group-{gname}",
+            f"{capeinfra.stack_ns}-grp-{gname}",
             user_pool_id=self.user_pool.id,
             **grpcfg,
         )
@@ -242,21 +240,23 @@ class CapePrincipals(CapeComponentResource):
             usrcfg: The configuration dict for the user.
             user_pool_id: The id of the user pool to add the user to.
         """
-        # TODO: parameterize in config?
-        default_temp_pass = "1CapeCodUser!"
+        # TODO:
+        # * add IdP/provider column
+        # * wire up email verification
+        # * handle users that should not have a default password (e.g. when we
+        #   have external IdPs, we shouldn't be having a default password as
+        #   the PW is managed by the external system)
 
         email = usrcfg["email"]
 
         usr = aws.cognito.User(
-            f"user-{email}",
+            f"{capeinfra.stack_ns}-usr-{email}",
             user_pool_id=user_pool_id,
             username=email,
             # NOTE: user will be prompted to change on first login
-            temporary_password=default_temp_pass,
+            temporary_password=usrcfg["temporary_password"],
             attributes={
                 "email": email,
-                # TODO: this is for now. we do not have email verification
-                # going and we will have to trust what is put in the config
                 "email_verified": "true",
             },
         )
@@ -264,12 +264,6 @@ class CapePrincipals(CapeComponentResource):
         self.local_users.append(usr)
         for gname in usrcfg.get("groups", []):
             self._add_user_to_group(email, gname, user_pool_id)
-            aws.cognito.UserInGroup(
-                f"uig-{email}-{gname}",
-                user_pool_id=self.user_pool.id,
-                group_name=self.groups[gname].name,
-                username=usr.username,
-            )
 
     def _add_user_to_group(self, uname, gname, user_pool_id):
         """Add a CAPE user to a CAPE group.
@@ -284,7 +278,7 @@ class CapePrincipals(CapeComponentResource):
         #       those things are never needed, this can really fold into the
         #       _add_cognito_user method.
         aws.cognito.UserInGroup(
-            f"uig-{gname}-{uname}",
+            f"{capeinfra.stack_ns}-uig-{gname}-{uname}",
             user_pool_id=user_pool_id,
             group_name=gname,
             username=uname,
@@ -338,7 +332,7 @@ class CapePrincipals(CapeComponentResource):
             FileNotFoundException - If the provided file path is not correct.
         """
         # Doing basic column checking to make sure the file is well formed.
-        expected_cols = ["email", "groups"]
+        expected_cols = ["email", "temporary_password", "groups"]
 
         with open(filepth) as usrcsv:
             usrreader = csv.reader(usrcsv, skipinitialspace=True)
@@ -355,6 +349,10 @@ class CapePrincipals(CapeComponentResource):
             for row in usrreader:
                 # the groups column will be a comma separated string that we need
                 # to break out into list of strings
-                email, grps = row
-                usrcfg = {"email": email, "groups": grps.split(":")}
+                email, tpass, grps = row
+                usrcfg = {
+                    "email": email,
+                    "temporary_password": tpass,
+                    "groups": grps.split(":"),
+                }
                 self._add_cape_user(usrcfg, user_pool_id)

@@ -76,6 +76,7 @@ config:
             #   above
             users:
                 - email: cape.admin@example.com
+                  temporary password: 1CapeCodUser!
                   groups:
                       - Admins
 
