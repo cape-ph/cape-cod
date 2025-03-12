@@ -317,7 +317,8 @@ class CapePrincipals(CapeComponentResource):
 
             for row in grpreader:
                 grpcfg = dict(zip(grpfile_cols, row))
-                self._add_cape_group(grpcfg)
+                gname = grpcfg.pop("name")
+                self._add_cape_group(gname, grpcfg)
 
     def load_users_file(self, filepth: str, user_pool_id: Output):
         """Load an arbitrary csv file of users and add them to CAPE.
