@@ -246,6 +246,10 @@ class CapePrincipals(CapeComponentResource):
         # * handle users that should not have a default password (e.g. when we
         #   have external IdPs, we shouldn't be having a default password as
         #   the PW is managed by the external system)
+        # * when loading users from a file, they may not be local users, but we
+        #   put them in the local user tracking list. we should either rename
+        #   the local users list to be more generic, or only track local users
+        #   in there and add something else for non-local users
 
         email = usrcfg["email"]
 
