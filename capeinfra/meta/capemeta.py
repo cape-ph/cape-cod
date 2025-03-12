@@ -142,6 +142,11 @@ class CapePrincipals(CapeComponentResource):
             auto_verified_attributes=["email"],
             username_attributes=["email"],
         )
+        self.user_pool_domain = aws.cognito.UserPoolDomain(
+            f"{capeinfra.stack_ns}-cape-users-domain",
+            domain=f"{capeinfra.stack_ns}-cape-users",
+            user_pool_id=self.user_pool.id,
+        )
 
         self.groups = {}
 
