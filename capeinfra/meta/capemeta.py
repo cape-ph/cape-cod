@@ -98,16 +98,16 @@ class CapePrincipals(CapeComponentResource):
             The default config dict for the user/group config
         """
         return {
-            "groups": [
-                {
-                    "name": "Admins",
+            "groups": {
+                "Admins": {
                     "description": "CAPE administrators group.",
                     "precedence": 1,
                 }
-            ],
+            },
             "users": [
                 {
                     "email": "cape.admin@example.com",
+                    "temporary_password": "1CapeCodUser!",
                     "groups": ["Admins"],
                 }
             ],
