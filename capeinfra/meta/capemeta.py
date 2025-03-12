@@ -149,7 +149,7 @@ class CapePrincipals(CapeComponentResource):
             # Create basic groups
             self._add_cape_group(grpname, grpcfg)
 
-        self.local_users = []
+        self.local_users = {}
 
         for usrcfg in self.config.get("users", default=[]):
             self._add_cape_user(usrcfg, self.user_pool.id)
@@ -253,7 +253,7 @@ class CapePrincipals(CapeComponentResource):
 
         email = usrcfg["email"]
 
-        usr = aws.cognito.User(
+        self.local_users[email] = aws.cognito.User(
             f"{capeinfra.stack_ns}-usr-{email}",
             user_pool_id=user_pool_id,
             username=email,
@@ -265,14 +265,10 @@ class CapePrincipals(CapeComponentResource):
             },
         )
 
-        self.local_users.append(usr)
         for gname in usrcfg.get("groups", []):
-            # self._add_user_to_group(email, gname, user_pool_id)
-            self._add_user_to_group(
-                usr.username, self.groups[gname].name, user_pool_id
-            )
+            self._add_user_to_group(email, gname, user_pool_id)
 
-    def _add_user_to_group(self, uname: Output, gname: Output, user_pool_id):
+    def _add_user_to_group(self, uname: str, gname: str, user_pool_id: Output):
         """Add a CAPE user to a CAPE group.
 
         Args:
@@ -281,14 +277,14 @@ class CapePrincipals(CapeComponentResource):
             user_pool_id: The id of the user pool the user exists in.
         """
         # NOTE: this is really broken out only in case we need to add logic here
-        #       or use it ouside the flow of adding a user from scratch. If
+        #       or use it outside the flow of adding a user from scratch. If
         #       those things are never needed, this can really fold into the
         #       _add_cognito_user method.
         aws.cognito.UserInGroup(
             f"{capeinfra.stack_ns}-uig-{gname}-{uname}",
             user_pool_id=user_pool_id,
-            group_name=gname,
-            username=uname,
+            group_name=self.groups[gname].name,
+            username=self.local_users[uname].username,
         )
 
     def load_groups_file(self, filepth):
