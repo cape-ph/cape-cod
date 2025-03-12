@@ -145,9 +145,9 @@ class CapePrincipals(CapeComponentResource):
 
         self.groups = {}
 
-        for grpcfg in self.config.get("groups", default=[]):
+        for grpname, grpcfg in self.config.get("groups", default={}).items():
             # Create basic groups
-            self._add_cape_group(grpcfg)
+            self._add_cape_group(grpname, grpcfg)
 
         self.local_users = []
 
@@ -203,7 +203,7 @@ class CapePrincipals(CapeComponentResource):
 
         # TODO: add cognito IDP mappings for special claims to more specific roles
 
-    def _add_cape_group(self, grpcfg: dict[str, Any]):
+    def _add_cape_group(self, grpname: str, grpcfg: dict[str, Any]):
         """Create a CAPE group and add it to the local tracking dict.
 
         The config dict has the form:
@@ -214,12 +214,12 @@ class CapePrincipals(CapeComponentResource):
         }
 
         Args:
+            grpname: The name for the group.
             grpcfg: The configuration dict for the group.
         """
-        gname = grpcfg["name"]
 
-        self.groups[gname] = aws.cognito.UserGroup(
-            f"{capeinfra.stack_ns}-grp-{gname}",
+        self.groups[grpname] = aws.cognito.UserGroup(
+            f"{capeinfra.stack_ns}-grp-{grpname}",
             user_pool_id=self.user_pool.id,
             **grpcfg,
         )

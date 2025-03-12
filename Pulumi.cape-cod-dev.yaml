@@ -54,9 +54,9 @@ config:
             #   TODO: how to deconflict same precedence doc
             # TODO: do we need to do role association (e.g. by name) here?
             groups:
-                - name: Admins
-                  description: CAPE administrators group.
-                  precedence: 1
+                Admins:
+                    description: CAPE administrators group.
+                    precedence: 1
 
             # `group_extra` (string, optional)
             # Path to a csv file containing deployment-specific groups to
