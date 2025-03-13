@@ -486,7 +486,7 @@ config:
                 #     A boolean stating if the instance should be rebuilt (i.e.
                 #     destroyed and recreated) on a detected change in user
                 #     data (defaults to False).
-                # * `services` (stgin[], optional)
+                # * `services` (string[], optional)
                 #   A list of services that the instance will need access to
                 #   via an instance profile. *THIS IS QUITE SUBJECT TO CHANGE*
                 #   as we get into how we do policies and roles. Currently the
