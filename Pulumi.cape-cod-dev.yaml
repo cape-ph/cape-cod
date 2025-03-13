@@ -459,6 +459,24 @@ config:
                 #   was "app1" and the swimlane's `domain_name` was
                 #   "cape-dev.org", the instance would be reachable at
                 #   "app1.cape-dev.org".
+                # * `cognito_client` (mapping, optional)
+                #   Configuration of a Cognito User Pool Client for hooking up
+                #   SSO to the instance application. If omitted, then no client
+                #   is added. Possible fields can be found in the Pulumi
+                #   documentation for `aws.cognito.UserPoolClient`. Some fields
+                #   also support Jinja template notation, specifically elements
+                #   in `logout_urls` and `callback_urls` with a parameter passed
+                #   in for `{{ domain }}` to fill in the application's domain.
+                #   Fields you should almost certainly make sure to include are:
+                #       - callback_urls: where to forward the user after login
+                #       - allowed_oauth_scopes: the scopes to get from the SSO
+                #   Fields that will already be set and shouldn't be included are:
+                #     - name - already the name of the instance
+                #     - user_pool_id - already set by the infrastructure
+                #     - generate_secret - always true
+                #     - allowed_oauth_flows_user_pool_client - always true
+                #     - allowed_oauth_flows - always "code"
+                #     - supported_identity_providers - set by the infrastructure
                 # * `port` (int, optional)
                 #   The port the ALB should forward traffic to on the instance.
                 #   In general, we assume the ALB is performing TLS termination
@@ -497,7 +515,7 @@ config:
                 #     A boolean stating if the instance should be rebuilt (i.e.
                 #     destroyed and recreated) on a detected change in user
                 #     data (defaults to False).
-                # * `services` (stgin[], optional)
+                # * `services` (string[], optional)
                 #   A list of services that the instance will need access to
                 #   via an instance profile. *THIS IS QUITE SUBJECT TO CHANGE*
                 #   as we get into how we do policies and roles. Currently the
@@ -510,6 +528,10 @@ config:
                       subnet_types:
                           - compute
                       subdomain: "jupyterhub"
+                      cognito_client:
+                          callback_urls:
+                              - "https://{{ domain }}/hub/oauth_callback"
+                          allowed_oauth_scopes: ["openid", "email"]
                       port: 80
                       protocol: "HTTP"
                       healthcheck:

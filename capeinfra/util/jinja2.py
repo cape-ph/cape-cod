@@ -2,7 +2,7 @@
 
 import pathlib
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, Template
 
 
 def get_j2_template_from_path(tmplt_pth: str):
@@ -18,3 +18,15 @@ def get_j2_template_from_path(tmplt_pth: str):
 
     env = Environment(loader=FileSystemLoader(pth.parent))
     return env.get_template(pth.name)
+
+
+def get_j2_template_from_str(tmplt: str):
+    """Get a Jinja2 template object from a string.
+
+    Args:
+        tmplt: The string to convert to a template
+
+    Returns:
+        The template object for the string
+    """
+    return Template(tmplt)
