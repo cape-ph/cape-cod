@@ -16,11 +16,69 @@ config:
   # The AWS region the deployment will go into. As of now, CAPE supports a
   # single requion only
   aws:region: us-east-2
+  cape-cod:aws:
+    availability-zones:
+      # availability zone 1
+      az1: &az1
+        az: "us-east-2b"
+      # availability zone 2
+      az2: &az2
+        az: "us-east-2c"
   # `cape-cod:meta` (mapping, required)
   # Contains configuration that is used by a number of functional areas in
   # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
   # functions can be found.
   cape-cod:meta:
+    # `principals` (mapping, required)
+    # Contains local users and groups required for any cape deployment.
+    # TODO: any issue specifying princpals at this level? will we need
+    #       differing assets for each swimlane? i don't *think* so as the
+    #       roles attached to the groups should really be the only
+    #       swimlane specific things, right?
+    principals:
+      # `groups`  (mapping[], required)
+      # Contains group specifications that are required for all cape
+      # deployments. Each list item will have the following keys
+      # * `name` (string, required) - The name of the group. Must be
+      #   unique.
+      # * `description` (string, optional) - A description for the group.
+      # * `precedence`: The precedence of the group when determining
+      #   which group to use on authentication. Lower precedence wins.
+      #   Groups may have the same precedence provided they can be
+      #   deconflicted when ambiguous.
+      #   TODO: how to deconflict same precedence doc
+      # TODO: do we need to do role association (e.g. by name) here?
+      groups:
+        Admins:
+          description: CAPE administrators group.
+          precedence: 1
+      # `group_extra` (string, optional)
+      # Path to a csv file containing deployment-specific groups to
+      # create. May be a full path or relative to repo root. This file can
+      # be keps out of the repo using something like the assets-untracked
+      # mechanism discussed in the readme.
+      # groups_extra: "./assets-untracked/principals/groups.csv"
+
+      # `users`  (mapping[], required)
+      # Contains user specifications that are required for all cape
+      # deployments. Each list item will have the following keys
+      # * `email` (string, required) - The unique email address for the
+      #   user. This will be the username of any user.
+      # * `groups` (string[], optional) - A list of group names to
+      #   associate the user with. The named group must either be
+      #   created in the `groups` block or in the `group_extra` file
+      #   above
+      users:
+        - email: cape.admin@example.com
+          temporary_password: 1CapeCodUser!
+          groups:
+            - Admins
+            # `user_extra` (string, optional)
+            # Path to a csv file containing deployment-specific users to
+            # create. May be a full path or relative to repo root. This file can
+            # be keps out of the repo using something like the assets-untracked
+            # mechanism discussed in the readme.
+            # users_extra: "./assets-untracked/principals/users.csv"
     # `glue` (mapping, optional)
     # Contains meta configuration related to aws glue.
     glue:
@@ -107,61 +165,97 @@ config:
         server-cert: "*.cape-dev.org.crt"
       # `cidr-block` (string, optional)
       # The full cidr block that will be given to the private swimlane.
-      # Defaults to "10.0.0.0/24"
+      # Defaults to "10.0.0.0/24". Must be between /16 and /28
       cidr-block: 10.0.0.0/16
-      # `public-subnet` (mapping, optional)
-      # Contains the configuration of the public subnet. If not provided,
-      # a default public subnet configuration will be used. The public
-      # subnet is special and there will be one per VPC. This is required
-      # to house a NAT for the VPC that allows traffic egress to the
-      # internet.
-      public-subnet:
-        # `cidr-block` (string, optional)
-        # The cidr block that will be given to the public subnet of the
-        # swimlane. Defaults to "10.0.0.0/24"
-        cidr-block: 10.0.1.0/24
-      # `private-subnets` (mapping[], optional)
+      # `subnets` (mapping[], optional)
       # A list of configurations for the private subnets of the swimlane.
-      # If not provided, not privat subnets will be configured. All list
-      # items have the following schema:
+      # If not provided, no private subnets will be configured but a
+      # public subnet will be. All list items have the following schema:
       # * `name` (string, required)
       #   A short name for the subnet. This should be unique across all
-      #   private subnets in the swimlane. No private subnet may be named
-      #   "public"
+      #   subnets in the swimlane.
       # * `cidr-block` (string, required)
-      #   The cidr block given to the private subnet
+      #   The cidr block given to the subnet
+      # * `type`: (string, required)
+      #   a string representing the type of subnet. some types are
+      #   special and they're strings are reserved. known types are:
+      #   * `nat`: the subnet will be given a nat gateway. at present,
+      #     this gateway will be an internet gateway and the NAT will be
+      #     for internet egress. no other gateways are yet supported
+      #     (meaning no private NAT)
+      #   * `compute`: there is no special handling for this type at this
+      #     time, but the name is reserved for the future
+      #   * `app`: there is no special handling for this type at this
+      #     time, but the name is reserved for the future
+      #   * `vpn`: any subnet marks as the VPN type will be configured to
+      #     be a target of the external client VPN setup.
+      # * `public`: (boolean, optional)
+      #   A boolean stating if the subnet should be made public (have an
+      #   associated public IP address). This defaults to False. In the
+      #   CAPE reference architecture, only subnets of type `nat` are
+      #   configured as public. If there is not an explicit need for a
+      #   subnet to be public (and then only if you understand the
+      #   security implications) then the subnet should be kept private
       # * `routes` (string[], optional)
       #   A list of subnet names for which this subnet should be able to
       #   route to (via routing table). The special name "public" may be
       #   used to allow routing to the public subnet for the swimlane (if
       #   public is not explicitly specified, the subnet will have no
       #   internet access).
-      # * `az` (string optional)
+      # * `az` (string, required)
       #   An explicit availability zone for the subnet. If not provided,
       #   the default availability zone will be used. This is generally
       #   only needed when setting up redundant private subnets for
       #   something like VPN
-      private-subnets:
-        - name: compute
-          cidr-block: 10.0.2.0/24
+      subnets:
+        # AZ 1
+        - name: nataz1
+          cidr-block: 10.0.127.0/24
+          type: nat
+          public: True
+          !!merge <<: *az1
+        - name: cmptaz1
+          cidr-block: 10.0.0.0/20
+          type: compute
+          !!merge <<: *az1
           routes:
-            - "public"
-        - name: vpn
-          cidr-block: 10.0.3.0/24
-          az: "us-east-2b"
+            - "nataz1"
+        - name: appaz1
+          cidr-block: 10.0.16.0/20
+          type: app
+          !!merge <<: *az1
           routes:
-            - "public"
-        # TODO: ISSUE #118
-        #       We really don't want this kind of name coupling for
-        #       redundancy of subnets (or anything else). we should
-        #       change how these are specified so redundant subnets are
-        #       defined under the same blocks. This is just being done
-        #       for quick demo turn around
-        - name: vpn2
-          cidr-block: 10.0.4.0/24
-          az: "us-east-2c"
+            - "nataz1"
+        - name: vpnaz1
+          cidr-block: 10.0.120.0/22
+          !!merge <<: *az1
+          type: vpn
           routes:
-            - "public"
+            - "nataz1"
+        # AZ 2
+        - name: nataz2
+          cidr-block: 10.0.255.0/24
+          type: nat
+          public: True
+          !!merge <<: *az2
+        - name: cmptaz2
+          cidr-block: 10.0.128.0/20
+          type: compute
+          !!merge <<: *az2
+          routes:
+            - "nataz2"
+        - name: appaz2
+          cidr-block: 10.0.144.0/20
+          type: app
+          !!merge <<: *az2
+          routes:
+            - "nataz2"
+        - name: vpnaz2
+          cidr-block: 10.0.248.0/22
+          !!merge <<: *az2
+          type: vpn
+          routes:
+            - "nataz2"
       # `api` (mapping, optional)
       # Contains the configuration for apis and the API application load
       # balancer. If this is not included, a default configuration will be
@@ -346,6 +440,24 @@ config:
         #   was "app1" and the swimlane's `domain_name` was
         #   "cape-dev.org", the instance would be reachable at
         #   "app1.cape-dev.org".
+        # * `cognito_client` (mapping, optional)
+        #   Configuration of a Cognito User Pool Client for hooking up
+        #   SSO to the instance application. If omitted, then no client
+        #   is added. Possible fields can be found in the Pulumi
+        #   documentation for `aws.cognito.UserPoolClient`. Some fields
+        #   also support Jinja template notation, specifically elements
+        #   in `logout_urls` and `callback_urls` with a parameter passed
+        #   in for `{{ domain }}` to fill in the application's domain.
+        #   Fields you should almost certainly make sure to include are:
+        #       - callback_urls: where to forward the user after login
+        #       - allowed_oauth_scopes: the scopes to get from the SSO
+        #   Fields that will already be set and shouldn't be included are:
+        #     - name - already the name of the instance
+        #     - user_pool_id - already set by the infrastructure
+        #     - generate_secret - always true
+        #     - allowed_oauth_flows_user_pool_client - always true
+        #     - allowed_oauth_flows - always "code"
+        #     - supported_identity_providers - set by the infrastructure
         # * `port` (int, optional)
         #   The port the ALB should forward traffic to on the instance.
         #   In general, we assume the ALB is performing TLS termination
@@ -384,7 +496,7 @@ config:
         #     A boolean stating if the instance should be rebuilt (i.e.
         #     destroyed and recreated) on a detected change in user
         #     data (defaults to False).
-        # * `services` (stgin[], optional)
+        # * `services` (string[], optional)
         #   A list of services that the instance will need access to
         #   via an instance profile. *THIS IS QUITE SUBJECT TO CHANGE*
         #   as we get into how we do policies and roles. Currently the
@@ -394,8 +506,13 @@ config:
             image: "ami-05752f93029c09fa5"
             public_ip: False
             instance_type: "t3a.medium"
-            subnet_name: "compute"
+            subnet_types:
+              - compute
             subdomain: "jupyterhub"
+            cognito_client:
+              callback_urls:
+                - "https://{{ domain }}/hub/oauth_callback"
+              allowed_oauth_scopes: ["openid", "email"]
             port: 80
             protocol: "HTTP"
             healthcheck:
@@ -432,7 +549,7 @@ config:
         # More here:
         # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
         # If not specified, this will default to "10.1.0.0/22"
-        cidr-block: "10.1.0.0/22"
+        cidr-block: "10.254.0.0/22"
         # `transport-proto` (string, optional)
         # Valid values are "tcp" and "udp". If not specified this will
         # default to "udp"
@@ -505,7 +622,7 @@ config:
         environments:
           - name: analysis
             image: ami-0cfe23bad78a802ea
-            subnets:
+            subnet_types:
               - compute
             resources:
               instance_types: ["c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge", "c4.8xlarge"]
