@@ -208,6 +208,38 @@ class CapePrincipals(CapeComponentResource):
 
         # TODO: add cognito IDP mappings for special claims to more specific roles
 
+    def _add_identity_pool(self):
+        """"""
+        identity_providers = [
+            {
+                "provider_name": self.user_pool.id.apply(
+                    lambda i: f"cognito-idp.us-east-2.amazonaws.com/{i}"
+                ),
+                "client_id": c.id,
+                "server_side_token_check": False,
+            }
+            for _, c in self.clients.items()
+        ]
+
+        identity_pool = aws.cognito.IdentityPool(
+            f"{capeinfra.stack_ns}",
+            identity_pool_name="cape-identities",
+            allow_unauthenticated_identities=False,
+            allow_classic_flow=False,
+            cognito_identity_providers=[
+                {
+                    "provider_name": self.user_pool.id.apply(
+                        lambda i: f"cognito-idp.us-east-2.amazonaws.com/{i}"
+                    ),
+                    "client_id": c.id,
+                    "server_side_token_check": False,
+                }
+                for _, c in self.clients.items()
+            ],
+        )
+
+        # LEFTOFF - role, policy
+
     def _add_cape_group(self, grpname: str, grpcfg: dict[str, Any]):
         """Create a CAPE group and add it to the local tracking dict.
 
