@@ -157,7 +157,7 @@ class CapePrincipals(CapeComponentResource):
         self.local_users = {}
 
         for usrcfg in self.config.get("users", default=[]):
-            self._add_cape_user(usrcfg, self.user_pool.id)
+            self._add_cape_user(usrcfg)
 
         # now that we've loaded our groups and local users from the config file,
         # we're going to also grab the extras files (untracked files containing
@@ -171,36 +171,15 @@ class CapePrincipals(CapeComponentResource):
             self.load_groups_file(extra_grps_file)
 
         if extra_usrs_file is not None:
-            self.load_users_file(extra_usrs_file, self.user_pool.id)
+            self.load_users_file(extra_usrs_file)
 
         # TODO: configure external providers with IdentifyProvider
         # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
         #                              provider_name="GTRI", provider_type="OIDC",
         #                              ...)
 
-        # Create app clients (jupyerhub, eventually add cape-ui)
-        self.clients = {
-            client: aws.cognito.UserPoolClient(
-                f"client-{client}",
-                name=client,
-                user_pool_id=self.user_pool.id,
-                generate_secret=True,
-                allowed_oauth_flows_user_pool_client=True,
-                allowed_oauth_flows=["code"],
-                supported_identity_providers=["COGNITO"],
-                **options,  # pyright: ignore
-            )
-            for client, options in (
-                {
-                    "jupyterhub": {
-                        "callback_urls": [
-                            "https://jupyterhub.cape-dev.org/hub/oauth_callback"
-                        ],
-                        "allowed_oauth_scopes": ["openid", "email"],
-                    }
-                }
-            ).items()
-        }
+        # Create a placeholder for user pool clients
+        self.clients = {}
 
         # TODO: Create identity pool cape-identities
 
@@ -229,7 +208,7 @@ class CapePrincipals(CapeComponentResource):
             **grpcfg,
         )
 
-    def _add_cape_user(self, usrcfg: dict[str, Any], user_pool_id: Output):
+    def _add_cape_user(self, usrcfg: dict[str, Any]):
         """Create a CAPE user and add it to the local tracking list.
 
         The config dict has the form:
@@ -260,7 +239,7 @@ class CapePrincipals(CapeComponentResource):
 
         self.local_users[email] = aws.cognito.User(
             f"{capeinfra.stack_ns}-usr-{email}",
-            user_pool_id=user_pool_id,
+            user_pool_id=self.user_pool.id,
             username=email,
             # NOTE: user will be prompted to change on first login
             temporary_password=usrcfg["temporary_password"],
@@ -271,9 +250,9 @@ class CapePrincipals(CapeComponentResource):
         )
 
         for gname in usrcfg.get("groups", []):
-            self._add_user_to_group(email, gname, user_pool_id)
+            self._add_user_to_group(email, gname)
 
-    def _add_user_to_group(self, uname: str, gname: str, user_pool_id: Output):
+    def _add_user_to_group(self, uname: str, gname: str):
         """Add a CAPE user to a CAPE group.
 
         Args:
@@ -287,7 +266,7 @@ class CapePrincipals(CapeComponentResource):
         #       _add_cognito_user method.
         aws.cognito.UserInGroup(
             f"{capeinfra.stack_ns}-uig-{gname}-{uname}",
-            user_pool_id=user_pool_id,
+            user_pool_id=self.user_pool.id,
             group_name=self.groups[gname].name,
             username=self.local_users[uname].username,
         )
@@ -324,7 +303,7 @@ class CapePrincipals(CapeComponentResource):
                 gname = grpcfg.pop("name")
                 self._add_cape_group(gname, grpcfg)
 
-    def load_users_file(self, filepth: str, user_pool_id: Output):
+    def load_users_file(self, filepth: str):
         """Load an arbitrary csv file of users and add them to CAPE.
 
         csv file columns are: ["email", "groups"] where `groups` is a colon
@@ -364,4 +343,23 @@ class CapePrincipals(CapeComponentResource):
                     "temporary_password": tpass,
                     "groups": grps.split(":"),
                 }
-                self._add_cape_user(usrcfg, user_pool_id)
+                self._add_cape_user(usrcfg)
+
+    def add_client(self, name: str, options: dict):
+        """Add a client to the user pool to create a cognito login endpoint
+
+        Args:
+            options: Options passed to aws.cognito.UserPoolClient such as
+            `callback_urls` and `allowed_oauth_scopes`
+            name: the client name to register
+        """
+        self.clients[name] = aws.cognito.UserPoolClient(
+            f"client={name}",
+            name=name,
+            user_pool_id=self.user_pool.id,
+            generate_secret=True,
+            allowed_oauth_flows_user_pool_client=True,
+            allowed_oauth_flows=["code"],
+            supported_identity_providers=["COGNITO"],
+            **options,  # pyright: ignore
+        )
