@@ -499,6 +499,10 @@ config:
                       subnet_types:
                           - compute
                       subdomain: "jupyterhub"
+                      cognito_client:
+                          callback_urls:
+                              - "https://{{ domain }}/hub/oauth_callback"
+                          allowed_oauth_scopes: ["openid", "email"]
                       port: 80
                       protocol: "HTTP"
                       healthcheck:

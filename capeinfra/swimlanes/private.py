@@ -34,7 +34,10 @@ from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane, SubnetType
 from capeinfra.util.file import file_as_string
-from capeinfra.util.jinja2 import get_j2_template_from_path
+from capeinfra.util.jinja2 import (
+    get_j2_template_from_path,
+    get_j2_template_from_str,
+)
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeConfig
 
@@ -678,6 +681,21 @@ class PrivateSwimlane(ScopedSwimlane):
         for aicfg in app_instance_cfgs:
 
             # first process the user data if applicable
+            domain = f"{aicfg['subdomain']}.{self.domain_name}"
+
+            # if a client is asked to be configured, add it to the user pool
+            cognito_client = aicfg.get("cognito_client", None)
+            if cognito_client is not None:
+
+                def url_template(url):
+                    return get_j2_template_from_str(url).render(domain=domain)
+
+                for url_field in ["logout_urls", "callback_urls"]:
+                    if url_field in cognito_client:
+                        cognito_client[url_field] = list(
+                            map(url_template, cognito_client[url_field])
+                        )
+                capeinfra.meta.users.add_client(aicfg["name"], cognito_client)
 
             user_data = None
             rebuild_on_ud_change = False
@@ -686,21 +704,29 @@ class PrivateSwimlane(ScopedSwimlane):
                 rebuild_on_ud_change = ud_info["rebuild_on_change"]
                 template = get_j2_template_from_path(ud_info["template"])
 
-                user_data = Output.all(
-                    auth_domain_prefix=capeinfra.meta.users.user_pool.domain,
-                    jupyterhub_client_id=capeinfra.meta.users.clients[
-                        "jupyterhub"
-                    ].id,
-                    jupyterhub_client_secret=capeinfra.meta.users.clients[
-                        "jupyterhub"
-                    ].client_secret,
-                ).apply(
-                    lambda args: template.render(
-                        **ud_info["vars"],
-                        **args,
-                        auth_domain=f"https://{args['auth_domain_prefix']}.auth.us-east-2.amazoncognito.com",
+                pulumi_outputs: dict[str, Output] = {}
+                # if there is a cognito client, pass in the necessary client
+                # information
+                if cognito_client is not None:
+                    pulumi_outputs["cognito_domain_prefix"] = (
+                        capeinfra.meta.users.user_pool.domain
                     )
-                )
+                    client = capeinfra.meta.users.clients[aicfg["name"]]
+                    pulumi_outputs["cognito_client_id"] = client.id
+                    pulumi_outputs["cognito_client_secret"] = (
+                        client.client_secret
+                    )
+
+                def render_template(args):
+                    args["domain"] = domain
+                    # if there is a cognito domain prefix, add the fqdn
+                    if "cognito_domain_prefix" in args:
+                        args["cognito_domain"] = (
+                            f"https://{args['cognito_domain_prefix']}.auth.{self.aws_region}.amazoncognito.com"
+                        )
+                    return template.render(**ud_info["vars"], **args)
+
+                user_data = Output.all(**pulumi_outputs).apply(render_template)
 
             # TODO: ISSUE #186
             instance_profile = None
@@ -778,7 +804,7 @@ class PrivateSwimlane(ScopedSwimlane):
                             ),
                             opts=ResourceOptions(parent=self),
                         ),
-                        "fqdn": f"{aicfg['subdomain']}.{self.domain_name}",
+                        "fqdn": domain,
                         "port": aicfg.get("port", None),
                         "proto": aicfg.get("protocol", None),
                         "hc_args": aicfg.get("healthcheck", None),

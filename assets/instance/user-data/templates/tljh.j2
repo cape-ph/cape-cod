@@ -9,14 +9,14 @@ sudo tljh-config add-item users.admin {{ aa }}
 
 sudo tljh-config set auth.type oauthenticator.generic.GenericOAuthenticator
 sudo tljh-config set auth.GenericOAuthenticator.allow_all True
-sudo tljh-config set auth.GenericOAuthenticator.client_id "{{ jupyterhub_client_id }}"
-sudo tljh-config set auth.GenericOAuthenticator.client_secret "{{ jupyterhub_client_secret }}"
-sudo tljh-config set auth.GenericOAuthenticator.oauth_callback_url "https://jupyterhub.cape-dev.org/hub/oauth_callback"
+sudo tljh-config set auth.GenericOAuthenticator.client_id "{{ cognito_client_id }}"
+sudo tljh-config set auth.GenericOAuthenticator.client_secret "{{ cognito_client_secret }}"
+sudo tljh-config set auth.GenericOAuthenticator.oauth_callback_url "https://{{ domain }}/hub/oauth_callback"
 
-sudo tljh-config set auth.GenericOAuthenticator.authorize_url "{{ auth_domain }}/oauth2/authorize"
-sudo tljh-config set auth.GenericOAuthenticator.token_url "{{ auth_domain }}/oauth2/token"
-sudo tljh-config set auth.GenericOAuthenticator.userdata_url "{{ auth_domain }}/oauth2/userInfo"
-sudo tljh-config set auth.GenericOAuthenticator.logout_redirect_url "{{ auth_domain }}/oauth2/logout"
+sudo tljh-config set auth.GenericOAuthenticator.authorize_url "{{ cognito_domain }}/oauth2/authorize"
+sudo tljh-config set auth.GenericOAuthenticator.token_url "{{ cognito_domain }}/oauth2/token"
+sudo tljh-config set auth.GenericOAuthenticator.userdata_url "{{ cognito_domain }}/oauth2/userInfo"
+sudo tljh-config set auth.GenericOAuthenticator.logout_redirect_url "{{ cognito_domain }}/oauth2/logout"
 sudo tljh-config set auth.GenericOAuthenticator.login_service "CAPE SSO"
 sudo tljh-config set auth.GenericOAuthenticator.username_key "email"
 sudo tljh-config set auth.GenericOAuthenticator.userdata_method "POST"
