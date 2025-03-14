@@ -122,6 +122,11 @@ class PrivateSwimlane(ScopedSwimlane):
         # static and instance apps share an alb
         self._create_app_alb()
         self.create_private_api_resources()
+        # identity pool is created well before we get here, but we can't add
+        # roles/policies/attachments before we know the app clients which
+        # haven't been added till now.
+        capeinfra.meta.principals.add_identity_pool()
+        capeinfra.meta.principals.add_principals()
         self._create_hosted_domain()
         self.create_vpn()
         self.prepare_nextflow_executor()
@@ -695,7 +700,9 @@ class PrivateSwimlane(ScopedSwimlane):
                         cognito_client[url_field] = list(
                             map(url_template, cognito_client[url_field])
                         )
-                capeinfra.meta.users.add_client(aicfg["name"], cognito_client)
+                capeinfra.meta.principals.add_client(
+                    aicfg["name"], cognito_client
+                )
 
             user_data = None
             rebuild_on_ud_change = False
@@ -709,9 +716,9 @@ class PrivateSwimlane(ScopedSwimlane):
                 # information
                 if cognito_client is not None:
                     pulumi_outputs["cognito_domain_prefix"] = (
-                        capeinfra.meta.users.user_pool.domain
+                        capeinfra.meta.principals.user_pool.domain
                     )
-                    client = capeinfra.meta.users.clients[aicfg["name"]]
+                    client = capeinfra.meta.principals.clients[aicfg["name"]]
                     pulumi_outputs["cognito_client_id"] = client.id
                     pulumi_outputs["cognito_client_secret"] = (
                         client.client_secret
