@@ -1,6 +1,7 @@
 """Contains resources used by the whole CAPE infra deployment."""
 
 import csv
+import json
 from typing import Any
 
 import pulumi_aws as aws
@@ -8,6 +9,7 @@ from pulumi import FileArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
 from capeinfra.resources.objectstorage import VersionedBucket
+from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource
 
 
@@ -38,7 +40,7 @@ class CapeMeta(CapeComponentResource):
             )
 
         self.capepy = CapePy(self.automation_assets_bucket)
-        self.users = CapePrincipals(
+        self.principals = CapePrincipals(
             config=self.config.get("principals", default={})
         )
 
@@ -147,7 +149,11 @@ class CapePrincipals(CapeComponentResource):
             domain=f"{capeinfra.stack_ns}-cape-users",
             user_pool_id=self.user_pool.id,
         )
+        # Create a placeholder for user pool clients
+        self.clients = {}
 
+    def add_principals(self):
+        """"""
         self.groups = {}
 
         for grpname, grpcfg in self.config.get("groups", default={}).items():
@@ -178,30 +184,57 @@ class CapePrincipals(CapeComponentResource):
         #                              provider_name="GTRI", provider_type="OIDC",
         #                              ...)
 
-        # Create a placeholder for user pool clients
-        self.clients = {}
-
         # TODO: Create identity pool cape-identities
 
         # TODO: add cognito IDP to identity pool and add default mappings for basic role
 
         # TODO: add cognito IDP mappings for special claims to more specific roles
 
-    def _add_identity_pool(self):
+    @property
+    def default_trust_policy(self) -> Output:
         """"""
-        identity_providers = [
-            {
-                "provider_name": self.user_pool.id.apply(
-                    lambda i: f"cognito-idp.us-east-2.amazonaws.com/{i}"
-                ),
-                "client_id": c.id,
-                "server_side_token_check": False,
-            }
-            for _, c in self.clients.items()
-        ]
+        # TODO: we have nothing handling `unauthenticated` amr at this time
+        return self.identity_pool.id.apply(
+            lambda i: json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Federated": "cognito-identity.amazonaws.com"
+                            },
+                            "Action": "sts:AssumeRoleWithWebIdentity",
+                            "Condition": {
+                                "StringEquals": {
+                                    "cognito-identity.amazonaws.com:aud": f"{i}"
+                                },
+                                "ForAnyValue:StringLike": {
+                                    "cognito-identity.amazonaws.com:amr": "authenticated"
+                                },
+                            },
+                        }
+                    ],
+                },
+            )
+        )
 
-        identity_pool = aws.cognito.IdentityPool(
-            f"{capeinfra.stack_ns}",
+    # LEFTOFF - CALL ME MAYBE
+    def add_identity_pool(self):
+        """"""
+        # TODO:
+        # still will need work:
+        # * assumes that we're only adding cognito identity providers for
+        #   instance apps only.
+        # * region is not parameterized in provider_name for cognito identity
+        #   providers (we may need saml providers e.g.)
+        # * hard coded role and policy (should be reusable and we should have a
+        #   library of them)
+
+        # TODO: refactor all this to fit into iam.py and to get roles out into a
+        #       library
+        self.identity_pool = aws.cognito.IdentityPool(
+            f"{capeinfra.stack_ns}-idntty-pl",
             identity_pool_name="cape-identities",
             allow_unauthenticated_identities=False,
             allow_classic_flow=False,
@@ -215,9 +248,87 @@ class CapePrincipals(CapeComponentResource):
                 }
                 for _, c in self.clients.items()
             ],
+            opts=ResourceOptions(parent=self),
         )
 
-        # LEFTOFF - role, policy
+        cognito_role = aws.iam.Role(
+            f"{capeinfra.stack_ns}-cgnt-rl",
+            assume_role_policy=self.default_trust_policy,
+            # assume_role_policy=self.identity_pool.id.apply(
+            #     lambda i: json.dumps(
+            #         {
+            #             "Version": "2012-10-17",
+            #             "Statement": [
+            #                 {
+            #                     "Effect": "Allow",
+            #                     "Principal": {
+            #                         "Federated": "cognito-identity.amazonaws.com"
+            #                     },
+            #                     "Action": "sts:AssumeRoleWithWebIdentity",
+            #                     "Condition": {
+            #                         "StringEquals": {
+            #                             "cognito-identity.amazonaws.com:aud": f"{i}"
+            #                         },
+            #                         "ForAnyValue:StringLike": {
+            #                             "cognito-identity.amazonaws.com:amr": "authenticated"
+            #                         },
+            #                     },
+            #                 }
+            #             ],
+            #         },
+            #     )
+            # ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        # cognito_role_policy = aws.iam.RolePolicy(
+        #     f"{capeinfra.stack_ns}-cgnt-rlplcy",
+        #     role=cognito_role.id,
+        #     # TODO: placeholder policy
+        #     policy=json.dumps(
+        #         {
+        #             "Version": "2012-10-17",
+        #             "Statement": [
+        #                 {
+        #                     # TODO: test if we can only allow read to one
+        #                     #       bucket, but nothing else. obvi this will
+        #                     #       have to change
+        #                     "Effect": "Allow",
+        #                     "Action": ["s3:GetObject"],
+        #                     "Resource": "arn:aws:s3:::ccd-dlh-t-hai-input-raw-vbkt-s3-9e72cfa",
+        #                 }
+        #             ],
+        #         }
+        #     ),
+        #     opts=ResourceOptions(parent=self),
+        # )
+
+        cognito_role_attach = aws.cognito.IdentityPoolRoleAttachment(
+            f"{capeinfra.stack_ns}-cgnt-rlplcy-attch",
+            identity_pool_id=self.identity_pool.id,
+            roles={"authenticated": cognito_role.arn},
+            role_mappings=[
+                aws.cognito.IdentityPoolRoleAttachmentRoleMappingArgs(
+                    identity_provider=Output.all(
+                        pool_id=c.user_pool_id, client_id=c.id
+                    ).apply(
+                        lambda args: f"cognito-idp.us-east-2.amazonaws.com/{args['pool_id']}:{args['client_id']}"
+                    ),
+                    ambiguous_role_resolution="AuthenticatedRole",
+                    type="Token",
+                    # TODO: may need rules for token (such as cognito:groups)
+                    # mapping_rules= [
+                    #     aws.cognito.IdentityPoolRoleAttachmentRoleMappingMappingRuleArgs(
+                    #         claim= "isAdmin",
+                    #         match_type= "Equals",
+                    #         role_arn= cognito_role.arn,
+                    #         value= "paid",
+                    #     )
+                    # ],
+                )
+                for _, c in self.clients.items()
+            ],
+        )
 
     def _add_cape_group(self, grpname: str, grpcfg: dict[str, Any]):
         """Create a CAPE group and add it to the local tracking dict.
@@ -234,10 +345,53 @@ class CapePrincipals(CapeComponentResource):
             grpcfg: The configuration dict for the group.
         """
 
+        # TODO: maybe not best to :
+        # * do all the IAM role stuff in here
+        # * add a default IAM role to each group.
+        # * name thins based on given group name (could be too long or have bad
+        #   chars)
+        # baby steps
+
+        group_role = aws.iam.Role(
+            f"{capeinfra.stack_ns}-{disemvowel(grpname)}-rl",
+            assume_role_policy=self.default_trust_policy,
+            opts=ResourceOptions(parent=self),
+        )
+
+        # TODO: do not endeavour to know the group names in here...
+        if grpname == "DefaultUsers":
+            group_policy = aws.iam.Policy(
+                f"{capeinfra.stack_ns}-{disemvowel(grpname)}-rlplcy",
+                # TODO: placeholder policy
+                policy=json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                # TODO: test if we can only allow read to one
+                                #       bucket, but nothing else. obvi this will
+                                #       have to change
+                                "Effect": "Allow",
+                                "Action": ["s3:GetObject"],
+                                "Resource": "arn:aws:s3:::ccd-dlh-t-hai-input-raw-vbkt-s3-9e72cfa",
+                            }
+                        ],
+                    }
+                ),
+            )
+
+            group_policy_attachment = aws.iam.RolePolicyAttachment(
+                f"{capeinfra.stack_ns}-{disemvowel(grpname)}-rpattch",
+                role=group_role.name,
+                policy_arn=group_policy.arn,
+            )
+
         self.groups[grpname] = aws.cognito.UserGroup(
             f"{capeinfra.stack_ns}-grp-{grpname}",
             user_pool_id=self.user_pool.id,
             **grpcfg,
+            role_arn=group_role.arn,
+            opts=ResourceOptions(parent=self),
         )
 
     def _add_cape_user(self, usrcfg: dict[str, Any]):
@@ -279,6 +433,7 @@ class CapePrincipals(CapeComponentResource):
                 "email": email,
                 "email_verified": "true",
             },
+            opts=ResourceOptions(parent=self),
         )
 
         for gname in usrcfg.get("groups", []):
