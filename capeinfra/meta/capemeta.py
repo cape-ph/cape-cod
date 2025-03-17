@@ -254,80 +254,13 @@ class CapePrincipals(CapeComponentResource):
         cognito_role = aws.iam.Role(
             f"{capeinfra.stack_ns}-cgnt-rl",
             assume_role_policy=self.default_trust_policy,
-            # assume_role_policy=self.identity_pool.id.apply(
-            #     lambda i: json.dumps(
-            #         {
-            #             "Version": "2012-10-17",
-            #             "Statement": [
-            #                 {
-            #                     "Effect": "Allow",
-            #                     "Principal": {
-            #                         "Federated": "cognito-identity.amazonaws.com"
-            #                     },
-            #                     "Action": "sts:AssumeRoleWithWebIdentity",
-            #                     "Condition": {
-            #                         "StringEquals": {
-            #                             "cognito-identity.amazonaws.com:aud": f"{i}"
-            #                         },
-            #                         "ForAnyValue:StringLike": {
-            #                             "cognito-identity.amazonaws.com:amr": "authenticated"
-            #                         },
-            #                     },
-            #                 }
-            #             ],
-            #         },
-            #     )
-            # ),
             opts=ResourceOptions(parent=self),
         )
 
-        # cognito_role_policy = aws.iam.RolePolicy(
-        #     f"{capeinfra.stack_ns}-cgnt-rlplcy",
-        #     role=cognito_role.id,
-        #     # TODO: placeholder policy
-        #     policy=json.dumps(
-        #         {
-        #             "Version": "2012-10-17",
-        #             "Statement": [
-        #                 {
-        #                     # TODO: test if we can only allow read to one
-        #                     #       bucket, but nothing else. obvi this will
-        #                     #       have to change
-        #                     "Effect": "Allow",
-        #                     "Action": ["s3:GetObject"],
-        #                     "Resource": "arn:aws:s3:::ccd-dlh-t-hai-input-raw-vbkt-s3-9e72cfa",
-        #                 }
-        #             ],
-        #         }
-        #     ),
-        #     opts=ResourceOptions(parent=self),
-        # )
-
-        cognito_role_attach = aws.cognito.IdentityPoolRoleAttachment(
-            f"{capeinfra.stack_ns}-cgnt-rlplcy-attch",
+        aws.cognito.IdentityPoolRoleAttachment(
+            f"{capeinfra.stack_ns}-{disemvowel('cognito-rolepolicy-attach')}",
             identity_pool_id=self.identity_pool.id,
             roles={"authenticated": cognito_role.arn},
-            role_mappings=[
-                aws.cognito.IdentityPoolRoleAttachmentRoleMappingArgs(
-                    identity_provider=Output.all(
-                        pool_id=c.user_pool_id, client_id=c.id
-                    ).apply(
-                        lambda args: f"cognito-idp.us-east-2.amazonaws.com/{args['pool_id']}:{args['client_id']}"
-                    ),
-                    ambiguous_role_resolution="AuthenticatedRole",
-                    type="Token",
-                    # TODO: may need rules for token (such as cognito:groups)
-                    # mapping_rules= [
-                    #     aws.cognito.IdentityPoolRoleAttachmentRoleMappingMappingRuleArgs(
-                    #         claim= "isAdmin",
-                    #         match_type= "Equals",
-                    #         role_arn= cognito_role.arn,
-                    #         value= "paid",
-                    #     )
-                    # ],
-                )
-                for _, c in self.clients.items()
-            ],
         )
 
     def _add_cape_group(self, grpname: str, grpcfg: dict[str, Any]):
@@ -380,7 +313,7 @@ class CapePrincipals(CapeComponentResource):
                 ),
             )
 
-            group_policy_attachment = aws.iam.RolePolicyAttachment(
+            aws.iam.RolePolicyAttachment(
                 f"{capeinfra.stack_ns}-{disemvowel(grpname)}-rpattch",
                 role=group_role.name,
                 policy_arn=group_policy.arn,
