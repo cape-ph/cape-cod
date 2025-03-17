@@ -58,6 +58,9 @@ config:
                     description: CAPE administrators group.
                     precedence: 1
 
+                DefaultUsers:
+                    description: CAPE DefaultUsers (catchall) group.
+                    precedence: 65536
             # `group_extra` (string, optional)
             # Path to a csv file containing deployment-specific groups to
             # create. May be a full path or relative to repo root. This file can
@@ -79,6 +82,14 @@ config:
                   temporary_password: 1CapeCodUser!
                   groups:
                       - Admins
+                # TODO: this user probably shouldn't actually be in here long
+                #       term. This is the kind of user that the `users_extra`
+                #       file is intended for. THIS IS JUST FOR TESTING IDENTITY
+                #       POOL AND SHOULD BE REMOVED WHEN THAT'S GOOD
+                - email: cape.default@example.com
+                  temporary_password: 1CapeCodUser!
+                  groups:
+                      - DefaultUsers
 
             # `user_extra` (string, optional)
             # Path to a csv file containing deployment-specific users to

@@ -16,4 +16,4 @@ def disemvowel(s):
     Returns:
         A copy of s with vowels removed.
     """
-    return s.translate(VOWELS_TBL)
+    return ("-").join(w[0] + w[1:].translate(VOWELS_TBL) for w in s.split("-"))
