@@ -16,7 +16,7 @@ sudo tljh-config set auth.GenericOAuthenticator.oauth_callback_url "https://{{ d
 sudo tljh-config set auth.GenericOAuthenticator.authorize_url "{{ cognito_domain }}/oauth2/authorize"
 sudo tljh-config set auth.GenericOAuthenticator.token_url "{{ cognito_domain }}/oauth2/token"
 sudo tljh-config set auth.GenericOAuthenticator.userdata_url "{{ cognito_domain }}/oauth2/userInfo"
-sudo tljh-config set auth.GenericOAuthenticator.logout_redirect_url "{{ cognito_domain }}/oauth2/logout"
+sudo tljh-config set auth.GenericOAuthenticator.logout_redirect_url "{{ cognito_domain }}/logout?client_id={{ cognito_client_id }}&logout_uri=https://{{domain }}"
 sudo tljh-config set auth.GenericOAuthenticator.login_service "CAPE SSO"
 sudo tljh-config set auth.GenericOAuthenticator.username_key "email"
 sudo tljh-config set auth.GenericOAuthenticator.userdata_method "POST"

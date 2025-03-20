@@ -531,6 +531,8 @@ config:
                       cognito_client:
                           callback_urls:
                               - "https://{{ domain }}/hub/oauth_callback"
+                          logout_urls:
+                              - "https://{{ domain }}"
                           allowed_oauth_scopes: ["openid", "email"]
                       port: 80
                       protocol: "HTTP"
