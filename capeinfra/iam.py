@@ -519,6 +519,48 @@ def get_api_policy(grants: dict[str, list[Output]]):
     )
 
 
+# TODO: grants doesn't do anything here yet. Not sure what we'll add access to
+#       at this point
+def get_api_authorizer_policy(grants: dict[str, list[Output]]):
+    """Get a role policy statement for the an API Lamda Authorizer.
+
+    The authorizer for an API will be given access as configured in
+    `grants`. Lambda logging will be unconditionally enabled without
+    configuration.
+
+    At present, `grants` is a placeholder and cannot be used to modify the
+    policy. This will change as the needs of the authorizers matures.
+
+
+    Args:
+        grants: A dict of the format:
+            {***TBD***}
+
+    Returns:
+        The policy statement as a dictionary json encoded string.
+    """
+    stmnts = [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+            ],
+            "Resource": "arn:aws:logs:*:*:*",
+        },
+    ]
+
+    # TODO: figure out what the authorizer actually needs grants on
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": stmnts,
+        },
+    )
+
+
 def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
     """Get a role policy statement for reading from sqs and starting glue jobs.
 
