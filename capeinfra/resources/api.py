@@ -343,7 +343,7 @@ class CapeRestApi(CapeComponentResource):
         # now give the API gateway the permission to invoke the authorizer
         # lambda
         aws.lambda_.Permission(
-            f"{self.name}-api-authz-allowlmbd",
+            f"{self.name}-authz-allowlmbd",
             action="lambda:InvokeFunction",
             function=self.api_authorizer_handler.arn,
             principal="apigateway.amazonaws.com",
