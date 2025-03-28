@@ -364,6 +364,7 @@ config:
                     dap:
                         desc: "Data Analysis Pipeline API"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
+                        authorizer: "assets/api/authz/default_apigw_authorizer.py"
                         env_vars:
                             - "DAP_QUEUE_NAME"
                             - "DAP_REG_DDB_TABLE"
