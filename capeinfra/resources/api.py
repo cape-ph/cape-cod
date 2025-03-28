@@ -12,6 +12,7 @@ from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
 from capeinfra.iam import (
+    get_api_authorizer_policy,
     get_api_policy,
     get_inline_role,
     get_vpce_api_invoke_policy,
@@ -33,6 +34,7 @@ class CapeRestApi(CapeComponentResource):
         resource_grants: dict[str, list[Output]],
         vpc_endpoint: aws.ec2.VpcEndpoint,
         domain_name: Output,
+        authorizer_path: str | None = None,
         *args,
         **kwargs,
     ):
@@ -61,6 +63,9 @@ class CapeRestApi(CapeComponentResource):
                           requests will pass.
             domain_name: The domain name (e.g. api.cape-dev.org) on which this
                          API will reside.
+            authorizer_path: Optional path to the source file for a lambda
+                             authorizer for the API. If not provided, no
+                             authorizer will be configured for the API.
         """
         super().__init__(
             "capeinfra:resources:CapeRestApi", name, *args, **kwargs
@@ -72,6 +77,7 @@ class CapeRestApi(CapeComponentResource):
         self.env_vars = env_vars
         self.spec_path = spec_path
         self.api_vpcendpoint = vpc_endpoint
+        self.authorizer_path = authorizer_path
 
         # this will map the ids (string ids) from the config to a tuple of
         # (function name, Lambda Function Resource) so we can fill in the
@@ -81,9 +87,10 @@ class CapeRestApi(CapeComponentResource):
         self._ids_to_lambdas = {}
 
         self._configure_logging()
-        self._create_api_lambdas(resource_grants)
+        self._create_api_ep_lambdas(resource_grants)
         self._render_spec()
         self._create_rest_api()
+        self._create_api_authorizer_lambda()
         self._deploy_stage(domain_name)
 
     def _configure_logging(self):
@@ -134,7 +141,7 @@ class CapeRestApi(CapeComponentResource):
             "responseLength": "$context.responseLength",
         }
 
-    def _create_api_lambdas(self, res_grants: dict[str, list[Output]]):
+    def _create_api_ep_lambdas(self, res_grants: dict[str, list[Output]]):
         """Create the Lambda functions acting as endpoint handlers for the API.
 
         Args:
@@ -257,6 +264,92 @@ class CapeRestApi(CapeComponentResource):
                 ),
                 opts=ResourceOptions(parent=self),
             )
+
+    def _create_api_authorizer_lambda(
+        self, res_grants: dict[str, list[Output]] | None = None
+    ):
+        """Create the Lambda function acting as the authorizer for an API.
+
+        Args:
+            res_grants: A mapping of resource types to a list of resource names
+                        that the authorizer will be allowed to access. See
+                        iam.py `get_api_authorizer_policy` for the specific
+                        permissions granted. At this point our authorizers do
+                        not need special access to anything (they absolutely
+                        will in the future tho) so leave this value as None.
+        """
+        if self.authorizer_path is None:
+            # nothing to see here
+            return
+
+        # Role for the lambda authorizer of the API. At present all functions get
+        # the same role.
+        # TODO: res_grants is not wired up in the policy doc function yet, so
+        # don't waste time figuring out wht it doesn't work...
+        policy_doc = (
+            Output.all(grants=res_grants).apply(
+                lambda kwargs: get_api_authorizer_policy(**kwargs)
+            )
+            if res_grants
+            else None
+        )
+
+        # NOTE: As the authorizer is not hitting any additional AWS resources at
+        #       present, this role is not really needed. In the near term this
+        #       will change (e.g. the authorizer may need to hit an identity
+        #       pool or something) in which case this role (and a policy doc
+        #       that grants the access needed) will be required
+        self._api_authorizer_lambda_role = get_inline_role(
+            f"{self.name}-lmbd-authz-role",
+            (
+                f"{self.desc_name} {self.config.get('desc')} "
+                "lambda authorizer role"
+            ),
+            "lmbd",
+            "lambda.amazonaws.com",
+            policy_doc,
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        )
+
+        # Create our Lambda function for the authorizer
+        self.api_authorizer_handler = aws.lambda_.Function(
+            f"{self.name}-lmbd-authz-hndlr",
+            role=self._api_authorizer_lambda_role.arn,
+            code=AssetArchive({"index.py": FileAsset(self.authorizer_path)}),
+            runtime="python3.10",
+            # in this case, the zip file for the lambda deployment is
+            # being created by this code. and the zip file will be
+            # called index. so the handler must be start with `index`
+            # and the actual function in the script must be named
+            # the same as the value here
+            handler="index.lambda_handler",
+            # TODO: will probs need variables when we get the authorizer fleshed
+            #       out
+            environment={"variables": {}},
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": f"{self.desc_name} API lambda authorizer function"
+            },
+        )
+
+        self.api_authorizer = aws.apigateway.Authorizer(
+            f"{self.name}-lmbd-authz",
+            rest_api=self.restapi.id,
+            authorizer_uri=self.api_authorizer_handler.invoke_arn,
+            authorizer_credentials=self._api_authorizer_lambda_role.arn,
+            opts=ResourceOptions(parent=self),
+        )
+
+        # now give the API gateway the permission to invoke the authorizer
+        # lambda
+        aws.lambda_.Permission(
+            f"{self.name}-api-authz-allowlmbd",
+            action="lambda:InvokeFunction",
+            function=self.api_authorizer_handler.arn,
+            principal="apigateway.amazonaws.com",
+            source_arn=self.restapi.execution_arn.apply(lambda arn: f"{arn}/*"),
+            opts=ResourceOptions(parent=self),
+        )
 
     def _deploy_stage(self, domain_name: Output):
         """Create a deployment and a stage for the API.
