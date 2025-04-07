@@ -398,14 +398,6 @@ class CapeRestApi(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        self.restapi.execution_arn.apply(
-            lambda a: print(f"REST API EXECUTION ARN: {a}")
-        )
-
-        self.api_authorizer.arn.apply(
-            lambda a: print(f"API AUTHORIZER ARN: {a}")
-        )
-
         # now give the API gateway the permission to invoke the authorizer
         # lambda
         Output.all(
