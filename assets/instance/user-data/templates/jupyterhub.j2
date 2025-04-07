@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+sudo tee /opt/jupyterhub/etc/jupyterhub/jupyterhub_config.py <<EOF
+# JUPYTERHUB CONFIGURATION FILE
+# =============================
+
+c = get_config() #noqa
+
+# Administrative users
+# --------------------
+c.Authenticator.admin_users = set([{% for aa in admins %}"{{ aa }}",{% endfor %}])
+
+c.JupyterHub.authenticator_class = "generic-oauth"
+
+# OAuth2 application info
+# -----------------------
+c.GenericOAuthenticator.client_id = "{{ cognito_client_id }}"
+c.GenericOAuthenticator.client_secret = "{{ cognito_client_secret }}"
+c.GenericOAuthenticator.oauth_callback_url = "https://{{ domain }}/hub/oauth_callback"
+
+# Identity provider info
+# ----------------------
+c.GenericOAuthenticator.login_service = "CAPE SSO"
+c.GenericOAuthenticator.authorize_url = "{{ cognito_domain }}/oauth2/authorize"
+c.GenericOAuthenticator.token_url = "{{ cognito_domain }}/oauth2/token"
+c.GenericOAuthenticator.userdata_url = "{{ cognito_domain }}/oauth2/userInfo"
+c.GenericOAuthenticator.userdata_method = "POST"
+c.GenericOAuthenticator.logout_redirect_url = "{{ cognito_domain }}/logout?client_id={{ cognito_client_id }}&logout_uri=https://{{ domain }}"
+
+# What we request about the user
+# ------------------------------
+c.GenericOAuthenticator.username_claim = "email"
+
+# Authorization
+# -------------
+c.GenericOAuthenticator.allow_all = True
+EOF
+
+sudo systemctl restart jupyterhub.service
