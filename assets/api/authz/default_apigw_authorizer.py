@@ -20,10 +20,10 @@ def lambda_handler(event, context):
     #       caller) has the ability to set path params, headers and query
     #       params. all others are set by AWS
 
-    headers = event["headers"]
-    query_params = event["queryStringParameters"]
-    path_params = event["pathParameters"]
-    stage_vars = event["stageVariables"]
+    headers = event.get("headers", "NO HEADERS")
+    query_params = event.get("queryStringParameters", "NO QUERY STRING PARAMS")
+    path_params = event.get("pathParameters", "NO PATH PARAMS")
+    stage_vars = event.get("stageVariables", "NO STAGE VARIABLES")
 
     # TODO: remove this debug printing
     print(f"Lambda authz headers: {headers}")
