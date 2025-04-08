@@ -521,8 +521,8 @@ config:
                 #   as we get into how we do policies and roles. Currently the
                 #   only supported value is "athena"
                 instances:
-                    - name: "tljh"
-                      image: "ami-05752f93029c09fa5"
+                    - name: "jupyterhub"
+                      image: "ami-0975c1d1f7820aafe"
                       public_ip: False
                       instance_type: "t3a.medium"
                       subnet_types:
@@ -534,19 +534,17 @@ config:
                           logout_urls:
                               - "https://{{ domain }}"
                           allowed_oauth_scopes: ["openid", "email"]
-                      port: 80
+                      port: 8000
                       protocol: "HTTP"
                       healthcheck:
                           path: "/"
-                          port: 80
+                          port: 8000
                           protocol: "HTTP"
                           matcher: "302"
                       user_data:
-                          template: assets/instance/user-data/templates/tljh.j2
+                          template: assets/instance/user-data/templates/jupyterhub.j2
                           vars:
-                              remove_admins:
-                                  - tljhadmin
-                              add_admins:
+                              admins:
                                   - admin
                           rebuild_on_change: True
                       services:
