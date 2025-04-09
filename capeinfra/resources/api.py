@@ -325,7 +325,7 @@ class CapeRestApi(CapeComponentResource):
             authz_name = (
                 f"{self.api_name}-api-default-authorizer"
                 if authorizer_name == "default"
-                else f"{authorizer-name}-authorizer"
+                else f"{authorizer_name}-authorizer"
             )
 
             self._authorizers[authz_name].update(authorizer_def)
@@ -364,15 +364,15 @@ class CapeRestApi(CapeComponentResource):
             )
 
             # log group and log stream for the authorizer
-            authorizer_logging_config = None
-
-            if authorizer_def.get("logging_enabled", False):
-                authorizer_logging_config = {
-                    "log_format": "Text",
-                    "log_group": self._authorizer_log_group.name.apply(
-                        lambda a: f"{a}"
-                    ),
-                }
+            # authorizer_logging_config = None
+            #
+            # if authorizer_def.get("logging_enabled", False):
+            #     authorizer_logging_config = {
+            #         "log_format": "Text",
+            #         "log_group": self._authorizer_log_group.name.apply(
+            #             lambda a: f"{a}"
+            #         ),
+            #     }
 
             # Create our Lambda function for the authorizer
             # TODO: In the case that 2 apis use the same authorizer function
@@ -386,7 +386,17 @@ class CapeRestApi(CapeComponentResource):
                 ),
                 # TODO: this runtime should maybe be configurable long term
                 runtime="python3.10",
-                logging_config=authorizer_logging_config,
+                # logging_config=authorizer_logging_config,
+                logging_config=(
+                    {
+                        "log_format": "Text",
+                        "log_group": self._authorizer_log_group.name.apply(
+                            lambda a: f"{a}"
+                        ),
+                    }
+                    if authorizer_def.get("logging_enabled", False)
+                    else None
+                ),
                 # in this case, the zip file for the lambda deployment is
                 # being created by this code. and the zip file will be
                 # called index. so the handler must be start with `index`
