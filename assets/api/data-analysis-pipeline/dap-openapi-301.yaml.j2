@@ -13,6 +13,20 @@ servers:
           basePath:
               # This value needs to map to the stage name exposed via the ALB
               default: "dap-dev"
+
+
+# TODO: May want to do override at the method level to allow fine grained 
+#       scoping and also allow override of authorizers for specific 
+#       endpoints...
+{% if authorizers %}
+security:
+    {% for authorizer_name, _ in authorizers.items() %}
+    # NOTE: some authorizer types (e.g. oauth2) require scopes be defined which
+    #       would be done in place of the `[]` below
+    - {{ authorizer_name }}: []
+    {% endfor %}
+{% endif %}
+    
 paths:
     /analysispipelines:
         get:
@@ -207,6 +221,35 @@ components:
                     schema:
                         type: "string"
             content: {}
+
+    # if we have one or more authorizers defined, we need to render them here
+    {% if authorizers %}
+    securitySchemes:
+        {% for authorizer_name, authorizer_def in authorizers.items() %}
+        {{ authorizer_name }}:
+# TODO: this will only work for `request` type authorizers right now that have 
+#       identity sources as query string params and or header vals to check. 
+#       will need some work to support oauth2, oidc, single header, jwt, etc 
+#       setups
+            # TODO: this block (type/name/in) should not be changed for AWS
+            #       `request` lambda authorizers that use query params. when we
+            #       change to token or whatever this stuff will change
+            type: apiKey
+            name: Unused
+            in: header
+            # TODO: assumes custom (i.e. lambda) authtype currently
+            x-amazon-apigateway-authtype: "custom"
+            x-amazon-apigateway-authorizer: 
+                type : "{{ authorizer_def['type'] }}"
+                identitySource: "{{ authorizer_def['identity_sources'] }}"
+                authorizerCredentials: "{{ authorizer_def['role'] }}"
+                authorizerUri: "{{ authorizer_def['uri'] }}"
+                authorizerResultTtlInSeconds: {{ authorizer_def['result_cached_sec'] }}
+        {% endfor %}
+    {% endif %}
+
+
+# NOTE:
 # we do not provide x-amazon-apigateway-policy here (setting up the policy for using the API)
 # as we expect that to be set in the pulumi code setting up the RestApi. Don't want AWS ids and
 # perms in the repo
