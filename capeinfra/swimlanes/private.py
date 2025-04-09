@@ -188,7 +188,6 @@ class PrivateSwimlane(ScopedSwimlane):
             resource_grants,
             self.api_vpcendpoint,
             self.apigw_domainname.domain_name,
-            self.apis[api_name]["spec"]["authorizer"] or None,
             config=self.apis[api_name]["spec"],
             desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),
