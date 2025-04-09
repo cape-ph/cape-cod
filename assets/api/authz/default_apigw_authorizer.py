@@ -50,7 +50,7 @@ def lambda_handler(event, context):
     return generate_policy("*", "Allow", "*")
 
 
-# Shamelessly taken from the example in teh AWS docs for Lambda Authorizers.
+# Shamelessly taken from the example in the AWS docs for Lambda Authorizers.
 # Changed to not be javascript style and to reduce redundancy...
 def generate_policy(principalId, effect, resource):
     """"""
