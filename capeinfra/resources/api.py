@@ -363,17 +363,6 @@ class CapeRestApi(CapeComponentResource):
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             )
 
-            # log group and log stream for the authorizer
-            # authorizer_logging_config = None
-            #
-            # if authorizer_def.get("logging_enabled", False):
-            #     authorizer_logging_config = {
-            #         "log_format": "Text",
-            #         "log_group": self._authorizer_log_group.name.apply(
-            #             lambda a: f"{a}"
-            #         ),
-            #     }
-
             # Create our Lambda function for the authorizer
             # TODO: In the case that 2 apis use the same authorizer function
             #       code, this will create a new function with the same code if
