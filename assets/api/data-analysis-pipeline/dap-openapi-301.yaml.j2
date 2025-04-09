@@ -5,24 +5,30 @@ info:
         "CAPE Data Analysis Pipeline API (***TODO: add more comment***)"
     version: "2024-11-04T20:50:49Z"
 servers:
-    # we do not provide x-amazon-apigateway-endpoint-configuration here (setting up the vpc endpoint)
-    # as we expect that to be set in the pulumi code setting up the RestApi. Don't want AWS ids in the
-    # repo
+{#
+    NOTE:
+        we do not provide x-amazon-apigateway-endpoint-configuration here (
+        setting up the vpc endpoint) as we expect that to be set in the pulumi 
+        code setting up the RestApi. Don't want AWS ids in the repo
+#}
     - url: "https://api.cape-dev.org/{basePath}"
       variables:
           basePath:
               # This value needs to map to the stage name exposed via the ALB
               default: "dap-dev"
 
-
-# TODO: May want to do override at the method level to allow fine grained 
-#       scoping and also allow override of authorizers for specific 
-#       endpoints...
+{#
+    TODO: May want to do override at the method level to allow fine grained 
+          scoping and also allow override of authorizers for specific 
+          endpoints...
+#}
 {% if authorizers %}
 security:
     {% for authorizer_name, _ in authorizers.items() %}
-    # NOTE: some authorizer types (e.g. oauth2) require scopes be defined which
-    #       would be done in place of the `[]` below
+{#    
+NOTE: some authorizer types (e.g. oauth2) require scopes be defined which
+      would be done in place of the `[]` below
+#}
     - {{ authorizer_name }}: []
     {% endfor %}
 {% endif %}
@@ -32,7 +38,9 @@ paths:
         get:
             responses:
                 "200":
-                    # TODO: need the response headers (i.e. cors)
+{#
+    TODO: need the response headers (i.e. cors)
+#}
                     description: "Success"
                     content:
                         application/json:
@@ -61,7 +69,7 @@ paths:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ list_daps_handler }}/invocations"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['list_daps_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -86,7 +94,9 @@ paths:
         get:
             responses:
                 "200":
-                    # TODO: need the response headers (i.e. cors)
+{#
+    TODO: need the response headers (i.e. cors)
+#}
                     description: "Success"
                     content:
                         application/json:
@@ -117,7 +127,7 @@ paths:
                         "Server error while getting list of available executors."
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ list_dap_executors_handler }}/invocations"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['list_dap_executors_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -160,8 +170,10 @@ paths:
                                     description: >
                                         The S3 location to put pipeline output.
                                         Assumes permissions are set correctly.
-                                # TODO: ISSUE #TBD all below fields are specific to bactopia right now. also, the
-                                #       descriptions are bunk if we keep using these params
+{#
+    TODO: ISSUE #TBD all below fields are specific to bactopia right now. also, the
+          descriptions are bunk if we keep using these params
+#}
                                 r1Path:
                                     type: string
                                     description: The R1 path.
@@ -180,11 +192,13 @@ paths:
                                         Affects output directory and file names
             responses:
                 "200":
-                    # TODO: need the response headers (i.e. cors)
+{#
+    TODO: need the response headers (i.e. cors)
+#}
                     description: "Success submitting pipeline for execution."
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ submit_dap_run_handler }}/invocations"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['submit_dap_run_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
@@ -227,29 +241,45 @@ components:
     securitySchemes:
         {% for authorizer_name, authorizer_def in authorizers.items() %}
         {{ authorizer_name }}:
-# TODO: this will only work for `request` type authorizers right now that have 
-#       identity sources as query string params and or header vals to check. 
-#       will need some work to support oauth2, oidc, single header, jwt, etc 
-#       setups
-            # TODO: this block (type/name/in) should not be changed for AWS
-            #       `request` lambda authorizers that use query params. when we
-            #       change to token or whatever this stuff will change
+{#
+    TODO: this will only work for `request` type authorizers right now that have 
+          identity sources as query string params and or header vals to check. 
+          will need some work to support oauth2, oidc, single header, jwt, etc 
+          setups
+#}
+{#
+    TODO: this block (type/name/in) should not be changed for AWS
+          `request` lambda authorizers that use query params. when we
+           change to token or whatever this stuff will change
+#}
             type: apiKey
             name: Unused
             in: header
-            # TODO: assumes custom (i.e. lambda) authtype currently
+{#
+    TODO: assumes custom (i.e. lambda) authtype currently
+#}
             x-amazon-apigateway-authtype: "custom"
             x-amazon-apigateway-authorizer: 
                 type : "{{ authorizer_def['type'] }}"
+                {# 
+                    identity source is not required, but specifying one will
+                    fail the API calls if that source is not present in the
+                    request. ao until we know what will always be there, we'll 
+                    allow an empty value here and will just not set an identity
+                    source unless told to.
+                #}
+                {% if authorizer_def["identity_sources"] %}
                 identitySource: "{{ authorizer_def['identity_sources'] }}"
+                {% endif %}
                 authorizerCredentials: "{{ authorizer_def['role'] }}"
                 authorizerUri: "{{ authorizer_def['uri'] }}"
                 authorizerResultTtlInSeconds: {{ authorizer_def['result_cached_sec'] }}
         {% endfor %}
     {% endif %}
 
-
-# NOTE:
-# we do not provide x-amazon-apigateway-policy here (setting up the policy for using the API)
-# as we expect that to be set in the pulumi code setting up the RestApi. Don't want AWS ids and
-# perms in the repo
+{#
+    NOTE:
+        we do not provide x-amazon-apigateway-policy here (setting up the 
+        policy for using the API) as we expect that to be set in the pulumi 
+        code setting up the RestApi. Don't want AWS ids and perms in the repo
+#}
