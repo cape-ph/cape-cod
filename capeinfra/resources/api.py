@@ -220,7 +220,6 @@ class CapeRestApi(CapeComponentResource):
         )
 
         for authz_name, authz_def in self._authorizers.items():
-            print(f"Authz_def: {authz_def}")
 
             spec_kwargs["authorizers"][authz_name] = {
                 "type": authz_def["type"],
