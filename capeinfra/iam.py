@@ -553,13 +553,6 @@ def get_api_lambda_authorizer_policy(funct_arns: list[Output] | None = None):
             ],
             "Resource": "arn:aws:logs:*:*:*",
         },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "sts:AssumeRole",
-            ],
-            "Resource": "*",
-        },
     ]
 
     # TODO: figure out what the authorizer actually needs grants on
