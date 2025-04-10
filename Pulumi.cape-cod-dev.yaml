@@ -320,6 +320,33 @@ config:
                 #   Path to an OpenApi 3.0.1 yaml specification jinja2
                 #   template. This file should include *no* AWS id's, names,
                 #   account info, etc.
+                # * `authorizers` (mapping, optional)
+                #   Configuration for authorizers for the API. In an OpenAPI
+                #   spec, all authorizers must be defined in the component
+                #   section, but may be applied at the API or endpoint levels.
+                #   The authorizer named "default" defined here will be applied
+                #   at the API level currently. Each mapping is keyed on an 
+                #   authorizor name (which must conform to AWS resource naming 
+                #   rules, and will be used as the base of a resource name, so 
+                #   it will be constrained in max length) and should contain:
+                #   * `file` (string, required)
+                #   Path (absolute or relative to repo root) to the file
+                #   containing the code for the authorizer lambda function
+                #   * `type` (string, required)
+                #   Type of lambda authorizer. Allowed values are "request", 
+                #   "token", or "cognito_user_pools".
+                #   * `identity_sources` (string[], optional)
+                #   List of strings of required query params or request headers
+                #   where identity information can be found. May be more than
+                #   one item.
+                #   * `result_cached_sec` (int, optional)
+                #   The number of seconds an authorization reqponse is cached
+                #   for. A value of 0 turns off caching (good for dev, bad for
+                #   prod). Defaults to 300.
+                #   * `logging_enabled` (bool, optional)
+                #   True if logging should be enabled for the authorizer, False
+                #   otherwise. The log stream will be in a log group specific to
+                #   the API.
                 # * `env_vars` (string[], optional)
                 #   A list of swimlane-exposed env vars that the API requires
                 #   access to. The env vars will be passed into the
@@ -364,6 +391,26 @@ config:
                     dap:
                         desc: "Data Analysis Pipeline API"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
+                        # TODO: this is the default authorizer for the whole
+                        #       api. give it attrs like file, name, cache
+                        #       timeout, etc. probably want this to be a list of
+                        #       authorizers with one named default (that will be
+                        #       used for the whole api) and then others that
+                        #       individual handlers can override
+                        authorizers: 
+                            # `default` is a special name signifying the
+                            # authorizer that will be used for the whole api
+                            # barring any overrides at the endpoint level
+                            default:
+                                file: "assets/api/authz/default_apigw_authorizer.py"
+                                # allowed request, token, or cognito_user_pools
+                                type: "request"
+                                identity_sources: 
+                                # This is how long the authz result is cached. 0
+                                # turns off caching which is great for debug of
+                                # dev
+                                result_cached_sec: 0
+                                logging_enabled: True
                         env_vars:
                             - "DAP_QUEUE_NAME"
                             - "DAP_REG_DDB_TABLE"

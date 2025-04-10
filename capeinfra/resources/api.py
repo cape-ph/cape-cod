@@ -5,6 +5,7 @@ yet supported.
 """
 
 import json
+from collections import defaultdict
 from collections.abc import Mapping
 
 import pulumi_aws as aws
@@ -12,6 +13,7 @@ from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
 from capeinfra.iam import (
+    get_api_lambda_authorizer_policy,
     get_api_policy,
     get_inline_role,
     get_vpce_api_invoke_policy,
@@ -61,6 +63,9 @@ class CapeRestApi(CapeComponentResource):
                           requests will pass.
             domain_name: The domain name (e.g. api.cape-dev.org) on which this
                          API will reside.
+            authorizer_path: Optional path to the source file for a lambda
+                             authorizer for the API. If not provided, no
+                             authorizer will be configured for the API.
         """
         super().__init__(
             "capeinfra:resources:CapeRestApi", name, *args, **kwargs
@@ -81,7 +86,8 @@ class CapeRestApi(CapeComponentResource):
         self._ids_to_lambdas = {}
 
         self._configure_logging()
-        self._create_api_lambdas(resource_grants)
+        self._create_api_ep_lambdas(resource_grants)
+        self._create_api_authorizer_lambdas()
         self._render_spec()
         self._create_rest_api()
         self._deploy_stage(domain_name)
@@ -134,7 +140,7 @@ class CapeRestApi(CapeComponentResource):
             "responseLength": "$context.responseLength",
         }
 
-    def _create_api_lambdas(self, res_grants: dict[str, list[Output]]):
+    def _create_api_ep_lambdas(self, res_grants: dict[str, list[Output]]):
         """Create the Lambda functions acting as endpoint handlers for the API.
 
         Args:
@@ -201,13 +207,36 @@ class CapeRestApi(CapeComponentResource):
         """Render the configured open api spec as a jijna2 template."""
         template = get_j2_template_from_path(self.spec_path)
 
-        # as the lamnda function arns are Output variables, we need to use the
+        # build up the keyword dict of tags/vals we'll pass off to the template
+        # rendering. as that is done via `Output.all`, we can have unresolved
+        # Outputs in the dict (e.g. arn's)
+        spec_kwargs = {
+            "api_name": self.api_name,
+            "authorizers": {},
+            "handlers": {},
+        }
+        spec_kwargs["handlers"].update(
+            {k: lf.arn for k, (_, lf) in self._ids_to_lambdas.items()}
+        )
+
+        for authz_name, authz_def in self._authorizers.items():
+
+            spec_kwargs["authorizers"][authz_name] = {
+                "type": authz_def["type"],
+                "identity_sources": ",".join(
+                    authz_def["identity_sources"] or []
+                ),
+                "result_cached_sec": authz_def["result_cached_sec"],
+                "role": authz_def["role"].arn,
+                "uri": authz_def["handler"].invoke_arn,
+            }
+
+        # as the lambda function arns are Output variables, we need to use the
         # standard wrapping of those in an apply in order to render the
         # template
-        self._spec = Output.all(
-            # the keyword args will contain {template_id: lambda_arn}
-            kw={k: lf.arn for k, (_, lf) in self._ids_to_lambdas.items()}
-        ).apply(lambda args: template.render(**args["kw"]))
+        self._spec = Output.all(kw=spec_kwargs).apply(
+            lambda args: template.render(**args["kw"])
+        )
 
     def _create_rest_api(self):
         """Create the RestApi wrapped by this class.
@@ -256,6 +285,150 @@ class CapeRestApi(CapeComponentResource):
                     lambda arn: f"{arn}/*/*"
                 ),
                 opts=ResourceOptions(parent=self),
+            )
+
+    def _create_api_authorizer_lambdas(
+        self, res_grants: dict[str, list[Output]] | None = None
+    ):
+        """Create the Lambda function acting as the authorizer for an API.
+
+        Args:
+            res_grants: A mapping of resource types to a list of resource names
+                        that the authorizer will be allowed to access. See
+                        iam.py `get_api_authorizer_policy` for the specific
+                        permissions granted. At this point our authorizers do
+                        not need special access to anything (they absolutely
+                        will in the future tho) so leave this value as None.
+        """
+        # TODO: res_grants will not work as originally intended here. we're
+        #       potentially making more than one authorizer here and will need
+        #       grants for each...
+        self._authorizers = defaultdict(dict)
+
+        # we setup a single log group for all authorizers, but each will get its
+        # own stream
+        self._authorizer_log_group = aws.cloudwatch.LogGroup(
+            f"{self.name}-api-authz-logs",
+            name=f"{self.name}-api-authz-logs",
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} {self.api_name} API authorizer Log Group"
+                )
+            },
+            opts=ResourceOptions(parent=self),
+        )
+
+        for authorizer_name, authorizer_def in self.config.get(
+            "authorizers", default={}
+        ).items():
+            authz_name = (
+                f"{self.api_name}-api-default-authorizer"
+                if authorizer_name == "default"
+                else f"{authorizer_name}-authorizer"
+            )
+
+            self._authorizers[authz_name].update(authorizer_def)
+
+            # Role for this lambda authorizer. At present all functions get
+            # the same role functionally as we do not have specific resource
+            # grants, but they will be different roles in actuality.
+            # TODO: res_grants is not wired up in the policy doc function yet,
+            #       so don't waste time figuring out why it doesn't work, need
+            #       a way to specify grants for each authorizer
+            # TODO: get_api_authorizer_policy probably needs work (if it still
+            #       exists) when this gets wired up
+            # policy_doc = (
+            #     Output.all(grants=res_grants).apply(
+            #         lambda kwargs: get_api_authorizer_policy(**kwargs)
+            #     )
+            #     if res_grants
+            #     else None
+            # )
+
+            # create a role for the authorizer (lambda function)
+            authorizer_lambda_role = get_inline_role(
+                f"{self.name}-{authorizer_name}-lmbd-role",
+                (
+                    f"{self.desc_name} {self.config.get('desc')} "
+                    f"{authorizer_name} lambda role"
+                ),
+                "lmbd",
+                "lambda.amazonaws.com",
+                # TODO: we will need a way to grant perms for this function if it
+                #       needs to access resources oither than the lambda itself.
+                #       that will be done in  a policy here using the res_grants
+                #       passed in
+                None,
+                "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            )
+
+            # Create our Lambda function for the authorizer
+            # TODO: In the case that 2 apis use the same authorizer function
+            #       code, this will create a new function with the same code if
+            #       another already exists. need a way to reuse in that case
+            authorizer_handler = aws.lambda_.Function(
+                f"{self.name}-{authorizer_name}-lmbd-hndlr",
+                role=authorizer_lambda_role.arn,
+                code=AssetArchive(
+                    {"index.py": FileAsset(authorizer_def["file"])}
+                ),
+                # TODO: this runtime should maybe be configurable long term
+                runtime="python3.10",
+                # logging_config=authorizer_logging_config,
+                logging_config=(
+                    {
+                        "log_format": "Text",
+                        "log_group": self._authorizer_log_group.name.apply(
+                            lambda a: f"{a}"
+                        ),
+                    }
+                    if authorizer_def.get("logging_enabled", False)
+                    else None
+                ),
+                # in this case, the zip file for the lambda deployment is
+                # being created by this code. and the zip file will be
+                # called index. so the handler must be start with `index`
+                # and the actual function in the script must be named
+                # the same as the value here
+                handler="index.lambda_handler",
+                # TODO: will probs need variables when we get the authorizer fleshed
+                #       out
+                environment={"variables": {}},
+                opts=ResourceOptions(parent=self),
+                tags={
+                    "desc_name": (
+                        f"{self.desc_name} {self.api_name} API "
+                        f"{authorizer_name} lambda authorizer function"
+                    )
+                },
+            )
+
+            self._authorizers[authz_name]["handler"] = authorizer_handler
+
+            # create a role for the authorizer (api gateway to assume role and
+            # call the lambda)
+            # NOTE: As the authorizer is not hitting any additional AWS resources at
+            #       present, this role is not really needed. In the near term this
+            #       will change (e.g. the authorizer may need to hit an identity
+            #       pool or something) in which case this role (and a policy doc
+            #       that grants the access needed) will be required
+            self._authorizers[authz_name]["role"] = get_inline_role(
+                f"{self.name}-{authorizer_name}-authz-role",
+                (
+                    f"{self.desc_name} {self.config.get('desc')} "
+                    f"API gateway {authorizer_name} authorizer role"
+                ),
+                "lmbd",
+                "apigateway.amazonaws.com",
+                # magic for all the lambda functions the authorizer can call
+                (
+                    Output.all(funct_arns=[authorizer_handler.arn]).apply(
+                        lambda kwargs: get_api_lambda_authorizer_policy(
+                            **kwargs
+                        )
+                    )
+                ),
+                "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             )
 
     def _deploy_stage(self, domain_name: Output):

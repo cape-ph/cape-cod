@@ -4,6 +4,7 @@ Helpfully, the big three cloud providers all use this term.
 """
 
 import json
+from typing import List
 
 import pulumi_aws as aws
 from pulumi import Input, Output, ResourceOptions
@@ -11,15 +12,19 @@ from pulumi import Input, Output, ResourceOptions
 # TODO: ISSUE #72
 
 
-def get_service_assume_role(srvc: str) -> str:
+def get_service_assume_role(srvc: str | List[str]) -> str:
     """Get a role policy statement for assuming a given AWS service.
 
     Args:
-        srvc: The name of the service being assumed (e.g. "glue.amazonaws.com")
+        srvc: The name of the service assuming the role (e.g.
+              "glue.amazonaws.com") or a list of such service names.
 
     Returns:
         The policy statement as a json encoded string.
     """
+
+    # make sure our assume service(s) exists in a list
+    assume_trusts = [srvc] if isinstance(srvc, str) else srvc
 
     return json.dumps(
         {
@@ -27,7 +32,7 @@ def get_service_assume_role(srvc: str) -> str:
             "Statement": [
                 {
                     "Effect": "Allow",
-                    "Principal": {"Service": srvc},
+                    "Principal": {"Service": assume_trusts},
                     "Action": "sts:AssumeRole",
                 }
             ],
@@ -519,6 +524,59 @@ def get_api_policy(grants: dict[str, list[Output]]):
     )
 
 
+# TODO: grants doesn't do anything here yet. Not sure what we'll add access to
+#       at this point
+def get_api_lambda_authorizer_policy(funct_arns: list[Output] | None = None):
+    """Get a role policy statement for the an API Lambda Authorizer.
+
+    The authorizer for an API will be given access as configured in
+    `grants`. Lambda logging will be unconditionally enabled without
+    configuration.
+
+    At present, `grants` is a placeholder and cannot be used to modify the
+    policy. This will change as the needs of the authorizers matures.
+
+
+    Args:
+        funct_arns: A list of lambda ARN Outputs
+
+    Returns:
+        The policy statement as a dictionary json encoded string.
+    """
+    stmnts = [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+            ],
+            "Resource": "arn:aws:logs:*:*:*",
+        },
+    ]
+
+    # TODO: figure out what the authorizer actually needs grants on
+
+    # add the table grants as configured
+    for fa in funct_arns or []:
+        stmnts.append(
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "lambda:InvokeFunction",
+                ],
+                "Resource": [f"{fa}"],
+            },
+        )
+
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": stmnts,
+        },
+    )
+
+
 def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
     """Get a role policy statement for reading from sqs and starting glue jobs.
 
@@ -582,7 +640,7 @@ def get_inline_role(
     name: str,
     desc_name: str,
     srvc_prfx: str,
-    assume_role_srvc: str,
+    assume_role_srvc: str | List[str],
     role_policy: Input[str] | None = None,
     srvc_policy_attach: str | None = None,
     opts: ResourceOptions | None = None,
@@ -596,15 +654,16 @@ def get_inline_role(
         srvc_prfx: the service prefix to use in the name (e.g. `lmbd` for aws
                    lambda)
         role_policy: The policy to attach to the role.
-        srvc_policy_attach: Optional identified (e.g. ARN for aws) for a service
-                            role policy to attach to the role in addition to the
-                            role_policy
+        srvc_policy_attach: Optional identifier (e.g. ARN for aws) or list of
+                            identifiers for a service or services role policy
+                            to attach to the role in addition to the role_policy
         opts: The pulumi ResourceOptions to add to ComponentResources created
               here.
 
     Returns:
         The inline role.
     """
+
     # first create the inline role
     inline_role = aws.iam.Role(
         f"{name}-{srvc_prfx}role",
