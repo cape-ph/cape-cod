@@ -2,14 +2,17 @@
 
 import csv
 import json
+import pathlib
 from typing import Any
 
 import pulumi_aws as aws
-from pulumi import FileArchive, FileAsset, Output, ResourceOptions
+from pulumi import FileArchive, FileAsset, Output, ResourceOptions, error
 
 import capeinfra
 from capeinfra.resources.objectstorage import VersionedBucket
+from capeinfra.util.file import unzip_to
 from capeinfra.util.naming import disemvowel
+from capeinfra.util.repo import get_github_release_artifact
 from capepulumi import CapeComponentResource
 
 
@@ -42,6 +45,10 @@ class CapeMeta(CapeComponentResource):
         self.capepy = CapePy(self.automation_assets_bucket)
         self.principals = CapePrincipals(
             config=self.config.get("principals", default={})
+        )
+
+        self.policy_engine = CapeAuthzPolicyEngine(
+            config=self.config.get("authz_policy_engine", default={})
         )
 
         # We also need to register all the expected outputs for this component
@@ -483,3 +490,65 @@ class CapePrincipals(CapeComponentResource):
             supported_identity_providers=["COGNITO"],
             **options,  # pyright: ignore
         )
+
+
+class CapeAuthzPolicyEngine(CapeComponentResource):
+    """Class that handles creation of a policy store, schema and policies.
+
+    NOTE: At this time we expect all policy repo assets to be in github in a
+          downloadable release zip file that can be referenced by URL in the
+          following format:
+
+          https://github.com/<org>/<repo>/releases/download/<version>/<asset>
+
+          Where <org> is only needed for repos in an organization.
+
+          This asset zip should contain schema and policy directories. The
+          files in these directories should conform to Cedar JSON format.
+    """
+
+    @property
+    def default_config(self) -> dict:
+        """Implementation of abstract property `default_config`.
+
+        The default config for this class links to the publicly available CAPE
+        PaC repo.
+
+        Returns:
+            The default config dict for the authz policy engine.
+        """
+        return {
+            "repo_url": "https://github.com/cape-ph/cape-cedar-pac",
+            # NOTE: this repo does not have a `latest` version at present,
+            #       so this must be set to a real version number
+            "version": "2025.04.29",
+            "artifact_name": "cape-cedar-pac.zip",
+        }
+
+    def __init__(self, **kwargs):
+        self.name = "cape-authz-policy-engine"
+        super().__init__(
+            "capeinfra:meta:capemeta:CapeAuthzPolicyEngine",
+            self.name,
+            desc_name="Resources for user Authz via policy engine in the CAPE infrastructure",
+            **kwargs,
+        )
+
+        # download the configured policy zip to /tmp
+        pac_zip_path = get_github_release_artifact(**self.config)
+        if pac_zip_path is None:
+
+            # cfg_dict = {k: v for k, v in self.config.items()}
+            error(
+                f"Could not download the Authz Policy Engine repository. "
+                f"Check the config values: {self.config}. Halting deployment."
+            )
+
+        # unzip it. behold its majesty
+        unzip_to(pac_zip_path)
+
+        # we should now have all the files in /tmp/asset_name_without_zip. let's
+        # get an object that represents that
+        pac_path = pathlib.Path(pac_zip_path).with_suffix("")
+
+        # now set about deploying all the policy engine resources.
