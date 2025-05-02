@@ -10,7 +10,7 @@ from pulumi import FileArchive, FileAsset, Output, ResourceOptions, error
 
 import capeinfra
 from capeinfra.resources.objectstorage import VersionedBucket
-from capeinfra.util.file import unzip_to
+from capeinfra.util.file import exists_else_error, unzip_to
 from capeinfra.util.naming import disemvowel
 from capeinfra.util.repo import get_github_release_artifact
 from capepulumi import CapeComponentResource
@@ -90,44 +90,44 @@ class CapeAuthzPolicyEngine(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-    def create_policy_schema(self):
-        """"""
-        # TODO:
-        # - pass in the stuff needed to make schema (file path).
-        # - make schema
+    def create_policy_schema(self, file_name: str | None = None):
+        """Create an aws AVP schema for an AVP policy store.
 
-        # We expect there to be a single `.json` file in the schema directory.
-        # So make sure that's the case. There can be other files, but only one
-        # json file.
-        # TODO: maybe have a way to pass in schema file name cause this isn't a
-        #       great check
+        Args:
+            file_name: The (optional) name of the schema file. If not provided
+                       this method will look for a single json file in the
+                       schema directory.
+        """
+        schema_dir = self.pac_path / "schema"
+        schema_file = file_name if file_name else "*.json"
 
-        # TODO: if this is kept, clean it up. DRY violate
-        pac_schema_glob = list(self.pac_path.glob("schema"))
-        if len(pac_schema_glob) != 1:
-            error(
-                f"Could not find schema directory in authz policy directory: "
-                f"{self.pac_path}. Halting deployment."
+        exists_else_error(
+            schema_dir,
+            (
+                f"Could not find policy engine schema directory: "
+                f"{schema_dir}. Halting deployment."
+            ),
+        )
+
+        schema_glob = list(schema_dir.glob(schema_file))
+
+        if len(schema_glob) != 1:
+            msg = (
+                f"Could not determine policy engine schema in directory: "
+                f"{schema_dir}. Expected one json file and found "
+                f"{len(schema_glob)} files. Halting deployment."
             )
-        json_glob = list(pac_schema_glob[0].glob("*.json"))
+            error(msg)
+            raise ValueError(msg)
 
-        if len(json_glob) != 1:
-            error(
-                f"Could not find schema in authz policy directory: "
-                f"{pac_schema_glob[0]}. Expected one json file and found "
-                f"{len(json_glob)}. Halting deployment."
-            )
-        json_schema = json_glob[0]
+        json_schema = schema_glob[0]
 
         with open(json_schema, "r") as json_file:
-            json_str = json_file.read()
             self.pac_schema = aws.verifiedpermissions.Schema(
                 f"{self.name}-{disemvowel('policyschema')}",
                 policy_store_id=self.authz_policy_store.id,
-                definition={"value": json_str},
+                definition={"value": json_file.read()},
             )
-
-        pass
 
     def create_policies(self):
         """"""
