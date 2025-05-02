@@ -1,6 +1,9 @@
 """File-related utiliy functions."""
 
+import pathlib
 import zipfile
+
+from pulumi import error
 
 
 def file_as_string(pth: str) -> str:
@@ -31,3 +34,15 @@ def unzip_to(zip_path: str, target_dir: str = "/tmp"):
     """
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(target_dir)
+
+
+def exists_else_error(pth: pathlib.Path, msg: str):
+    """Check if a path exists and error out (halt deployment) if not.
+
+    Args:
+        pth: The path to check for existence.
+        msg: An error message to log if the path does not exist.
+    """
+    if not pth.exists():
+        error(msg)
+        raise FileNotFoundError(msg)
