@@ -130,8 +130,41 @@ class CapeAuthzPolicyEngine(CapeComponentResource):
             )
 
     def create_policies(self):
-        """"""
-        # TODO:
-        # - pass in the stuff needed to make policies (file path).
-        # - loop files make policies
-        pass
+        """Create a aws AVP policies for an AVP policy store."""
+        policy_dir = self.pac_path / "policy"
+        policy_files = "*.json"
+
+        exists_else_error(
+            policy_dir,
+            (
+                f"Could not find policy engine policy directory: "
+                f"{policy_dir}. Halting deployment."
+            ),
+        )
+
+        policy_glob = list(policy_dir.glob(policy_files))
+
+        if not policy_glob:
+            msg = (
+                f"Could not find any policy engine policies in directory: "
+                f"{policy_dir}. Halting deployment."
+            )
+            error(msg)
+            raise ValueError(msg)
+
+        for idx, p in enumerate(policy_glob):
+            with open(p, "r") as json_policy:
+                aws.verifiedpermissions.Policy(
+                    # TODO: index policy names are bad. and change in
+                    #       alphabetizing of input files would cause redos
+                    #       of indices for no reason. Using some disemvowelled
+                    #       filename might work, but naming limits...
+                    f"{self.name}-plcy{idx}",
+                    policy_store_id=self.authz_policy_store.id,
+                    definition={
+                        "static": {
+                            "statement": json_policy.read(),
+                            "description": f"Policy from file {p}",
+                        },
+                    },
+                )
