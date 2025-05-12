@@ -35,12 +35,15 @@ class SubnetType(str, Enum):
                      but the name is reserved for the future
         * `app`: there is no special handling for this type at this time, but
                  the name is reserved for the future
+        * `service`: there is no special handling for this type at this time,
+                     but the name is reserved for the future
     """
 
     NAT = "nat"
     VPN = "vpn"
     COMPUTE = "compute"
     APP = "app"
+    SERVICE = "service"
 
 
 class ScopedSwimlane(CapeComponentResource):
