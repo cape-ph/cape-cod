@@ -727,8 +727,7 @@ class PrivateSwimlane(ScopedSwimlane):
                             lambda d:f"https://{d}.auth.{self.aws_region}.amazoncognito.com"
                         )
                     )
-                template_args["vars"] = ud_info["vars"]
-
+                template_args["vars"] = ud_info.get("vars", {})
                 user_data = Output.all(**template_args).apply(
                     lambda args: template.render(**args["vars"], **args)
                 )
