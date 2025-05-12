@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+sudo tee /etc/opa/config/opa-config.yaml <<EOF
+
+# TEE'd off config...
+
+labels:
+  app: cape-opa-default-config
+  region: east
+  environment: dev
+
+default_decision: deny
+EOF
+
+sudo systemctl restart opa.service
