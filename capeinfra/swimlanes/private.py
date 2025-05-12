@@ -707,33 +707,31 @@ class PrivateSwimlane(ScopedSwimlane):
             user_data = None
             rebuild_on_ud_change = False
             ud_info = aicfg.get("user_data", None)
+
             if ud_info is not None:
                 rebuild_on_ud_change = ud_info["rebuild_on_change"]
                 template = get_j2_template_from_path(ud_info["template"])
 
-                pulumi_outputs: dict[str, Output] = {}
+                template_args: dict[str, Output] = {}
+                template_args["domain"] = domain
                 # if there is a cognito client, pass in the necessary client
                 # information
                 if cognito_client is not None:
-                    pulumi_outputs["cognito_domain_prefix"] = (
-                        capeinfra.meta.principals.user_pool.domain
-                    )
                     client = capeinfra.meta.principals.clients[aicfg["name"]]
-                    pulumi_outputs["cognito_client_id"] = client.id
-                    pulumi_outputs["cognito_client_secret"] = (
+                    template_args["cognito_client_id"] = client.id
+                    template_args["cognito_client_secret"] = (
                         client.client_secret
                     )
-
-                def render_template(args):
-                    args["domain"] = domain
-                    # if there is a cognito domain prefix, add the fqdn
-                    if "cognito_domain_prefix" in args:
-                        args["cognito_domain"] = (
-                            f"https://{args['cognito_domain_prefix']}.auth.{self.aws_region}.amazoncognito.com"
+                    template_args["cognito_domain"] = (
+                        capeinfra.meta.principals.user_pool.domain.apply(
+                            lambda d:f"https://{d}.auth.{self.aws_region}.amazoncognito.com"
                         )
-                    return template.render(**ud_info["vars"], **args)
+                    )
+                template_args["vars"] = ud_info["vars"]
 
-                user_data = Output.all(**pulumi_outputs).apply(render_template)
+                user_data = Output.all(**template_args).apply(
+                    lambda args: template.render(**args["vars"], **args)
+                )
 
             # TODO: ISSUE #186
             instance_profile = None
