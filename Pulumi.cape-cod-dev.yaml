@@ -116,7 +116,7 @@ config:
         #   needed.
         authz_policy_engine:
             repo_url: "https://github.com/cape-ph/cape-cedar-pac"
-            version: "2025.04.29"
+            version: "2025.05.02.1"
             artifact_name: "cape-cedar-pac.zip"
 
         # `glue` (mapping, optional)
