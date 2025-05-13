@@ -642,7 +642,7 @@ def get_inline_role(
     srvc_prfx: str,
     assume_role_srvc: str | List[str],
     role_policy: Input[str] | None = None,
-    srvc_policy_attach: str | None = None,
+    srvc_policy_attach: str | List[str] = [],
     opts: ResourceOptions | None = None,
 ) -> aws.iam.Role:
     """Get an inline role fir the given arguments.
@@ -656,13 +656,20 @@ def get_inline_role(
         role_policy: The policy to attach to the role.
         srvc_policy_attach: Optional identifier (e.g. ARN for aws) or list of
                             identifiers for a service or services role policy
-                            to attach to the role in addition to the role_policy
+                            to attach to the role in addition to the
+                            role_policy. NOTE: There is an AWS imposed maximum
+                            of 20 policy attachments for any role.
         opts: The pulumi ResourceOptions to add to ComponentResources created
               here.
 
     Returns:
         The inline role.
     """
+    policy_attachments = (
+        [srvc_policy_attach]
+        if isinstance(srvc_policy_attach, str)
+        else srvc_policy_attach
+    )
 
     # first create the inline role
     inline_role = aws.iam.Role(
@@ -672,14 +679,15 @@ def get_inline_role(
         tags={"desc_name": desc_name},
     )
 
-    # if we were told to also attach a service role's policy, do so
-    if srvc_policy_attach is not None:
-        aws.iam.RolePolicyAttachment(
-            f"{name}-{srvc_prfx}svcroleatch",
-            role=inline_role.name,
-            policy_arn=srvc_policy_attach,
-            opts=opts,
-        )
+    # if we were told to also attach service role policies, do so
+    if policy_attachments:
+        for policy_arn in policy_attachments:
+            aws.iam.RolePolicyAttachment(
+                f"{name}-{srvc_prfx}svcroleatch",
+                role=inline_role.name,
+                policy_arn=policy_arn,
+                opts=opts,
+            )
 
     # and now add the policy rules we were given to the role if configured
     if role_policy is not None:
@@ -696,6 +704,7 @@ def get_inline_role(
 def get_instance_profile(
     name: str,
     role: aws.iam.Role,
+    name_suffix: str | None = None,
 ) -> aws.iam.InstanceProfile:
     """Get an instance profile for the given role
 
@@ -706,7 +715,7 @@ def get_instance_profile(
         The instance profile
     """
     return aws.iam.InstanceProfile(
-        f"{name}-instnc-prfl",
+        f"{name}-instnc-prfl{('-'+ name_suffix) if name_suffix else ''}",
         role=role.name,
         opts=ResourceOptions(parent=role),
     )
