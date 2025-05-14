@@ -114,10 +114,6 @@ config:
         # * `artifact_name`: The name of the release artifact to get. A
         #   release could contain multiple items for which only a subset is
         #   needed.
-        authz_policy_engine:
-            repo_url: "https://github.com/cape-ph/cape-cedar-pac"
-            version: "2025.04.29"
-            artifact_name: "cape-cedar-pac.zip"
 
         # `glue` (mapping, optional)
         # Contains meta configuration related to aws glue.
@@ -227,6 +223,8 @@ config:
             #     time, but the name is reserved for the future
             #   * `app`: there is no special handling for this type at this
             #     time, but the name is reserved for the future
+            #   * `service`: there is no special handling for this type at this
+            #     time, but the name is reserved for the future
             #   * `vpn`: any subnet marks as the VPN type will be configured to
             #     be a target of the external client VPN setup.
             # * `public`: (boolean, optional)
@@ -272,6 +270,12 @@ config:
                   type: vpn
                   routes:
                       - "nataz1"
+                - name: srvcaz1
+                  cidr-block: 10.0.124.0/23
+                  <<: *az1
+                  type: service
+                  routes:
+                      - "nataz1"
                 # AZ 2
                 - name: nataz2
                   cidr-block: 10.0.255.0/24
@@ -296,6 +300,12 @@ config:
                   type: vpn
                   routes:
                       - "nataz2"
+                - name: srvcaz2
+                  cidr-block: 10.0.252.0/23
+                  <<: *az2
+                  type: service
+                  routes:
+                      - "nataz1"
             # `api` (mapping, optional)
             # Contains the configuration for apis and the API application load
             # balancer. If this is not included, a default configuration will be
@@ -617,6 +627,55 @@ config:
                           rebuild_on_change: True
                       services:
                           - athena
+                    - name: "opa"
+                      image: "ami-05080e4998b881ee0"
+                      public_ip: False
+                      instance_type: "t3a.medium"
+                      subnet_types:
+                          - service
+                      subdomain: "opa"
+                      # TODO: don't think we need a cognito client setup here
+                      #       (no SSO needs on this instance) at this time.
+                      #       could change if we need to setup userpool queries
+                      #       in opa directly i guess...
+                      port: 8181
+                      protocol: "HTTP"
+                      healthcheck:
+                          path: "/"
+                          port: 8181
+                          protocol: "HTTP"
+                          matcher: "302"
+                      user_data:
+                          template: assets/instance/user-data/templates/opa.j2
+                          # TODO: define template vars
+                          rebuild_on_change: True
+                          # NOTE: At this time, the opa instance only needs to 
+                          #       read from s3 to get policy bundles. This will
+                          #       probably change in the future (remain an
+                          #       option, but not be the only or preferred
+                          #       mechanism.
+                          vars:
+                              # TODO: think we're going to want this pulling
+                              #       from GH repo releases in addition to off
+                              #       the s3 bucket. we could also have part of
+                              #       the deploy pull from repos and then place
+                              #       them in s3. see if opa supports pull right
+                              #       from GH though
+                              bundle_path: "bundles/opa-bundle-cape.tar.gz"
+                              # TODO: these values are for dev and are way too
+                              # fast for prod
+                              meta_bundle_min_dl_delay: 10
+                              meta_bundle_max_dl_delay: 20
+
+
+                      services:
+                          # TODO: Issue #186 - It would be awesome if we could
+                          #       specify needed actions (e.g. R/W/X type 
+                          #       stuff) here as well as give some indication of
+                          #       *which* service endpoint we care about (e.g.
+                          #       here we would care about specifying which
+                          #       bucket we want to read from
+                          - s3
             # `vpn` (mapping, required)
             # Contains configuration for the vpn for the swimlane.
             # NOTE: At this time, we roll the VPN in with each swimlane. This
