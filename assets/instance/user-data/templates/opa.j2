@@ -2,14 +2,43 @@
 
 sudo tee /etc/opa/config/opa-config.yaml <<EOF
 
-# TEE'd off config...
+services:
+  cape-meta-bundles:
+    url: https://{{ bucket_name }}
+    credentials:
+      s3_signing:
+        metadata_credentials:
+          service: s3
+          aws_region: {{ aws_region }}
+          iam_role: {{ ec2_role }}
+bundles:
+  authz:
+    service: cape-meta-bundles
+    resource: {{ bundle_path }}
+    polling:
+      # NOTE: these are set with defaults for polling the bundles in case 
+      #       values are not provided. for debug, set these values low (e.g. 
+      #       < 30 sec), for prod, the correct value is really a function of 
+      #       how often bundles change and how long a delay in new bundles 
+      #       being applied is ok.
+      min_delay_seconds: {{ meta_bundle_min_dl_delay | default(60) }}
+      max_delay_seconds: {{ meta_bundle_max_dl_delay | default(300) }}
 
 labels:
   app: cape-opa-default-config
-  region: east
+  region: {{ aws_region }}
   environment: dev
 
+decision_logs:
+  service: cape-meta-bundles
+  resource: /logs
+  console: true
+
+status:
+  service: cape-meta-bundles
+
 default_decision: deny
+
 EOF
 
 sudo systemctl restart opa.service
