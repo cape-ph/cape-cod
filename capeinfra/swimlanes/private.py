@@ -687,6 +687,14 @@ class PrivateSwimlane(ScopedSwimlane):
 
             ia_name = aicfg["name"]
 
+            # TODO: ISSUE #186
+
+            # create the instance profile up front. we'll need to pass the role
+            # of the profile into instance user data templates
+            instance_profile = self._create_instance_profile(
+                ia_name, aicfg.get("services", [])
+            )
+
             # first process the user data if applicable
             domain = f"{aicfg['subdomain']}.{self.domain_name}"
 
@@ -727,15 +735,24 @@ class PrivateSwimlane(ScopedSwimlane):
                             lambda d: f"https://{d}.auth.{self.aws_region}.amazoncognito.com"
                         )
                     )
+
+                # TODO: we are passing in the aws region, ec2 role (of the
+                #       instance profile) and the meta assets bucket name to all
+                #       instance templates. Not really a big deal i don't think,
+                #       but it does pollute the namespace a bit. perhaps
+                #       consider a context object based on instance type? (where
+                #       the ec2 instances would get a context with
+                #       region/role/bucket name)?
+                template_args["aws_region"] = self.aws_region
+                template_args["ec2_role"] = instance_profile.role
+                template_args["bucket_name"] = (
+                    capeinfra.meta.automation_assets_bucket.bucket.bucket_domain_name
+                )
+
                 template_args["vars"] = ud_info.get("vars", {})
                 user_data = Output.all(**template_args).apply(
                     lambda args: template.render(**args["vars"], **args)
                 )
-
-            # TODO: ISSUE #186
-            instance_profile = self._create_instance_profile(
-                ia_name, aicfg.get("services", [])
-            )
 
             # now create the instance
             # TODO: ISSUE #184
