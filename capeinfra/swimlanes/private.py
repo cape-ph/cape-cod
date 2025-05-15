@@ -736,18 +736,12 @@ class PrivateSwimlane(ScopedSwimlane):
                         )
                     )
 
-                # TODO: we are passing in the aws region, ec2 role (of the
-                #       instance profile) and the meta assets bucket name to all
-                #       instance templates. Not really a big deal i don't think,
+                # TODO: we are passing in the aws region to all instance
+                #       templates. Not really a big deal i don't think,
                 #       but it does pollute the namespace a bit. perhaps
-                #       consider a context object based on instance type? (where
-                #       the ec2 instances would get a context with
-                #       region/role/bucket name)?
+                #       consider a Context object based on instance type or
+                #       something like that?
                 template_args["aws_region"] = self.aws_region
-                template_args["ec2_role"] = instance_profile.role
-                template_args["bucket_name"] = (
-                    capeinfra.meta.automation_assets_bucket.bucket.bucket_domain_name
-                )
 
                 template_args["vars"] = ud_info.get("vars", {})
                 user_data = Output.all(**template_args).apply(
