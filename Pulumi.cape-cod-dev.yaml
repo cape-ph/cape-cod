@@ -655,17 +655,11 @@ config:
                           #       option, but not be the only or preferred
                           #       mechanism.
                           vars:
-                              # TODO: think we're going to want this pulling
-                              #       from GH repo releases in addition to off
-                              #       the s3 bucket. we could also have part of
-                              #       the deploy pull from repos and then place
-                              #       them in s3. see if opa supports pull right
-                              #       from GH though
-                              bundle_path: "bundles/opa-bundle-cape.tar.gz"
-                              # TODO: these values are for dev and are way too
-                              # fast for prod
-                              meta_bundle_min_dl_delay: 10
-                              meta_bundle_max_dl_delay: 20
+                              bundle_repo_name: "https://github.com/cape-ph/cape-opa-policy"
+                              bundle_version: "2025.05.14"
+                              bundle_asset_name: "cape-opa-bundle.tar.gz"
+                              meta_bundle_min_dl_delay: 120
+                              meta_bundle_max_dl_delay: 300
 
 
                       services:
