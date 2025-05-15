@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+sudo tee /etc/opa/config/opa-config.yaml <<EOF
+
+services:
+  cape-default-github-bundle:
+    url: {{ bundle_repo_name }}/releases/download
+
+# NOTE: for now we're handling pulling versioned releases of policy bundles
+#       from github repositories. If the bundles get big (e.g. there's a bunch
+#       of data files embedded) or some other operationl reason we wish to
+#       consider holding cached versions of the bundles somewhere closer to
+#       load from, we could put them on s3 at some periodicity and use a block
+#       like the following to set that up as a bundle service
+#
+# cape-s3-bundles
+#   url: https://<bucket_name>.s3.amazonaws.com
+#   credentials:
+#     s3_signing:
+#       metadata_credentials:
+#          service: s3
+#          aws_region: <aws_region>
+#          iam_role: <ec2 role name>
+
+bundles:
+  authz:
+    service: cape-default-github-bundle
+    resource: {{ bundle_version }}/{{ bundle_asset_name }}
+    polling:
+      # NOTE: these are set with defaults for polling the bundles in case 
+      #       values are not provided. for debug, set these values low (e.g. 
+      #       < 30 sec), for prod, the correct value is really a function of 
+      #       how often bundles change and how long a delay in new bundles 
+      #       being applied is ok.
+      min_delay_seconds: {{ meta_bundle_min_dl_delay | default(60) }}
+      max_delay_seconds: {{ meta_bundle_max_dl_delay | default(300) }}
+
+labels:
+  app: cape-opa-default-config
+  region: {{ aws_region }}
+  environment: dev
+
+decision_logs:
+  service: cape-default-github-bundle
+  resource: /logs
+  console: true
+
+status:
+  service: cape-default-github-bundle
+
+default_decision: deny
+
+EOF
+
+sudo systemctl restart opa.service

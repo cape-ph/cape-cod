@@ -268,7 +268,6 @@ class EtlJob(CapeComponentResource):
                     args["assets_bucket"],
                 )
             ),
-            srvc_policy_attach=None,
             opts=ResourceOptions(parent=self),
         )
 

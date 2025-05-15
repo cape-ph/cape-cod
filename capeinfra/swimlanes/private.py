@@ -685,6 +685,16 @@ class PrivateSwimlane(ScopedSwimlane):
 
         for aicfg in app_instance_cfgs:
 
+            ia_name = aicfg["name"]
+
+            # TODO: ISSUE #186
+
+            # create the instance profile up front. we'll need to pass the role
+            # of the profile into instance user data templates
+            instance_profile = self._create_instance_profile(
+                ia_name, aicfg.get("services", [])
+            )
+
             # first process the user data if applicable
             domain = f"{aicfg['subdomain']}.{self.domain_name}"
 
@@ -700,75 +710,42 @@ class PrivateSwimlane(ScopedSwimlane):
                         cognito_client[url_field] = list(
                             map(url_template, cognito_client[url_field])
                         )
-                capeinfra.meta.principals.add_client(
-                    aicfg["name"], cognito_client
-                )
+                capeinfra.meta.principals.add_client(ia_name, cognito_client)
 
             user_data = None
             rebuild_on_ud_change = False
             ud_info = aicfg.get("user_data", None)
+
             if ud_info is not None:
                 rebuild_on_ud_change = ud_info["rebuild_on_change"]
                 template = get_j2_template_from_path(ud_info["template"])
 
-                pulumi_outputs: dict[str, Output] = {}
+                template_args: dict[str, Output | str] = {}
+                template_args["domain"] = domain
                 # if there is a cognito client, pass in the necessary client
                 # information
                 if cognito_client is not None:
-                    pulumi_outputs["cognito_domain_prefix"] = (
-                        capeinfra.meta.principals.user_pool.domain
-                    )
-                    client = capeinfra.meta.principals.clients[aicfg["name"]]
-                    pulumi_outputs["cognito_client_id"] = client.id
-                    pulumi_outputs["cognito_client_secret"] = (
+                    client = capeinfra.meta.principals.clients[ia_name]
+                    template_args["cognito_client_id"] = client.id
+                    template_args["cognito_client_secret"] = (
                         client.client_secret
                     )
-
-                def render_template(args):
-                    args["domain"] = domain
-                    # if there is a cognito domain prefix, add the fqdn
-                    if "cognito_domain_prefix" in args:
-                        args["cognito_domain"] = (
-                            f"https://{args['cognito_domain_prefix']}.auth.{self.aws_region}.amazoncognito.com"
+                    template_args["cognito_domain"] = (
+                        capeinfra.meta.principals.user_pool.domain.apply(
+                            lambda d: f"https://{d}.auth.{self.aws_region}.amazoncognito.com"
                         )
-                    return template.render(**ud_info["vars"], **args)
+                    )
 
-                user_data = Output.all(**pulumi_outputs).apply(render_template)
+                # TODO: we are passing in the aws region to all instance
+                #       templates. Not really a big deal i don't think,
+                #       but it does pollute the namespace a bit. perhaps
+                #       consider a Context object based on instance type or
+                #       something like that?
+                template_args["aws_region"] = self.aws_region
 
-            # TODO: ISSUE #186
-            instance_profile = None
-            if "athena" in aicfg.get("services", []):
-                # TODO: issue #185
-                athena_role = get_inline_role(
-                    f"{self.basename}-ec2role-athn",
-                    f"{self.desc_name} EC2 instance role for athena access",
-                    "ec2",
-                    "ec2.amazonaws.com",
-                    json.dumps(
-                        {
-                            "Version": "2012-10-17",
-                            "Statement": [
-                                {
-                                    "Effect": "Allow",
-                                    "Action": [
-                                        "s3:GetObject",
-                                        "s3:ListBucket",
-                                        "s3:PutObject",
-                                    ],
-                                    "Resource": [
-                                        "arn:aws:s3:::*/*",
-                                        "arn:aws:s3:::*",
-                                    ],
-                                }
-                            ],
-                        }
-                    ),
-                    "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
-                    opts=ResourceOptions(parent=self),
-                )
-
-                instance_profile = get_instance_profile(
-                    self.basename, athena_role
+                template_args["vars"] = ud_info.get("vars", {})
+                user_data = Output.all(**template_args).apply(
+                    lambda args: template.render(**args["vars"], **args)
                 )
 
             # now create the instance
@@ -817,8 +794,86 @@ class PrivateSwimlane(ScopedSwimlane):
                         "hc_args": aicfg.get("healthcheck", None),
                     }
 
-        # TODO:
-        # - figure out if we need an instance profile
+    def _create_instance_profile(self, ia_name: str, services: list[str] = []):
+        """Return an instance profile with grants needed for provided services.
+
+        Args:
+            ia_name: The name of the instance app.
+            services: An optional list of service names from the instance app
+                      config that policy grants are needed for.
+        Returns:
+            The instance profile with the specified grants
+        """
+
+        statements = []
+        policy_attachments = []
+
+        if "athena" in services:
+            # TODO: issue #185
+            statements.append(
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "s3:GetObject",
+                        "s3:ListBucket",
+                        "s3:PutObject",
+                    ],
+                    "Resource": [
+                        "arn:aws:s3:::*/*",
+                        "arn:aws:s3:::*",
+                    ],
+                }
+            )
+            policy_attachments.append(
+                "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
+            )
+
+        if "s3" in services:
+            # TODO: issue #186 - would be great if we could specify the exact
+            #                    resource we're allowing for reading. In this
+            #                    case (at time of writing) it's the meta bucket
+            #                    (probably with a specific prefix)
+            statements.append(
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "s3:GetObject",
+                    ],
+                    "Resource": [
+                        "arn:aws:s3:::*/*",
+                        "arn:aws:s3:::*",
+                    ],
+                }
+            )
+            # NOTE: this may need to change. right now we just need EC2
+            #       instances specified with `s3` service to be read only.
+            policy_attachments.append(
+                "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+            )
+
+        # for shortening line and making linter happy
+        desc_services = (
+            ":".join(services) if services else "<NO SERVICES CONFIGURED>"
+        )
+
+        ec2_role = get_inline_role(
+            f"{self.basename}-ec2role-{disemvowel(ia_name)}",
+            f"{self.desc_name} EC2 instance role for {desc_services} access",
+            "ec2",
+            "ec2.amazonaws.com",
+            json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": statements,
+                }
+            ),
+            policy_attachments,
+            opts=ResourceOptions(parent=self),
+        )
+
+        return get_instance_profile(
+            self.basename, ec2_role, name_suffix=disemvowel(ia_name)
+        )
 
     def _create_hosted_domain(self):
         """Create the private zone for the swimlane.
