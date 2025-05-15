@@ -828,6 +828,11 @@ class PrivateSwimlane(ScopedSwimlane):
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
             )
 
+        if "cognito" in services:
+            policy_attachments.append(
+                "arn:aws:iam::aws:policy/AmazonCognitoPowerUser"
+            )
+
         if "s3" in services:
             # TODO: issue #186 - would be great if we could specify the exact
             #                    resource we're allowing for reading. In this
