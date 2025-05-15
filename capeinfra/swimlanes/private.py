@@ -744,9 +744,11 @@ class PrivateSwimlane(ScopedSwimlane):
                 template_args["aws_region"] = self.aws_region
 
                 template_args["vars"] = ud_info.get("vars", {})
-                user_data = Output.all(**template_args).apply(
-                    lambda args: template.render(**args["vars"], **args)
-                )
+
+                def render(tmpl):
+                    return lambda args: tmpl.render(**args["vars"], **args)
+
+                user_data = Output.all(**template_args).apply(render(template))
 
             # now create the instance
             # TODO: ISSUE #184
