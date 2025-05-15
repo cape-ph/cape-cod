@@ -600,7 +600,7 @@ config:
                 #   only supported value is "athena"
                 instances:
                     - name: "jupyterhub"
-                      image: "ami-0975c1d1f7820aafe"
+                      image: "ami-09c08de4816ac0a15"
                       public_ip: False
                       instance_type: "t3a.medium"
                       subnet_types:
