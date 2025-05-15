@@ -794,9 +794,7 @@ class PrivateSwimlane(ScopedSwimlane):
                         "hc_args": aicfg.get("healthcheck", None),
                     }
 
-    def _create_instance_profile(
-        self, ia_name: str, services: list[str] | None = None
-    ):
+    def _create_instance_profile(self, ia_name: str, services: list[str] = []):
         """Return an instance profile with grants needed for provided services.
 
         Args:
@@ -853,9 +851,14 @@ class PrivateSwimlane(ScopedSwimlane):
                 "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
             )
 
+        # for shortening line and making linter happy
+        desc_services = (
+            ":".join(services) if services else "<NO SERVICES CONFIGURED>"
+        )
+
         ec2_role = get_inline_role(
             f"{self.basename}-ec2role-{disemvowel(ia_name)}",
-            f"{self.desc_name} EC2 instance role for {':'.join(services)} access",
+            f"{self.desc_name} EC2 instance role for {desc_services} access",
             "ec2",
             "ec2.amazonaws.com",
             json.dumps(
