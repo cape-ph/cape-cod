@@ -29,5 +29,7 @@ def get_github_release_artifact(
     dl_pth = "/".join([dl_loc, artifact_name])
     local_pth, http_msg = urllib.request.urlretrieve(artifact_url, dl_pth)
 
+    # check the content length header to see if the get worked or not. if we
+    # don't get a content length back then this will end up None as well.
     # TODO: better verification than checking for non-0 file size.
-    return local_pth if int(http_msg.get("Content-Length")) else None
+    return local_pth if int(http_msg.get("Content-Length", 0)) else None
