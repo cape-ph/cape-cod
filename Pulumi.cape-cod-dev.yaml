@@ -103,11 +103,11 @@ config:
         # NOTE: This currently only supports github repositories
         #
         # Contains information required to pull a versioned release of a
-        # Policy As Code repo. This repostory's schema and policies will be
+        # Policy As Code repo. This repository's schema and policies will be
         # used to populate a policy engine (store, schema and policies). 
         # Currently, this repo must provide a shcema and policies in the Cedar 
         # json format. This mapping has the following keys:
-        # * `repo_url: the url to the (publically accessible) hosted
+        # * `repo_url: the url to the (publicly accessible) hosted
         #   repository. This should not end in `.git`
         # * `version`: This is the version of the artifact to get. This
         #   version will most likely match a repo tag
