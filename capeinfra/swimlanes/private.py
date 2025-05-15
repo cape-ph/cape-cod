@@ -720,7 +720,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 rebuild_on_ud_change = ud_info["rebuild_on_change"]
                 template = get_j2_template_from_path(ud_info["template"])
 
-                template_args: dict[str, Output|str] = {}
+                template_args: dict[str, Output | str] = {}
                 template_args["domain"] = domain
                 # if there is a cognito client, pass in the necessary client
                 # information
