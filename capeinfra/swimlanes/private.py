@@ -725,6 +725,10 @@ class PrivateSwimlane(ScopedSwimlane):
                 # if there is a cognito client, pass in the necessary client
                 # information
                 if cognito_client is not None:
+                    # TODO: Templatize identity pool id
+                    # template_args["cognito_identity_pool_id"] = (
+                    #     capeinfra.meta.principals.identity_pool.id
+                    # )
                     client = capeinfra.meta.principals.clients[ia_name]
                     template_args["cognito_client_id"] = client.id
                     template_args["cognito_client_secret"] = (
