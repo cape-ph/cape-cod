@@ -626,7 +626,6 @@ config:
                                   - admin
                           rebuild_on_change: True
                       services:
-                          - athena
                           - cognito
                     - name: "opa"
                       image: "ami-05080e4998b881ee0"

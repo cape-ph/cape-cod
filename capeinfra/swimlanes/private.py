@@ -887,11 +887,15 @@ class PrivateSwimlane(ScopedSwimlane):
             f"{self.desc_name} EC2 instance role for {desc_services} access",
             "ec2",
             "ec2.amazonaws.com",
-            json.dumps(
-                {
-                    "Version": "2012-10-17",
-                    "Statement": statements,
-                }
+            (
+                None  # no role policy if no statements
+                if not statements
+                else json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": statements,
+                    }
+                )
             ),
             policy_attachments,
             opts=ResourceOptions(parent=self),

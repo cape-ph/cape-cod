@@ -8,6 +8,7 @@ import pulumi_aws as aws
 from pulumi import FileArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
+from capeinfra.iam import get_inline_role
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource
@@ -213,7 +214,7 @@ class CapePrincipals(CapeComponentResource):
                                     "cognito-identity.amazonaws.com:amr": "authenticated"
                                 },
                             },
-                        }
+                        },
                     ],
                 },
             )
@@ -251,9 +252,45 @@ class CapePrincipals(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
+        # TODO: Convert this to something more configurable/matinainable
+        # probably in capeinfra.iam
         cognito_role = aws.iam.Role(
             f"{capeinfra.stack_ns}-cgnt-rl",
             assume_role_policy=self.default_trust_policy,
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Allow S3 interaction for Cognito authenticated accounts
+        aws.iam.RolePolicy(
+            f"{capeinfra.stack_ns}-cgnt-rlplcy",
+            role=cognito_role.id,
+            policy=json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:GetObject",
+                                "s3:ListBucket",
+                                "s3:PutObject",
+                            ],
+                            "Resource": [
+                                "arn:aws:s3:::*/*",
+                                "arn:aws:s3:::*",
+                            ],
+                        }
+                    ],
+                }
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        # Allow Athena interaction for Cognito authenticated accounts
+        aws.iam.RolePolicyAttachment(
+            f"{capeinfra.stack_ns}-cgnt-rlatch-AmazonAthenaFullAccess",
+            role=cognito_role.name,
+            policy_arn="arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
             opts=ResourceOptions(parent=self),
         )
 
