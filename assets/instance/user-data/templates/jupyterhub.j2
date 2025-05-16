@@ -56,7 +56,7 @@ async def cognito_hook(spawner):
         # Retrieve credentials using login
         logins = { cognito_provider: id_token }
         # TODO: make identity pool id a template
-        identity_id = cognito.get_id(IdentityPoolId="us-east-2:abdc6e83-bc17-487b-a391-9c63a0f7cd56", Logins=logins)['IdentityId']
+        identity_id = cognito.get_id(IdentityPoolId="{{ cognito_identity_pool_id }}", Logins=logins)['IdentityId']
         credentials = cognito.get_credentials_for_identity(IdentityId=identity_id, Logins=logins)['Credentials']
 
         # Set AWS environment variables with IAM credentials
