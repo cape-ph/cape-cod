@@ -125,7 +125,6 @@ class PrivateSwimlane(ScopedSwimlane):
         # identity pool is created well before we get here, but we can't add
         # roles/policies/attachments before we know the app clients which
         # haven't been added till now.
-        capeinfra.meta.principals.add_identity_pool()
         capeinfra.meta.principals.add_principals()
         self._create_hosted_domain()
         self.create_vpn()
@@ -683,17 +682,9 @@ class PrivateSwimlane(ScopedSwimlane):
             public_key=file_as_string(app_instance_pub_key),
         )
 
+        # Setup all instance app clients
         for aicfg in app_instance_cfgs:
-
             ia_name = aicfg["name"]
-
-            # TODO: ISSUE #186
-
-            # create the instance profile up front. we'll need to pass the role
-            # of the profile into instance user data templates
-            instance_profile = self._create_instance_profile(
-                ia_name, aicfg.get("services", [])
-            )
 
             # first process the user data if applicable
             domain = f"{aicfg['subdomain']}.{self.domain_name}"
@@ -712,6 +703,31 @@ class PrivateSwimlane(ScopedSwimlane):
                         )
                 capeinfra.meta.principals.add_client(ia_name, cognito_client)
 
+        # TODO: Clean up this implementation. This exists here to guarantee the
+        # identity pool is created after all instance application clients but
+        # before any templates are rendered to make sure the identity pool id is
+        # available. (Includes for loop above and causing 2x looping over the
+        # instance applications)
+        # Add identity pool after setting up clients
+        capeinfra.meta.principals.add_identity_pool()
+
+        for aicfg in app_instance_cfgs:
+            ia_name = aicfg["name"]
+
+            # TODO: ISSUE #186
+
+            # create the instance profile up front. we'll need to pass the role
+            # of the profile into instance user data templates
+            instance_profile = self._create_instance_profile(
+                ia_name, aicfg.get("services", [])
+            )
+
+            # first process the user data if applicable
+            domain = f"{aicfg['subdomain']}.{self.domain_name}"
+
+            # if a client is asked to be configured, add it to the user pool
+            cognito_client = aicfg.get("cognito_client", None)
+
             user_data = None
             rebuild_on_ud_change = False
             ud_info = aicfg.get("user_data", None)
@@ -724,7 +740,10 @@ class PrivateSwimlane(ScopedSwimlane):
                 template_args["domain"] = domain
                 # if there is a cognito client, pass in the necessary client
                 # information
-                if cognito_client is not None:
+                if ia_name in capeinfra.meta.principals.clients:
+                    template_args["cognito_identity_pool_id"] = (
+                        capeinfra.meta.principals.identity_pool.id
+                    )
                     client = capeinfra.meta.principals.clients[ia_name]
                     template_args["cognito_client_id"] = client.id
                     template_args["cognito_client_secret"] = (
@@ -744,9 +763,11 @@ class PrivateSwimlane(ScopedSwimlane):
                 template_args["aws_region"] = self.aws_region
 
                 template_args["vars"] = ud_info.get("vars", {})
-                user_data = Output.all(**template_args).apply(
-                    lambda args: template.render(**args["vars"], **args)
-                )
+
+                def render(tmpl):
+                    return lambda args: tmpl.render(**args["vars"], **args)
+
+                user_data = Output.all(**template_args).apply(render(template))
 
             # now create the instance
             # TODO: ISSUE #184
@@ -828,6 +849,11 @@ class PrivateSwimlane(ScopedSwimlane):
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
             )
 
+        if "cognito" in services:
+            policy_attachments.append(
+                "arn:aws:iam::aws:policy/AmazonCognitoPowerUser"
+            )
+
         if "s3" in services:
             # TODO: issue #186 - would be great if we could specify the exact
             #                    resource we're allowing for reading. In this
@@ -861,11 +887,15 @@ class PrivateSwimlane(ScopedSwimlane):
             f"{self.desc_name} EC2 instance role for {desc_services} access",
             "ec2",
             "ec2.amazonaws.com",
-            json.dumps(
-                {
-                    "Version": "2012-10-17",
-                    "Statement": statements,
-                }
+            (
+                None  # no role policy if no statements
+                if not statements
+                else json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": statements,
+                    }
+                )
             ),
             policy_attachments,
             opts=ResourceOptions(parent=self),

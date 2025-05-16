@@ -683,7 +683,7 @@ def get_inline_role(
     if policy_attachments:
         for policy_arn in policy_attachments:
             aws.iam.RolePolicyAttachment(
-                f"{name}-{srvc_prfx}svcroleatch",
+                f"{name}-{srvc_prfx}svcroleatch-{policy_arn.split('/')[-1]}",
                 role=inline_role.name,
                 policy_arn=policy_arn,
                 opts=opts,
