@@ -104,7 +104,7 @@ interim["Date Received"] = pd.to_datetime(
 interim["Date Reported"] = pd.to_datetime(
     data["Date_Reported"], errors="coerce"
 )
-interim["Patient_Name"] = data.apply(
+interim["Patient Name"] = data.apply(
     lambda x: "{Last_Name}, {First_Name}".format(**x), axis=1
 )
 interim["DOB"] = pd.to_datetime(data["DOB"], errors="coerce")
@@ -113,7 +113,7 @@ interim["Date of Collection"] = pd.to_datetime(
     data["Date_Collection"], errors="coerce"
 )
 interim["Testing Lab"] = "TNL"
-interim["State_Lab_ID"] = data["State_Lab_ID"]
+interim["State Lab ID"] = data["State_Lab_ID"]
 
 # write out the transformed data
 with io.StringIO() as csv_buff:
