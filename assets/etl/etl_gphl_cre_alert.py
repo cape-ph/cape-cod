@@ -61,8 +61,8 @@ interim["Date of Collection"] = pd.to_datetime(
     data["Date of Collection"], errors="coerce"
 )
 interim["Testing Lab"] = "GPHL"
+interim["State Lab ID"] = data["Lab ID"]
 interim["Facility of Origin"] = data["Received from"]
-interim["State_Lab_ID"] = data["Lab ID"]
 
 # write out the transformed data
 with io.StringIO() as csv_buff:
