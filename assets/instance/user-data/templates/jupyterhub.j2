@@ -3,6 +3,9 @@
 sudo tee /opt/jupyterhub/etc/jupyterhub/jupyterhub_config.py <<EOF
 # JUPYTERHUB CONFIGURATION FILE
 # =============================
+import jwt
+import boto3
+import traceback
 
 c = get_config() #noqa
 
@@ -31,9 +34,40 @@ c.LocalGenericOAuthenticator.logout_redirect_url = "{{ cognito_domain }}/logout?
 # ------------------------------
 c.LocalGenericOAuthenticator.username_claim = "email"
 
+# Authentication
+# --------------
+c.LocalGenericOAuthenticator.allow_all = True
+c.LocalGenericOAuthenticator.enable_auth_state = True
+
 # Authorization
 # -------------
-c.LocalGenericOAuthenticator.allow_all = True
+async def cognito_hook(spawner):
+    try:
+        # Get authentication state
+        auth_state = await spawner.user.get_auth_state()
+        id_token = auth_state['id_token']
+        # Decode JWT
+        decoded = jwt.decode(id_token, options={"verify_signature": False}, audience=c.LocalGenericOAuthenticator.client_id)
+        cognito_provider = decoded['iss'][8:]
+
+        # Get cognito client
+        cognito = boto3.client('cognito-identity', region_name="{{ aws_region }}")
+
+        # Retrieve credentials using login
+        logins = { cognito_provider: id_token }
+        # TODO: make identity pool id a template
+        identity_id = cognito.get_id(IdentityPoolId="{{ cognito_identity_pool_id }}", Logins=logins)['IdentityId']
+        credentials = cognito.get_credentials_for_identity(IdentityId=identity_id, Logins=logins)['Credentials']
+
+        # Set AWS environment variables with IAM credentials
+        spawner.environment['AWS_DEFAULT_REGION'] = "{{ aws_region }}"
+        spawner.environment['AWS_ACCESS_KEY_ID'] = credentials['AccessKeyId']
+        spawner.environment['AWS_SECRET_ACCESS_KEY'] = credentials['SecretKey']
+        spawner.environment['AWS_SESSION_TOKEN'] = credentials['SessionToken']
+    except:
+        spawner.log.error(traceback.format_exc())
+
+c.Spawner.pre_spawn_hook = cognito_hook
 
 # Local Users
 # -----------

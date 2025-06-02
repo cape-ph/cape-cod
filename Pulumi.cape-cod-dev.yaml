@@ -104,8 +104,8 @@ config:
         #
         # Contains information required to pull a versioned release of a
         # Policy As Code repo. This repository's schema and policies will be
-        # used to populate a policy engine (store, schema and policies). 
-        # Currently, this repo must provide a shcema and policies in the Cedar 
+        # used to populate a policy engine (store, schema and policies).
+        # Currently, this repo must provide a shcema and policies in the Cedar
         # json format. This mapping has the following keys:
         # * `repo_url: the url to the (publicly accessible) hosted
         #   repository. This should not end in `.git`
@@ -356,15 +356,15 @@ config:
                 #   spec, all authorizers must be defined in the component
                 #   section, but may be applied at the API or endpoint levels.
                 #   The authorizer named "default" defined here will be applied
-                #   at the API level currently. Each mapping is keyed on an 
-                #   authorizor name (which must conform to AWS resource naming 
-                #   rules, and will be used as the base of a resource name, so 
+                #   at the API level currently. Each mapping is keyed on an
+                #   authorizor name (which must conform to AWS resource naming
+                #   rules, and will be used as the base of a resource name, so
                 #   it will be constrained in max length) and should contain:
                 #   * `file` (string, required)
                 #   Path (absolute or relative to repo root) to the file
                 #   containing the code for the authorizer lambda function
                 #   * `type` (string, required)
-                #   Type of lambda authorizer. Allowed values are "request", 
+                #   Type of lambda authorizer. Allowed values are "request",
                 #   "token", or "cognito_user_pools".
                 #   * `identity_sources` (string[], optional)
                 #   List of strings of required query params or request headers
@@ -428,7 +428,7 @@ config:
                         #       authorizers with one named default (that will be
                         #       used for the whole api) and then others that
                         #       individual handlers can override
-                        authorizers: 
+                        authorizers:
                             # `default` is a special name signifying the
                             # authorizer that will be used for the whole api
                             # barring any overrides at the endpoint level
@@ -436,7 +436,7 @@ config:
                                 file: "assets/api/authz/default_apigw_authorizer.py"
                                 # allowed request, token, or cognito_user_pools
                                 type: "request"
-                                identity_sources: 
+                                identity_sources:
                                 # This is how long the authz result is cached. 0
                                 # turns off caching which is great for debug of
                                 # dev
@@ -600,7 +600,7 @@ config:
                 #   only supported value is "athena"
                 instances:
                     - name: "jupyterhub"
-                      image: "ami-0975c1d1f7820aafe"
+                      image: "ami-0bb505a20b855ef57"
                       public_ip: False
                       instance_type: "t3a.medium"
                       subnet_types:
@@ -626,7 +626,7 @@ config:
                                   - admin
                           rebuild_on_change: True
                       services:
-                          - athena
+                          - cognito
                     - name: "opa"
                       image: "ami-05080e4998b881ee0"
                       public_ip: False
@@ -649,7 +649,7 @@ config:
                           template: assets/instance/user-data/templates/opa.j2
                           # TODO: define template vars
                           rebuild_on_change: True
-                          # NOTE: At this time, the opa instance only needs to 
+                          # NOTE: At this time, the opa instance only needs to
                           #       read from s3 to get policy bundles. This will
                           #       probably change in the future (remain an
                           #       option, but not be the only or preferred
@@ -661,10 +661,9 @@ config:
                               meta_bundle_min_dl_delay: 120
                               meta_bundle_max_dl_delay: 300
 
-
                       services:
                           # TODO: Issue #186 - It would be awesome if we could
-                          #       specify needed actions (e.g. R/W/X type 
+                          #       specify needed actions (e.g. R/W/X type
                           #       stuff) here as well as give some indication of
                           #       *which* service endpoint we care about (e.g.
                           #       here we would care about specifying which
