@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 import pulumi_aws as aws
+from boto3.dynamodb.types import TypeSerializer
 from pulumi import FileArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
@@ -153,9 +154,16 @@ class CapePrincipals(CapeComponentResource):
         # Create a placeholder for user pool clients
         self.clients = {}
 
+        # mapping of user ids to attribute dicts that will be added to the attrs
+        # store
+        self._user_attrs = {}
+
     def add_principals(self):
         """"""
         self.groups = {}
+
+        # make the DDB table for the user attributes
+        self.create_user_attribute_store()
 
         for grpname, grpcfg in self.config.get("groups", default={}).items():
             # Create basic groups
@@ -179,6 +187,10 @@ class CapePrincipals(CapeComponentResource):
 
         if extra_usrs_file is not None:
             self.load_users_file(extra_usrs_file)
+
+        # now that we have all the users and groups parsed, add the user
+        # attributes table items
+        self._add_user_attrs_items()
 
         # TODO: configure external providers with IdentifyProvider
         # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
@@ -220,7 +232,6 @@ class CapePrincipals(CapeComponentResource):
             )
         )
 
-    # LEFTOFF - CALL ME MAYBE
     def add_identity_pool(self):
         """"""
         # TODO:
@@ -300,6 +311,74 @@ class CapePrincipals(CapeComponentResource):
             roles={"authenticated": cognito_role.arn},
         )
 
+    def create_user_attribute_store(self):
+        """Sets up a data store to hold user attributes."""
+        # setup a DynamoDB table to hold documents containing attributes for
+        # users. keyed on uid
+        # NOTE: we can set up our Dynamo connections to go through a VPC
+        #       endpoint instead of the way we're currently doing (using the
+        #       fact that we have a NAT and egress requests to go through the
+        #       boto3 dynamo client, which makes the requests go through the
+        #       public internet). VPC endpoint is arguably more secure and
+        #       performant as it's a direct connection to Dynamo from our
+        #       clients, but it adds cost.
+        self.user_attrs_ddb_table = aws.dynamodb.Table(
+            f"{self.name}-usr-attrs-ddb",
+            name=f"{self.name}-UserAttrsStore",
+            # NOTE: this table will be accessed as needed to do grap/verify user
+            #       attributes. it'll be pretty hard (at least till this is
+            #       in use for a while) to come up with read/write metrics to
+            #       set this table up as PROVISIONED with those values. We'd
+            #       probably be much cheaper to go that route if we have a
+            #       really solid idea of how many reads/writes this table needs
+            billing_mode="PAY_PER_REQUEST",
+            hash_key="user_id",
+            range_key=None,
+            attributes=[
+                # NOTE: we do not need to define any part of the "schema" here
+                #       that isn't needed in an index.
+                {
+                    "name": "user_id",
+                    "type": "S",
+                },
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} User Attributes DynamoDB Table"
+                ),
+            },
+        )
+
+    def _add_user_attrs_items(self):
+        """"""
+        # TODO: using an index while iterating a dict. we need unique names for
+        #       the table items, but there isn't anything in the attrs dict
+        #       outside user id that we can bank on being there. the UID is too
+        #       long for the name, and using a pulumi Output in a resource name
+        #       isn't supported.
+        for idx, (uid, attrs) in enumerate(self._user_attrs.items()):
+
+            serializer = TypeSerializer()
+            serialized_attrs = {
+                k: serializer.serialize(v) for k, v in attrs.items()
+            }
+
+            serialized_attrs.update(
+                {"user_id": {"S": uid.apply(lambda u: f"{u}")}}
+            )
+
+            aws.dynamodb.TableItem(
+                f"{self.name}-{idx}-ddbitem",
+                table_name=self.user_attrs_ddb_table.name,
+                hash_key=self.user_attrs_ddb_table.hash_key,
+                # TODO: do we have a range key here? schema is unknown and UID
+                #       is really the only thing we can bank on being there
+                range_key=None,
+                item=Output.json_dumps(serialized_attrs),
+                opts=ResourceOptions(parent=self),
+            )
+
     def _add_cape_group(self, grpname: str, grpcfg: dict[str, Any]):
         """Create a CAPE group and add it to the local tracking dict.
 
@@ -322,8 +401,12 @@ class CapePrincipals(CapeComponentResource):
         #   chars)
         # baby steps
 
+        # make the short name for the group that is used in resource names. this
+        # should not include any spaces
+        grp_sname = disemvowel(grpname.replace(" ", ""))
+
         group_role = aws.iam.Role(
-            f"{capeinfra.stack_ns}-{disemvowel(grpname)}-rl",
+            f"{capeinfra.stack_ns}-{grp_sname}-rl",
             assume_role_policy=self.default_trust_policy,
             opts=ResourceOptions(parent=self),
         )
@@ -331,7 +414,7 @@ class CapePrincipals(CapeComponentResource):
         # TODO: do not endeavour to know the group names in here...
         if grpname == "DefaultUsers":
             group_policy = aws.iam.Policy(
-                f"{capeinfra.stack_ns}-{disemvowel(grpname)}-rlplcy",
+                f"{capeinfra.stack_ns}-{grp_sname}-rlplcy",
                 # TODO: placeholder policy
                 policy=json.dumps(
                     {
@@ -351,13 +434,13 @@ class CapePrincipals(CapeComponentResource):
             )
 
             aws.iam.RolePolicyAttachment(
-                f"{capeinfra.stack_ns}-{disemvowel(grpname)}-rpattch",
+                f"{capeinfra.stack_ns}-{grp_sname}-rpattch",
                 role=group_role.name,
                 policy_arn=group_policy.arn,
             )
 
         self.groups[grpname] = aws.cognito.UserGroup(
-            f"{capeinfra.stack_ns}-grp-{grpname}",
+            f"{capeinfra.stack_ns}-grp-{grp_sname}",
             user_pool_id=self.user_pool.id,
             **grpcfg,
             role_arn=group_role.arn,
@@ -392,6 +475,7 @@ class CapePrincipals(CapeComponentResource):
         #   in there and add something else for non-local users
 
         email = usrcfg["email"]
+        attrs_file = usrcfg.get("attrs_file", None)
 
         self.local_users[email] = aws.cognito.User(
             f"{capeinfra.stack_ns}-usr-{email}",
@@ -406,8 +490,25 @@ class CapePrincipals(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
+        self._parse_user_attrs(self.local_users[email], attrs_file)
+
         for gname in usrcfg.get("groups", []):
             self._add_user_to_group(email, gname)
+
+    def _parse_user_attrs(self, user: aws.cognito.User, attrs_file: str | None):
+        """Load a json file of user attributes and store it with the user id.
+
+        Args:
+            user: The cognito user we are tracking the attributes for.
+            attrs_file: The path to the user attributes json file. This should
+                        be either a full path, or relative to the repo root.
+        """
+        attrs = {}
+        if attrs_file is not None:
+            with open(attrs_file, "r") as af:
+                attrs = json.load(af)
+
+        self._user_attrs[user.id] = attrs
 
     def _add_user_to_group(self, uname: str, gname: str):
         """Add a CAPE user to a CAPE group.
@@ -477,7 +578,7 @@ class CapePrincipals(CapeComponentResource):
             FileNotFoundException - If the provided file path is not correct.
         """
         # Doing basic column checking to make sure the file is well formed.
-        expected_cols = ["email", "temporary_password", "groups"]
+        expected_cols = ["email", "temporary_password", "groups", "attrs_file"]
 
         with open(filepth) as usrcsv:
             usrreader = csv.reader(usrcsv, skipinitialspace=True)
@@ -494,11 +595,13 @@ class CapePrincipals(CapeComponentResource):
             for row in usrreader:
                 # the groups column will be a comma separated string that we need
                 # to break out into list of strings
-                email, tpass, grps = row
+                email, tpass, grps, attrs = row
                 usrcfg = {
                     "email": email,
                     "temporary_password": tpass,
                     "groups": grps.split(":"),
+                    # we want None here for any falsy value from the csv
+                    "attrs_file": attrs if attrs else None,
                 }
                 self._add_cape_user(usrcfg)
 

@@ -77,11 +77,14 @@ config:
             #   associate the user with. The named group must either be
             #   created in the `groups` block or in the `group_extra` file
             #   above
+            # * `attrs_file` (string, optional) - a path to a json file containing
+            #   user attributes to prime the system with for the user
             users:
                 - email: cape.admin@example.com
                   temporary_password: 1CapeCodUser!
                   groups:
                       - Admins
+                  attrs_file: assets-untracked/principals/attrs/cape.admin.attrs.json
                 # TODO: this user probably shouldn't actually be in here long
                 #       term. This is the kind of user that the `users_extra`
                 #       file is intended for. THIS IS JUST FOR TESTING IDENTITY
@@ -96,7 +99,7 @@ config:
             # create. May be a full path or relative to repo root. This file can
             # be keps out of the repo using something like the assets-untracked
             # mechanism discussed in the readme.
-            # users_extra: "./assets-untracked/principals/users.csv"
+            # users_extra: "assets-untracked/principals/users.csv"
 
         # `authz_policy_engine` (mapping, required)
         #
