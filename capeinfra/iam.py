@@ -442,7 +442,7 @@ def get_sqs_notifier_policy(
 #       configurable for any resource grant, but it would also be great if we
 #       didn't have to give the same access to every function in the API. Until
 #       we do a little more design and have another API using this, not going to
-#       spend too long getting it perfect. Also, we should resrict the EC2
+#       spend too long getting it perfect. Also, we should restrict the EC2
 #       instance describing
 def get_api_policy(grants: dict[str, list[Output]]):
     """Get a role policy statement for the an API.

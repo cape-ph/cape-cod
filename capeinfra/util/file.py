@@ -1,4 +1,4 @@
-"""File-related utiliy functions."""
+"""File-related utility functions."""
 
 import zipfile
 
@@ -27,7 +27,7 @@ def unzip_to(zip_path: str, target_dir: str = "/tmp"):
         zip_path: The path to the zip file.
         target_dir: The directory to unzip to. If not specified, the file will
                     be unzipped to `/tmp` to a directory with the same name as
-                    the zipf file.
+                    the zip file.
     """
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(target_dir)
