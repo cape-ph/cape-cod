@@ -495,7 +495,7 @@ class CapePrincipals(CapeComponentResource):
         for gname in usrcfg.get("groups", []):
             self._add_user_to_group(email, gname)
 
-    def _parse_user_attrs(self, user: aws.cognito.User, attrs_file: str):
+    def _parse_user_attrs(self, user: aws.cognito.User, attrs_file: str | None):
         """Load a json file of user attributes and store it with the user id.
 
         Args:
