@@ -493,9 +493,9 @@ config:
             # TODO: ISSUE #166
             # TODO: ISSUE #192
             static-apps:
-                - name: "dap-ui"
-                  fqdn: "analysis-pipelines.cape-dev.org"
-                  dir: "./assets/web/static/dap-ui"
+                # - name: "dap-ui"
+                #   fqdn: "analysis-pipelines.cape-dev.org"
+                #   dir: "./assets/web/static/dap-ui"
             # `instance_apps` (mapping, optional)
             # Contains configuration for all swimlane apps that are deployed to
             # EC2 instances.
@@ -602,6 +602,31 @@ config:
                 #   as we get into how we do policies and roles. Currently the
                 #   only supported value is "athena"
                 instances:
+                    - name: "cape-frontend"
+                      image: "ami-0aece993d25081e95"
+                      public_ip: False
+                      instance_type: "t3a.medium"
+                      subnet_types:
+                          - compute
+                      subdomain: "analysis-pipelines"
+                      cognito_client:
+                          callback_urls:
+                              - "https://{{ domain }}"
+                          logout_urls:
+                              - "https://{{ domain }}"
+                          allowed_oauth_scopes: ["openid", "email"]
+                      port: 3000
+                      protocol: "HTTP"
+                      healthcheck:
+                          path: "/"
+                          port: 3000
+                          protocol: "HTTP"
+                          matcher: "302"
+                      user_data:
+                          template: assets/instance/user-data/templates/cape-frontend.j2
+                          rebuild_on_change: True
+                      services:
+                          - cognito
                     - name: "jupyterhub"
                       image: "ami-0bb505a20b855ef57"
                       public_ip: False
