@@ -198,6 +198,7 @@ class AppLoadBalancer(CapeComponentResource):
 
     def _add_target_group_attachments(
         self,
+        target_name: str,
         target_group: aws.lb.TargetGroup,
         targets: list[str],
         port: int | None = None,
@@ -225,7 +226,7 @@ class AppLoadBalancer(CapeComponentResource):
                 #       use outputs in resource names (except perhaps if they
                 #       are made stack references?), so can't use target_group
                 #       name and type as desired...
-                f"{tval}-atch{idx}",
+                f"{target_name}-{tval}-atch{idx}",
                 target_group_arn=target_group.arn,
                 target_id=tval,
                 port=port,
@@ -364,7 +365,9 @@ class AppLoadBalancer(CapeComponentResource):
         # attachment helper.
         vpc_ep.network_interface_ids.apply(
             lambda l: self._add_target_group_attachments(
-                sa_tg, [get_network_interface(id=i).private_ip for i in l]
+                sa_name,
+                sa_tg,
+                [get_network_interface(id=i).private_ip for i in l],
             )
         )
 
@@ -542,7 +545,7 @@ class AppLoadBalancer(CapeComponentResource):
         # should contain string ids of the instances we're attaching to
         instance.id.apply(
             lambda i: self._add_target_group_attachments(
-                app_tg, [f"{i}"], port=fwd_port
+                app_name, app_tg, [f"{i}"], port=fwd_port
             )
         )
 
@@ -624,7 +627,9 @@ class AppLoadBalancer(CapeComponentResource):
 
         vpc_ep.network_interface_ids.apply(
             lambda l: self._add_target_group_attachments(
-                api_tg, [get_network_interface(id=i).private_ip for i in l]
+                api_stage_name,
+                api_tg,
+                [get_network_interface(id=i).private_ip for i in l],
             )
         )
 
