@@ -181,7 +181,7 @@ class CapeRestApi(CapeComponentResource):
                 f"{self.name}",
                 **funct_layer_args,
             )
-            funct_layers.append(api_lambda_layer.arn)
+            funct_layers.append(api_lambda_layer.lambda_layer.arn)
 
         # make functions from the configuration and save the mapping of the
         # function arn to the label we'll need to replace in the spec file.

@@ -1,0 +1,220 @@
+openapi: "3.0.1"
+{#
+    TODO:
+    - ensure domain comes into here as a template variable and not hard coded
+    - ensure default stage name comes into here as a template variable and not
+      hard coded (replace capi-dev in here)
+    - consider overriding authorizers at the method level to allow fine-grained
+      scoping and to have different authorizers for different endpoints.
+    - sit down and write out the paths for the API. everything right now is just
+      to get things rolling for the few endpoints we need to test with
+    - CORS lockdown/response headers
+    - add GET for object metadata (info about files in s3)
+#}
+{#
+    NOTE:
+        we do not provide x-amazon-apigateway-endpoint-configuration here (
+        setting up the vpc endpoint) as we expect that to be set in the pulumi 
+        code setting up the RestApi. Don't want AWS ids in the repo
+#}
+info:
+    title: "CAPE common API"
+    description:
+        "CAPE common API (***TODO: add more comment***)"
+    version: "2025-06-04T17:31:46.429617Z"
+servers:
+    - url: "https://{{ domain }}/{basePath}"
+      variables:
+          basePath:
+              # This value needs to map to the stage name exposed via the ALB
+              default: "capi-dev"
+
+{% if authorizers %}
+security:
+    {% for authorizer_name, _ in authorizers.items() %}
+    # NOTE: some authorizer types (e.g. oauth2) require scopes be defined which
+    #      would be done in place of the `[]` below
+    - {{ authorizer_name }}: []
+    {% endfor %}
+{% endif %}
+    
+paths:
+    /rawobjstorage:
+        get:
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of raw object storage info subject
+                                    to the calling user's authz setup."
+                                items:
+                                    type: object
+                                    properties:
+                                        objstore_name:
+                                            type: string
+                                            description: An object store name
+                                        prefixes:
+                                            type: array
+                                            description:
+                                                Array of names of prefixes in
+                                                the object store
+                                            items:
+                                               type: string
+                                               description: 
+                                                    A name of a prefix the user can write
+                                                    to for the outer-scoped
+                                                    object store.
+                "500":
+                    description:
+                        "Server Error - Unable to query object storage API (error occurred)."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_raw_objstore_authz_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
+    /rawupload:
+        post:
+            requestBody:
+                description: Submit a set of files for upload to object storage.
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            properties:
+                                objstore_name:
+                                    type: string
+                                    description: >
+                                        The name of the object store to upload
+                                        the files to.
+                                prefix:
+                                    type: string
+                                    description:
+                                        The prefix to apply to the files in
+                                        object storage.
+                                file_name:
+                                    type: array
+                                    description: >
+                                        Array of file names and contents.
+                                    items:
+                                        type: string
+                                        format: binary
+            responses:
+                "200":
+                    description: "Success uploading files."
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['post_raw_files_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
+# resusable components that follow OpenApi 3.0.1 spec
+components:
+    responses:
+        200OptionsCors:
+            description: "200 response"
+            headers:
+                Access-Control-Allow-Origin:
+                    schema:
+                        type: "string"
+                Access-Control-Allow-Methods:
+                    schema:
+                        type: "string"
+                Access-Control-Allow-Headers:
+                    schema:
+                        type: "string"
+            content: {}
+{# 
+    TODO: This securityScheme stuff was setup for the DAP API that did no
+          authorizers or anything. We have a lambda authorizer now and it wants
+          JWTs in headers. so need to re-assess this for that purpose.
+#}
+
+    # if we have one or more authorizers defined, we need to render them here
+    {% if authorizers %}
+    securitySchemes:
+        {% for authorizer_name, authorizer_def in authorizers.items() %}
+        {{ authorizer_name }}:
+{#
+    TODO: this will only work for `request` type authorizers right now that have 
+          identity sources as query string params and or header vals to check. 
+          will need some work to support oauth2, oidc, single header, jwt, etc 
+          setups
+#}
+{#
+    TODO: this block (type/name/in) should not be changed for AWS
+          `request` lambda authorizers that use query params. when we
+           change to token or whatever this stuff will change
+#}
+            type: apiKey
+            name: Unused
+            in: header
+{#
+    TODO: assumes custom (i.e. lambda) authtype currently
+#}
+            x-amazon-apigateway-authtype: "custom"
+            x-amazon-apigateway-authorizer: 
+                type : "{{ authorizer_def['type'] }}"
+                {# 
+                    identity source is not required, but specifying one will
+                    fail the API calls if that source is not present in the
+                    request. ao until we know what will always be there, we'll 
+                    allow an empty value here and will just not set an identity
+                    source unless told to.
+                #}
+                {% if authorizer_def["identity_sources"] %}
+                identitySource: "{{ authorizer_def['identity_sources'] }}"
+                {% endif %}
+                authorizerCredentials: "{{ authorizer_def['role'] }}"
+                authorizerUri: "{{ authorizer_def['uri'] }}"
+                authorizerResultTtlInSeconds: {{ authorizer_def['result_cached_sec'] }}
+        {% endfor %}
+    {% endif %}
+
+{#
+    NOTE:
+        we do not provide x-amazon-apigateway-policy here (setting up the 
+        policy for using the API) as we expect that to be set in the pulumi 
+        code setting up the RestApi. Don't want AWS ids and perms in the repo
+#}
