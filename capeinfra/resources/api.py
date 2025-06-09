@@ -18,6 +18,7 @@ from capeinfra.iam import (
     get_inline_role,
     get_vpce_api_invoke_policy,
 )
+from capeinfra.resources.compute import CapePythonLambdaLayer
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
@@ -173,7 +174,7 @@ class CapeRestApi(CapeComponentResource):
 
         # all of our lambda functs will get the capepy layer. and maybe more...
         funct_layers = [capeinfra.meta.capepy.lambda_layer.arn]
-        funct_layer_args = self.config.get("layer_args", None)
+        funct_layer_args = self.config.get("layer_args", default=None)
 
         if funct_layer_args:
 
