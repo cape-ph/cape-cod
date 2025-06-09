@@ -3,10 +3,19 @@
 import csv
 import json
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import pulumi_aws as aws
-from pulumi import FileArchive, FileAsset, Output, ResourceOptions, error, warn
+from pulumi import (
+    AssetArchive,
+    FileArchive,
+    FileAsset,
+    Output,
+    ResourceOptions,
+    error,
+    warn,
+)
 from pulumi_command import local
 
 import capeinfra
@@ -72,6 +81,8 @@ class CapePythonLambdaLayer(CapeComponentResource):
         )
 
         self.name = name
+        self._code = None
+
         self._prepare_layer_code(code_zip_pth, reqs_pth)
 
         self.lambda_layer = aws.lambda_.LayerVersion(
@@ -80,7 +91,10 @@ class CapePythonLambdaLayer(CapeComponentResource):
             description=description,
             license_info=license_info,
             compatible_runtimes=compatible_runtimes,
-            code=self._code,
+            # NOTE: just passing the FileArchive (which self._code is) here
+            #       resulted in an error stating the archive was empty when
+            #       uploaded. Wrapping it in an AssetArchive resolved this.
+            code=AssetArchive({".": self._code}),
             opts=ResourceOptions(parent=self),
         )
 
@@ -99,14 +113,23 @@ class CapePythonLambdaLayer(CapeComponentResource):
         if code_zip_pth is not None:
             self._code = FileArchive(code_zip_pth)
         else:
-            # TODO: handle some kind of pip failure
-            prefix_dir = tempfile.mkdtemp()
-            pip_exit_status = local.Command(
+            # TODO: handle pip failures
+
+            # NOTE: making a tempdir here instead of a named directory gets
+            #       cleaned up too fast. So we'll make a directory in the temp
+            #       location and leave it there.
+            prefix_dir = f"/{tempfile.gettempdir()}/{self.name}-lambda-layer"
+            Path(prefix_dir).mkdir(parents=True, exist_ok=True)
+
+            pip_command = local.Command(
                 f"{self.name}-lmbdlyr-cmd",
                 create=f"pip install -r {reqs_pth} -t {prefix_dir}",
             )
-            warn(
-                f"CapePyLambdaLayer {self.name} pip exit status: "
-                f"{pip_exit_status}"
+
+            # logs the output of the pip call...
+            pip_command.stdout.apply(
+                lambda s: warn(
+                    f"CapePyLambdaLayer {self.name} pip output: " f"{s}"
+                )
             )
             self._code = FileArchive(prefix_dir)
