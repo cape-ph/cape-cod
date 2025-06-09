@@ -478,7 +478,7 @@ config:
                                       - "x86_64"
                                   description: "getrawobjstoreauthz Lambda Function"
                                   memory_size: 128
-                                  timeout: 3
+                                  timeout: 10
                             # TODO: add GET for metadata of file in objstorage
                             - id: "post_raw_files_handler"
                               name: "postrawfiles"
