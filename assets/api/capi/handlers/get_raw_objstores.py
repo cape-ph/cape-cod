@@ -55,7 +55,7 @@ def index_handler(event, context):
         buckobj_paginator = s3_client.get_paginator("list_objects_v2")
 
         for rd in resp_data:
-            pages = object_paginator.paginate(
+            page_iter = buckobj_paginator.paginate(
                 Bucket=rd["objstore_name"], Delimiter="/"
             )
 
@@ -66,7 +66,10 @@ def index_handler(event, context):
             #       (and we may have even found that to be a problem with the
             #       lambda triggers). So for now we'll assume that to be the
             #       case
-            for prefix in pages.search("CommonPrefixes"):
+            for prefix in page_iter.search("CommonPrefixes"):
+                if prefix is None:
+                    print(f"{rd['objstore_name']} has no CommonPrefixes")
+                    continue
                 rd["prefixes"].append(prefix.get("Prefix"))
 
         # And return our response as a 200
