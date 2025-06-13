@@ -1,8 +1,10 @@
 """Lambda function for handling a post of a new analysis pipeline run."""
 
+import base64
 import json
 import logging
 import os
+from io import BytesIO
 
 import boto3
 import multipart
@@ -25,27 +27,34 @@ def index_handler(event, context):
 
     try:
         headers = {k.lower(): v for k, v in event["headers"].items()}
-        body = base64.b64decode(event["body"])
+        body = event["body"]
+
+        print(f"Got request headers: {headers}")
+        print(f"Got request body: {body}")
 
         # the multipart library likes a very specific wsgi environ dict format,
         # so make one to keep it happy...
         environ = {
-            "CONTENT_LENGTH": headers["content-length"],
+            # NOTE: API Gateway appears to remove the content-length header
+            #       before it gets here. so we'll calculate from what we got.
+            "CONTENT_LENGTH": len(body),
             "CONTENT_TYPE": headers["content-type"],
             "REQUEST_METHOD": "POST",
-            "wsgi.input": BytesIO(body),
+            "wsgi.input": BytesIO(body.encode()),
         }
+
         form, files = multipart.parse_form_data(environ)
         form_data = dict(form)
 
         # TODO: remove prints that houldn't go to prod
         print(f"posting raw data file with form data: {form_data}")
+        print(f"posting raw data files: {files}")
 
         objstore_name = form_data["objstore_name"]
         prefix = form_data["prefix"]
 
-        for key, f in files.items():
-            objkey = f"{prefix}/{f.name}"
+        for key, f in files.iterallitems():
+            objkey = f"{prefix}/{f.filename}"
             print(f"Handling uploaded file: {objkey} (upload key: {key})")
             s3_client.put_object(
                 Bucket=objstore_name,
