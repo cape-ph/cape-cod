@@ -95,6 +95,7 @@ class CapePythonLambdaLayer(CapeComponentResource):
             description=description,
             license_info=license_info,
             compatible_runtimes=compatible_runtimes,
+            code=self._code,
             opts=ResourceOptions(parent=self),
         )
 
