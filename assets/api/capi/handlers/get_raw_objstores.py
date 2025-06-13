@@ -23,17 +23,6 @@ def index_handler(event, context):
 
         headers = event.get("headers", {})
 
-        # TODO:
-        # - determine if this will be run as the role returned from the
-        #   authorizer.
-        #   - if so, the code below may just work
-        #   - if no:
-        #       - check for Authorization header and make sure it's got a valid
-        #         JWT. decode...
-        #       - use the user to find the list of buckets and prefixes for the
-        #         user
-        # - make sure authorizer is handling 401/403
-
         resp_data = []
         bucket_paginator = s3_client.get_paginator("list_buckets")
         page_iter = bucket_paginator.paginate(
@@ -60,7 +49,7 @@ def index_handler(event, context):
             )
 
             # NOTE: the response contains a field called "CommonPrefixes", which
-            #       is 100% what we want here *IFF* we're ok with a sinlge level
+            #       is 100% what we want here *IFF* we're ok with a single level
             #       of object key nesting (i.e. one `/` in the full object
             #       name). if we want more than one, this will have to change
             #       (and we may have even found that to be a problem with the
