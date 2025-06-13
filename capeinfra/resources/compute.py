@@ -110,7 +110,7 @@ class CapePythonLambdaLayer(CapeComponentResource):
         method are not cleaned up. This is an artifact of testing and debugging
         this function that proved useful in practice. Be aware of this and if
         you need to ensure a layer is completely rebuilt (including pulling the
-        packes), it is best to remove directories created by this function
+        packages), it is best to remove directories created by this function
         before performing a deployment (assuming the directories have not been
         purged another way as they are created in the system `tmp` directory.
 
