@@ -444,6 +444,7 @@ def get_sqs_notifier_policy(
 #       we do a little more design and have another API using this, not going to
 #       spend too long getting it perfect. Also, we should restrict the EC2
 #       instance describing
+# TODO: TOO MANY PERMS HERE
 def get_api_policy(grants: dict[str, list[Output]]):
     """Get a role policy statement for the an API.
 
@@ -480,6 +481,13 @@ def get_api_policy(grants: dict[str, list[Output]]):
             "Action": [
                 "ec2:DescribeInstances",
             ],
+            "Resource": [
+                "*",
+            ],
+        },
+        {
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket", "s3:ListAllMyBuckets", "s3:PutObject"],
             "Resource": [
                 "*",
             ],

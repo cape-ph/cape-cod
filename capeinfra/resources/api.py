@@ -18,6 +18,7 @@ from capeinfra.iam import (
     get_inline_role,
     get_vpce_api_invoke_policy,
 )
+from capeinfra.resources.compute import CapePythonLambdaLayer
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
@@ -77,6 +78,7 @@ class CapeRestApi(CapeComponentResource):
         self.env_vars = env_vars
         self.spec_path = spec_path
         self.api_vpcendpoint = vpc_endpoint
+        self.domain_name = domain_name
 
         # this will map the ids (string ids) from the config to a tuple of
         # (function name, Lambda Function Resource) so we can fill in the
@@ -90,7 +92,7 @@ class CapeRestApi(CapeComponentResource):
         self._create_api_authorizer_lambdas()
         self._render_spec()
         self._create_rest_api()
-        self._deploy_stage(domain_name)
+        self._deploy_stage(self.domain_name)
 
     def _configure_logging(self):
         """Configure logging for the API.
@@ -140,7 +142,10 @@ class CapeRestApi(CapeComponentResource):
             "responseLength": "$context.responseLength",
         }
 
-    def _create_api_ep_lambdas(self, res_grants: dict[str, list[Output]]):
+    def _create_api_ep_lambdas(
+        self,
+        res_grants: dict[str, list[Output]],
+    ):
         """Create the Lambda functions acting as endpoint handlers for the API.
 
         Args:
@@ -167,6 +172,18 @@ class CapeRestApi(CapeComponentResource):
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
+        # all of our lambda functs will get the capepy layer. and maybe more...
+        funct_layers = [capeinfra.meta.capepy.lambda_layer.arn]
+        funct_layer_args = self.config.get("layer_args", default=None)
+
+        if funct_layer_args:
+
+            api_lambda_layer = CapePythonLambdaLayer(
+                f"{self.name}",
+                **funct_layer_args,
+            )
+            funct_layers.append(api_lambda_layer.lambda_layer.arn)
+
         # make functions from the configuration and save the mapping of the
         # function arn to the label we'll need to replace in the spec file.
         for hcfg in self.config.get("handlers", default=[]):
@@ -182,7 +199,7 @@ class CapeRestApi(CapeComponentResource):
             handler_lambda = aws.lambda_.Function(
                 f"{self.name}-{hcfg['name']}-lmbdfn",
                 role=self._api_lambda_role.arn,
-                layers=[capeinfra.meta.capepy.lambda_layer.arn],
+                layers=funct_layers,
                 code=AssetArchive({"index.py": FileAsset(hcfg["code"])}),
                 environment={"variables": self.env_vars},
                 opts=ResourceOptions(parent=self),
@@ -212,6 +229,7 @@ class CapeRestApi(CapeComponentResource):
         # Outputs in the dict (e.g. arn's)
         spec_kwargs = {
             "api_name": self.api_name,
+            "domain": self.domain_name,
             "authorizers": {},
             "handlers": {},
         }
