@@ -150,7 +150,7 @@ class CapePythonLambdaLayer(CapeComponentResource):
             zip_name = f"{layer_dir_name}.zip"
             # full path to the directory we'll build our pip installations in
             prefix_dir = os.path.join(tempfile.gettempdir(), layer_dir_name)
-            # `python` directoy required by AWS lambda. all pip dependencies
+            # `python` directory required by AWS lambda. all pip dependencies
             # will go in here (via `pip install -t`)
             install_dir = os.path.join(prefix_dir, "python")
 
