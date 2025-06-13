@@ -460,7 +460,7 @@ config:
                         # env_vars: TODO: add env vars for this API if needed.
                         layer_args:
                             # TODO: determine if the added complexity of
-                            #       managing a ton of layers is desireable
+                            #       managing a ton of layers is desirable
                             #       enough to make the layer args handler
                             #       soecific instead of whole api specific.
                             description: CAPI API python pip dependencies layer
