@@ -487,10 +487,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
         },
         {
             "Effect": "Allow",
-            "Action": [
-                "s3:ListBucket",
-                "s3:ListAllMyBuckets",
-            ],
+            "Action": ["s3:ListBucket", "s3:ListAllMyBuckets", "s3:PutObject"],
             "Resource": [
                 "*",
             ],
