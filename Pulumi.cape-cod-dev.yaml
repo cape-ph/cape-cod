@@ -389,6 +389,11 @@ config:
                 #   the env var. No new environment variables may be defined
                 #   here, the only valid entries are those exposed by the
                 #   swimlane. If not provided, this defaults to an empty list.
+                # * `layer_args` (mapping, optional)
+                #   A mapping of args to use in construction of a lambda layer
+                #   for all functions in the API. Keys must match the names of
+                #   keywords args in CapePythonLambdaLayer and values must be as
+                #   expected by that class.
                 # * `handlers` (mapping[], optional)
                 #   A list of mappings containing configuration for lambda
                 #   handlers tied to the API's endpoints. Each mapping should
@@ -422,6 +427,64 @@ config:
                 #     * runtime (string defaults to "python3.10")
                 #     * timeout (int, defaults to 3[unit is seconds])
                 apis:
+                    capi:
+                        desc: "CAPE API"
+                        spec_file: "assets/api/capi/capi-openapi-301.yaml.j2"
+                        # TODO: this is the default authorizer for the whole
+                        #       api. give it attrs like file, name, cache
+                        #       timeout, etc. probably want this to be a list of
+                        #       authorizers with one named default (that will be
+                        #       used for the whole api) and then others that
+                        #       individual handlers can override
+                        authorizers:
+                            # `default` is a special name signifying the
+                            # authorizer that will be used for the whole api
+                            # barring any overrides at the endpoint level
+                            default:
+                                file: "assets/api/authz/default_apigw_authorizer.py"
+                                # allowed request, token, or cognito_user_pools
+                                type: "request"
+                                identity_sources:
+                                    # TODO: need to specify headers that are
+                                    #       identity sources (e.g. the JWT is 
+                                    #       maybe in the `Authorization` header. 
+                                    #       Until a front end is sending this
+                                    #       we will leave it unspecified as the
+                                    #       API GW will halt requests without 
+                                    #       that header
+                                # This is how long the authz result is cached. 0
+                                # turns off caching which is great for debug of
+                                # dev
+                                result_cached_sec: 0
+                                logging_enabled: True
+                        # env_vars: TODO: add env vars for this API if needed.
+                        layer_args:
+                            # TODO: determine if the added complexity of
+                            #       managing a ton of layers is desirable
+                            #       enough to make the layer args handler
+                            #       soecific instead of whole api specific.
+                            description: CAPI API python pip dependencies layer
+                            compatible_runtimes: 
+                                - python3.10
+                            reqs_pth: assets/api/capi/requirements.txt 
+                        handlers:
+                            - id: "get_raw_objstore_authz_handler"
+                              name: "getrawobjstoreauthz"
+                              code: "assets/api/capi/handlers/get_raw_objstores.py"
+                              funct_args:
+                                  handler: "index.index_handler"
+                                  runtime: "python3.10"
+                                  architectures:
+                                      - "x86_64"
+                                  description: "getrawobjstoreauthz Lambda Function"
+                                  memory_size: 128
+                                  timeout: 10
+                            # TODO: add GET for metadata of file in objstorage
+                            - id: "post_raw_files_handler"
+                              name: "postrawfiles"
+                              code: "assets/api/capi/handlers/post_raw_files.py"
+                    # TODO: ISSUE 231 - remove this api when it's in the main
+                    #                   capi api
                     dap:
                         desc: "Data Analysis Pipeline API"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
