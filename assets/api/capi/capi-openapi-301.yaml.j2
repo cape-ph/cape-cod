@@ -96,6 +96,69 @@ paths:
               passthroughBehavior: "when_no_match"
               timeoutInMillis: 29000
               type: "mock"
+
+    /objuploadurl:
+        get:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket to get a POST URL for"  
+                - in: query
+                  name: prefix
+                  schema:
+                    type: string
+                    description: "The object key prefix the POST URL will be
+                    limited to"  
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the POST URL and form
+                                    fields required for the POST."
+                                properties:
+                                    url:
+                                        type: string
+                                        description: The POST URL
+                                    fields:
+                                        type: object
+                                        description:
+                                            "An object containing form fields
+                                            required when submitting the POST"
+                "500":
+                    description:
+                        "Server Error - Unable to generate pre-signed raw upload
+                        POST URL."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_raw_obj_upload_url_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
     /rawupload:
         post:
             requestBody:
