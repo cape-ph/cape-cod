@@ -1,7 +1,7 @@
 """Module of load balancer related resources."""
 
 import pulumi_aws as aws
-from pulumi import Input, ResourceOptions
+from pulumi import Input, Output, ResourceOptions
 from pulumi_aws.ec2.get_network_interface import get_network_interface
 
 from capepulumi import CapeComponentResource
@@ -120,6 +120,7 @@ class AppLoadBalancer(CapeComponentResource):
     def _add_target_group(
         self,
         group_id: str,
+        short_name: str,
         ttype: str = "instance",
         healthcheck_args: dict | None = None,
         port: int | None = 443,
@@ -132,6 +133,9 @@ class AppLoadBalancer(CapeComponentResource):
         Args:
             group_id: A string identifying the group. Must be unique across
                       all of this load balancer's target groups.
+            short_name: A string identifying the group. Must be unique across
+                        all of this load balancer's target groups. This is used
+                        in resource naming and must be <= 4 characters.
             ttype: The target type for the group. One of `ip`, `instance`, or
                    `lambda`. Defaults to `instance`
             healthcheck_args: An optional dict of health check args. If not
@@ -175,11 +179,8 @@ class AppLoadBalancer(CapeComponentResource):
 
         tghc_args = aws.lb.TargetGroupHealthCheckArgs(**hc_args)
 
-        # TODO: ISSUE #167 - putting a count in the resource name instead of
-        #                    group_id due to naming length limits
-        tg_idx = len(self._target_groups)
         self._target_groups[group_id] = aws.lb.TargetGroup(
-            f"{self.name}-tg-{tg_idx}",
+            f"{self.name}-tg-{short_name}",
             port=port,
             protocol=proto,
             protocol_version="HTTP1",
@@ -189,7 +190,7 @@ class AppLoadBalancer(CapeComponentResource):
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (
-                    f"{self.desc_name} ALB {group_id} {ttype} target group"
+                    f"{self.desc_name} ALB {group_id} {ttype} " f"target group"
                 ),
             },
         )
@@ -200,33 +201,35 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         target_name: str,
         target_group: aws.lb.TargetGroup,
-        targets: list[str],
+        targets: list[tuple[str]],
         port: int | None = None,
     ):
         """Attach a list of targets to a target group.
 
         Args:
             target_group:
-            targets: A list of target values (strings) for the group
-                     attachment. What the values are is determined by the
-                     `target_type` of the target group:
-                        * When the type is `ip`, the  list should contain ip
-                          addresses of network interfaces.
-                        * When type is `instance` the list should contain ec2
-                          instance or ECS container ids.
-                        * When the type is `lambda`, the list should contain
-                          arns of lambda functions.
+            targets: A list of target values (tuples of strings) for the group
+                     attachment. What the values of the first element of the
+                     tuple is depends on the `target_type` of the target group:
+                        * When the type is `ip`, the first element should be
+                          the ip addresses of network interfaces.
+                        * When type is `instance` the first element should be
+                          the ec2 instance or ECS container id.
+                        * When the type is `lambda`, the first element should be
+                          the arns of lambda function.
+                    In all cases, the second element of the tuple should be the
+                    availbaility zone identifier
             port: Optional port to use in the attachment. This should only be
                   specified for non-lambda targets
         """
-        for idx, tval in enumerate(targets):
+        for tval, az in targets:
             aws.lb.TargetGroupAttachment(
                 # TODO: do not love having the target value (e.g. ip address)
                 #       in the resource name here. seems that it's not ok to
                 #       use outputs in resource names (except perhaps if they
                 #       are made stack references?), so can't use target_group
                 #       name and type as desired...
-                f"{target_name}-{tval}-atch{idx}",
+                f"{target_name}-{tval}-{az}-atch",
                 target_group_arn=target_group.arn,
                 target_id=tval,
                 port=port,
@@ -255,6 +258,17 @@ class AppLoadBalancer(CapeComponentResource):
                 f"before targets can be added."
             )
         return listener
+
+    def _get_nic_attr_tuple(self, nir: aws.ec2.GetNetworkInterfacesResult):
+        """Get an attribute tuple for a network interface get result.
+
+        The tuple contains the private ip address and availability zone for the
+        NIC.
+
+        Args:
+            nir: The GetNetworkInterfacesResult to get the tuple for.
+        """
+        return (nir.private_ip, nir.availability_zone)
 
     def add_listener(
         self,
@@ -313,6 +327,7 @@ class AppLoadBalancer(CapeComponentResource):
         bucket: aws.s3.BucketV2,
         vpc_ep: aws.ec2.VpcEndpoint,
         sa_name: str,
+        sa_short_name: str,
         port: int | None = 443,
         proto: str | None = "HTTPS",
     ):
@@ -331,6 +346,9 @@ class AppLoadBalancer(CapeComponentResource):
             vpc_ep: The VPC endpoint to associate with this static app.
             sa_name: The unique name of the static app being setup with this
                      ALB.
+            sa_short_name: The unique short name of the static app being setup
+                           with this ALB. This is used in resource naming and
+                           must be <= 4 characters.
             port: The port the of the listener the app will be associated with.
                   Defaults to 443
             proto: The protocol of the listener the app will be associated with.
@@ -348,6 +366,7 @@ class AppLoadBalancer(CapeComponentResource):
         #       down the line
         sa_tg = self._add_target_group(
             f"{sa_name}",
+            f"{sa_short_name}",
             ttype="ip",
             healthcheck_args={
                 "path": "/",
@@ -365,9 +384,12 @@ class AppLoadBalancer(CapeComponentResource):
         # attachment helper.
         vpc_ep.network_interface_ids.apply(
             lambda l: self._add_target_group_attachments(
-                sa_name,
+                sa_short_name,
                 sa_tg,
-                [get_network_interface(id=i).private_ip for i in l],
+                [
+                    self._get_nic_attr_tuple(get_network_interface(id=i))
+                    for i in l
+                ],
             )
         )
 
@@ -386,7 +408,7 @@ class AppLoadBalancer(CapeComponentResource):
             conditions_action_desc, start=1
         ):
             aws.lb.ListenerRule(
-                f"{self.name}-{sa_name}-lstnrrl{idx}",
+                f"{self.name}-{sa_short_name}-lstnrrl{idx}",
                 listener_arn=listener.arn,
                 conditions=[
                     # for static apps, we want to match the host header (bucket
@@ -431,7 +453,7 @@ class AppLoadBalancer(CapeComponentResource):
         # so that all other rules apply first te get redirects correct.
         fwd_rule_idx = len(conditions_action_desc) + 1
         aws.lb.ListenerRule(
-            f"{self.name}-{sa_name}-lstnrrl{fwd_rule_idx}",
+            f"{self.name}-{sa_short_name}-lstnrrl{fwd_rule_idx}",
             listener_arn=listener.arn,
             conditions=[
                 aws.lb.ListenerRuleConditionArgs(
@@ -473,6 +495,7 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         instance: aws.ec2.Instance,
         app_name: str,
+        app_short_name: str,
         fqdn: str,
         port: int | None = 443,
         proto: str | None = "HTTPS",
@@ -497,6 +520,9 @@ class AppLoadBalancer(CapeComponentResource):
             instance: The EC2 instance hosting the application.
             app_name: The unique name of the application being setup with this
                       ALB.
+            app_short_name: The unique short name of the application being
+                            setup with this ALB. This is used in resource
+                            naming and must be <= 4 characters.
             fqdn: The FQDN for requests that should be routed to the instance.
             port: The port the of the listener the app will be associated with.
                   Defaults to 443
@@ -530,6 +556,7 @@ class AppLoadBalancer(CapeComponentResource):
 
         app_tg = self._add_target_group(
             f"{app_name}",
+            f"{app_short_name}",
             ttype="instance",
             healthcheck_args=hca,
             # Port is specified for the target group even though the value
@@ -543,16 +570,19 @@ class AppLoadBalancer(CapeComponentResource):
 
         # for instance targets, the list we pass the attachment helper needs
         # should contain string ids of the instances we're attaching to
-        instance.id.apply(
-            lambda i: self._add_target_group_attachments(
-                app_name, app_tg, [f"{i}"], port=fwd_port
+        Output.all(i=instance.id, a=instance.availability_zone).apply(
+            lambda args: self._add_target_group_attachments(
+                app_short_name,
+                app_tg,
+                [(f"{args['i']}", f"{args['a']}")],
+                port=fwd_port,
             )
         )
 
         # For instance targets, we will forward anything with the correct host
         # header to the instance.
         aws.lb.ListenerRule(
-            f"{self.name}-{app_name}-lstnrrl",
+            f"{self.name}-{app_short_name}-lstnrrl",
             listener_arn=listener.arn,
             conditions=[
                 aws.lb.ListenerRuleConditionArgs(
@@ -589,6 +619,7 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         vpc_ep: aws.ec2.VpcEndpoint,
         api_stage_name: str,
+        api_short_name: str,
         port: int | None = 443,
         proto: str | None = "HTTPS",
     ):
@@ -607,6 +638,9 @@ class AppLoadBalancer(CapeComponentResource):
                             by api_stage_id. The API path after the alb
                             hostname must match the name of the deployed stage
                             in API gateway.
+            api_short_name: The unique short name of the api being setup with
+                            this ALB. This will be used in resource naming and
+                            must be >= 4 characters.
             port: The port the of the listener the app will be associated with.
                   Defaults to 443
             proto: The protocol of the listener the app will be associated with.
@@ -616,7 +650,9 @@ class AppLoadBalancer(CapeComponentResource):
         listener = self._get_listener(port, proto)
 
         # All APIs will be routed to IP target groups
-        api_tg = self._add_target_group(f"{api_stage_name}", ttype="ip")
+        api_tg = self._add_target_group(
+            f"{api_stage_name}", f"{api_short_name}", ttype="ip"
+        )
 
         # the vpc endpoint for the api gateway has a list of network
         # interfaces. we need to associate the ip addrs of those interfaces
@@ -627,9 +663,12 @@ class AppLoadBalancer(CapeComponentResource):
 
         vpc_ep.network_interface_ids.apply(
             lambda l: self._add_target_group_attachments(
-                api_stage_name,
+                api_short_name,
                 api_tg,
-                [get_network_interface(id=i).private_ip for i in l],
+                [
+                    self._get_nic_attr_tuple(get_network_interface(id=i))
+                    for i in l
+                ],
             )
         )
 
@@ -638,7 +677,7 @@ class AppLoadBalancer(CapeComponentResource):
         #       trailing slashes. this would be nice, but certainly not a
         #       non-starter since the apis are private
         aws.lb.ListenerRule(
-            f"{self.name}-{api_stage_name}-lstnrrl1",
+            f"{self.name}-{api_short_name}-lstnrrl",
             listener_arn=listener.arn,
             conditions=[
                 aws.lb.ListenerRuleConditionArgs(
