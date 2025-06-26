@@ -77,7 +77,7 @@ class PrivateSwimlane(ScopedSwimlane):
                         "stage-suffix": "dev",
                     },
                 },
-                "apis": {},
+                "apis": [],
             },
             "compute": {},
             "vpn": {
@@ -619,8 +619,8 @@ class PrivateSwimlane(ScopedSwimlane):
         # deployment info in "deploy" key
         self.apis = {}
 
-        for name, spec in self.config.get("api", "apis").items():
-            self.apis.setdefault(name, {"spec": spec})
+        for spec in self.config.get("api", "apis"):
+            self.apis.setdefault(spec["name"], {"spec": spec})
 
         # NOTE: our private DNS will send *all* api gateway traffic through
         #       this endpoint. at the time of this comment, this means we would
