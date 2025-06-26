@@ -350,6 +350,10 @@ config:
                 #    A description for the api. Will be used in description
                 #    tags. The key is required, but the value may be left
                 #    empty.
+                # * `short_name` (string, required)
+                #    A short name for the api. Will be used in resource naming
+                #    and can be a max of 4 characters and must be unique across 
+                #    apis.
                 # * `spec_file` (string, required)
                 #   Path to an OpenApi 3.0.1 yaml specification jinja2
                 #   template. This file should include *no* AWS id's, names,
@@ -429,6 +433,7 @@ config:
                 apis:
                     capi:
                         desc: "CAPE API"
+                        short_name: "capi"
                         spec_file: "assets/api/capi/capi-openapi-301.yaml.j2"
                         # TODO: this is the default authorizer for the whole
                         #       api. give it attrs like file, name, cache
@@ -487,6 +492,7 @@ config:
                     #                   capi api
                     dap:
                         desc: "Data Analysis Pipeline API"
+                        short_name: "dapi"
                         spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
                         # TODO: this is the default authorizer for the whole
                         #       api. give it attrs like file, name, cache
@@ -542,6 +548,10 @@ config:
             #    resource naming. As it is used in resource naming it should be
             #    kept as short as possible, but it must be unique across static
             #    app names in the swimlane.
+            # * `short_name` (string, required)
+            #    A short name for the static app. This is used in book keeping 
+            #    and resource naming. This should be kept to 4 characters max
+            #    and should be unique across all static apps.
             # * `fqdn` (string, required)
             #   This is the FQDN for the static app. The domain must match the
             #   swimlane's domain presently. The FQDN becomes the name of the S3
@@ -557,6 +567,7 @@ config:
             # TODO: ISSUE #192
             static-apps:
                 - name: "dap-ui"
+                  short_name: "dap"
                   fqdn: "analysis-pipelines.cape-dev.org"
                   dir: "./assets/web/static/dap-ui"
             # `instance_apps` (mapping, optional)
@@ -585,6 +596,10 @@ config:
                 # * `name` (string, required)
                 #   Used in resource naming and book keeping. Must be unique
                 #   across instance apps
+                # * `short_name` (string, required)
+                #   Used in resource naming and book keeping. Must be unique
+                #   across instance apps and ideally less than 4 characters due
+                #   to resource naming limits.
                 # * `image` (string, required)
                 #   The id of the AMI to use for the instance. This AMI must
                 #   already exist in AWS
@@ -666,6 +681,7 @@ config:
                 #   only supported value is "athena"
                 instances:
                     - name: "jupyterhub"
+                      short_name: "jh"
                       image: "ami-0bb505a20b855ef57"
                       public_ip: False
                       instance_type: "t3a.medium"
@@ -694,6 +710,7 @@ config:
                       services:
                           - cognito
                     - name: "opa"
+                      short_name: "opa"
                       image: "ami-05080e4998b881ee0"
                       public_ip: False
                       instance_type: "t3a.medium"
