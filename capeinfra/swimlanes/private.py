@@ -77,7 +77,7 @@ class PrivateSwimlane(ScopedSwimlane):
                         "stage-suffix": "dev",
                     },
                 },
-                "apis": {},
+                "apis": [],
             },
             "compute": {},
             "vpn": {
@@ -417,15 +417,16 @@ class PrivateSwimlane(ScopedSwimlane):
         # Grab the config values of interest so we can check if we should
         # proceed
         sa_name = sa_cfg.get("name", default=None)
+        sa_short_name = sa_cfg.get("short_name", default=None)
         sa_fqdn = sa_cfg.get("fqdn", default=None)
         sa_dir = sa_cfg.get("dir", default=None)
 
-        if None in (sa_name, sa_fqdn, sa_dir):
+        if None in (sa_name, sa_short_name, sa_fqdn, sa_dir):
             msg = (
                 f"Static App {sa_name or 'UNNAMED'} contains one or more "
                 "invalid configuration values that are required. The "
-                "application will not be deployed. Check the app name, fqdn, "
-                "and repo directory."
+                "application will not be deployed. Check the app name, app "
+                "short name, fqdn, and repo directory."
             )
 
             warn(msg)
@@ -440,6 +441,8 @@ class PrivateSwimlane(ScopedSwimlane):
         #   }
         # }
         self.static_apps.setdefault(sa_name, {})
+
+        self.static_apps[sa_name]["short_name"] = sa_short_name
 
         # bucket for hosting static web application
         # TODO: ISSUE #127
@@ -493,6 +496,7 @@ class PrivateSwimlane(ScopedSwimlane):
             self.albs[self.APPLICATION_ALB].add_instance_app_target(
                 ia_info["instance"],
                 ia_name,
+                ia_info["short_name"],
                 ia_info["fqdn"],
                 port=443,
                 proto="HTTPS",
@@ -509,6 +513,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 sa_info["bucket"].bucket,
                 self.static_app_vpcendpoint,
                 sa_name,
+                sa_info["short_name"],
                 port=443,
                 proto="HTTPS",
             )
@@ -531,6 +536,7 @@ class PrivateSwimlane(ScopedSwimlane):
             self.albs[self.API_ALB].add_api_target(
                 self.api_vpcendpoint,
                 api_info["deploy"].stage_name,
+                api_info["spec"]["short_name"],
                 port=443,
                 proto="HTTPS",
             )
@@ -613,8 +619,8 @@ class PrivateSwimlane(ScopedSwimlane):
         # deployment info in "deploy" key
         self.apis = {}
 
-        for name, spec in self.config.get("api", "apis").items():
-            self.apis.setdefault(name, {"spec": spec})
+        for spec in self.config.get("api", "apis"):
+            self.apis.setdefault(spec["name"], {"spec": spec})
 
         # NOTE: our private DNS will send *all* api gateway traffic through
         #       this endpoint. at the time of this comment, this means we would
@@ -809,6 +815,7 @@ class PrivateSwimlane(ScopedSwimlane):
                             ),
                             opts=ResourceOptions(parent=self),
                         ),
+                        "short_name": aicfg["short_name"],
                         "fqdn": domain,
                         "port": aicfg.get("port", None),
                         "proto": aicfg.get("protocol", None),
