@@ -201,7 +201,7 @@ class AppLoadBalancer(CapeComponentResource):
         self,
         target_name: str,
         target_group: aws.lb.TargetGroup,
-        targets: list[tuple[str]],
+        targets: list[tuple[str, str]],
         port: int | None = None,
     ):
         """Attach a list of targets to a target group.
@@ -259,7 +259,9 @@ class AppLoadBalancer(CapeComponentResource):
             )
         return listener
 
-    def _get_nic_attr_tuple(self, nir: aws.ec2.GetNetworkInterfacesResult):
+    def _get_nic_attr_tuple(
+        self, nir: aws.ec2.AwaitableGetNetworkInterfaceResult
+    ) -> tuple[str, str]:
         """Get an attribute tuple for a network interface get result.
 
         The tuple contains the private ip address and availability zone for the
