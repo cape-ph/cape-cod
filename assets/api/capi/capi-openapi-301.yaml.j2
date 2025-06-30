@@ -159,59 +159,6 @@ paths:
               passthroughBehavior: "when_no_match"
               timeoutInMillis: 29000
               type: "mock"
-    /rawupload:
-        post:
-            requestBody:
-                description: Submit a set of files for upload to object storage.
-                required: true
-                content:
-                    multipart/form-data:
-                        schema:
-                            type: object
-                            properties:
-                                objstore_name:
-                                    type: string
-                                    description: >
-                                        The name of the object store to upload
-                                        the files to.
-                                prefix:
-                                    type: string
-                                    description:
-                                        The prefix to apply to the files in
-                                        object storage.
-                                file_name:
-                                    type: array
-                                    description: >
-                                        Array of file names and contents.
-                                    items:
-                                        type: string
-                                        format: binary
-            responses:
-                "200":
-                    description: "Success uploading files."
-            x-amazon-apigateway-integration:
-                httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['post_raw_files_handler'] }}/invocations"
-                passthroughBehavior: "when_no_match"
-                timeoutInMillis: 29000
-                type: "aws_proxy"
-        options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
 # resusable components that follow OpenApi 3.0.1 spec
 components:
     responses:
