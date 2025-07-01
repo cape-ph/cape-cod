@@ -444,7 +444,7 @@ def get_sqs_notifier_policy(
 #       we do a little more design and have another API using this, not going to
 #       spend too long getting it perfect. Also, we should restrict the EC2
 #       instance describing
-# TODO: TOO MANY PERMS HERE
+# TODO: ISSUE 245 - TOO MANY PERMS HERE
 def get_api_policy(grants: dict[str, list[Output]]):
     """Get a role policy statement for the an API.
 
@@ -516,6 +516,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
                 "Effect": "Allow",
                 "Action": [
                     "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
                     "dynamodb:Scan",
                 ],
                 "Resource": [
