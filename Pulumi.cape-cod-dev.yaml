@@ -523,6 +523,17 @@ config:
                                     "getuserattributeval Lambda Function"
                                 memory_size: 128
                                 timeout: 10
+                          - id: "get_s3_contents_handler"
+                            name: "gets3contents"
+                            code: "assets/api/capi/handlers/get_s3_contents.py"
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "gets3contents Lambda Function"
+                                memory_size: 128
+                                timeout: 10
                     # TODO: ISSUE 231 - remove this api when it's in the main
                     #                   capi api
                     - name: dap
