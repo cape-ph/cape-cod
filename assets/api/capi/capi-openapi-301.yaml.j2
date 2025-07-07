@@ -4,6 +4,8 @@ openapi: "3.0.1"
     - ensure domain comes into here as a template variable and not hard coded
     - ensure default stage name comes into here as a template variable and not
       hard coded (replace capi-dev in here)
+    - lots of DRY violate. figure out things that can be injected as template
+      snippets, OAPI reusable components, etc
     - consider overriding authorizers at the method level to allow fine-grained
       scoping and to have different authorizers for different endpoints.
     - sit down and write out the paths for the API. everything right now is just
@@ -39,6 +41,10 @@ security:
 {% endif %}
     
 paths:
+    {# 
+        TODO: The object storage URI paths should be formalized to match other
+              api things 
+    #}
     /rawobjstorage:
         get:
             responses:
@@ -139,6 +145,141 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_raw_obj_upload_url_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
+    /user/attributes:
+        get:
+            parameters:
+                - in: query
+                  name: userId
+                  schema:
+                    type: string
+                    description: "The id of the user to get attributes for"  
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the public attributes
+                                    and their values for the given user id."
+                                properties:
+                                    message:
+                                        type: string
+                                        description:
+                                            "Informational message"
+                                    attributes:
+                                        type: object
+                                        description:
+                                            "An object containing public user
+                                            attributes"
+                "500":
+                    description:
+                        "Server Error - Unable to fetch user attributes"
+                "default":
+                    description: "Client Error"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the public attributes
+                                    and their values for the given user id."
+                                properties:
+                                    message:
+                                        type: string
+                                        description:
+                                            "Error message"
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{handlers['get_user_attributes_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
+    /user/attribute:
+        get:
+            parameters:
+                - in: query
+                  name: userId
+                  schema:
+                    type: string
+                    description: "The id of the user to get attributes for"  
+                - in: query
+                  name: attrName
+                  schema:
+                    type: string
+                    description: "The name of the attribute to get the value for"  
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the requested
+                                    attribute and its value."
+                "500":
+                    description:
+                        "Server Error - Unable to fetch user attributes"
+                "default":
+                    description: "Client Error"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing information about the
+                                    error."
+                                properties:
+                                    message:
+                                        type: string
+                                        description:
+                                            "Error message"
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{handlers['get_user_attribute_val_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"

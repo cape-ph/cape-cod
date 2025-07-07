@@ -462,6 +462,8 @@ config:
                               # dev
                               result_cached_sec: 0
                               logging_enabled: True
+                      env_vars:
+                          - "USER_ATTRS_DDB_TABLE"
                       # env_vars: TODO: add env vars for this API if needed.
                       layer_args:
                           # TODO: determine if the added complexity of
@@ -496,6 +498,29 @@ config:
                                     - "x86_64"
                                 description:
                                     "getrawobjuploadurl Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_user_attributes_handler"
+                            name: "getuserattributes"
+                            code: "assets/api/capi/handlers/get_user_attributes.py"
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getuserattributes Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_user_attribute_val_handler"
+                            name: "getuserattributeval"
+                            code: "assets/api/capi/handlers/get_user_attribute_val.py"
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description:
+                                    "getuserattributeval Lambda Function"
                                 memory_size: 128
                                 timeout: 10
                     # TODO: ISSUE 231 - remove this api when it's in the main

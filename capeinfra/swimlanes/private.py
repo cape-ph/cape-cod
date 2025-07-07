@@ -661,6 +661,17 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         )
 
+        # read access to this this resource can be configured via the deployment
+        # config (for api lambdas), so add it to the bookkeeping structure for
+        # that
+        self._exposed_env_vars.setdefault(
+            "USER_ATTRS_DDB_TABLE",
+            {
+                "resource_name": capeinfra.meta.principals.user_attrs_ddb_table.name,
+                "type": "table",
+            },
+        )
+
         # TODO: we'll really want this to create all private apis in a generic
         #       method based on config eventually
         for api_name in self.apis.keys():

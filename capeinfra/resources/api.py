@@ -161,6 +161,7 @@ class CapeRestApi(CapeComponentResource):
         #       the API (e.g. if it needs to write to SQS in one function and
         #       read from DynamoDB in another, this role's policy must have both
         #       those grants). This may not be the long term implementation.
+        # TODO: ISSUE 245
         self._api_lambda_role = get_inline_role(
             f"{self.name}-lmbd-role",
             f"{self.desc_name} {self.config.get('desc')} lambda role",

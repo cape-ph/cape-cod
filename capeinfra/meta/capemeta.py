@@ -158,12 +158,12 @@ class CapePrincipals(CapeComponentResource):
         # store
         self._user_attrs = {}
 
+        # make the DDB table for the user attributes
+        self.create_user_attribute_store()
+
     def add_principals(self):
         """"""
         self.groups = {}
-
-        # make the DDB table for the user attributes
-        self.create_user_attribute_store()
 
         for grpname, grpcfg in self.config.get("groups", default={}).items():
             # Create basic groups
