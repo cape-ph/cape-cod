@@ -133,6 +133,14 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         )
 
+        self._exposed_env_vars.setdefault(
+            "CRAWLER_ATTRS_DDB_TABLE",
+            {
+                "resource_name": self.data_lake_house.crawler_attrs_ddb_table.name,
+                "type": "table",
+            },
+        )
+
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
         self.create_static_web_resources()
