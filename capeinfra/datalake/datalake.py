@@ -309,7 +309,9 @@ class Tributary(CapeComponentResource):
                 item=Output.json_dumps(
                     {
                         "bucket_name": {"S": self.buckets[bucket_id].bucket.id},
-                        "crawler": {"S": self.crawlers[bucket_id].crawler.name},
+                        "crawler_name": {
+                            "S": self.crawlers[bucket_id].crawler.name
+                        },
                     }
                 ),
                 opts=ResourceOptions(parent=self),

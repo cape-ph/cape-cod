@@ -59,7 +59,7 @@ def index_handler(event, context):
                 resp_data = {}
                 crawler_attrs = ddb_table.get_crawler(bucket)
                 if crawler_attrs:
-                    resp_data["crawler_name"] = crawler_attrs.get("crawler")
+                    resp_data["crawlerName"] = crawler_attrs.get("crawler_name")
 
         # And return our response
         return {

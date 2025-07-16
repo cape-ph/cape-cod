@@ -73,7 +73,14 @@ def index_handler(event, context):
                     etl_attrs = ddb_table.get_etls(bucket, prefix)
                     if etl_attrs:
                         if suffix in etl_attrs["suffixes"]:
-                            resp_data.append(etl_attrs)
+                            resp_data.append(
+                                {
+                                    "etlJob": etl_attrs.get("etl_job"),
+                                    "sinkBucketName": etl_attrs.get(
+                                        "sink_bucket_name"
+                                    ),
+                                }
+                            )
                     prefix, _, _ = prefix.rpartition("/")
 
         # And return our response
