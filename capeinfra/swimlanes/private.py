@@ -17,6 +17,7 @@ from pulumi import (
 from pulumi_synced_folder import S3BucketFolder
 
 import capeinfra
+from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
@@ -86,7 +87,7 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         }
 
-    def __init__(self, name, *args, **kwargs):
+    def __init__(self, name, data_lake_house: DatalakeHouse, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
         # TODO: ISSUE #153 is there a better way to expose the auto assets
@@ -96,6 +97,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
+        self.data_lake_house = data_lake_house
 
         # will contain a mapping of env var labels to resource names and types.
         # these may be used in api configuration to state the need for a
@@ -114,6 +116,30 @@ class PrivateSwimlane(ScopedSwimlane):
         #       does some form of registration on instantiation so that we are
         #       not hard coding the env var label in this class.
         self._exposed_env_vars = {}
+
+        self._exposed_env_vars.setdefault(
+            "DDB_REGION",
+            {
+                "resource_name": self.aws_region,
+                "type": "metadata",
+            },
+        )
+
+        self._exposed_env_vars.setdefault(
+            "ETL_ATTRS_DDB_TABLE",
+            {
+                "resource_name": self.data_lake_house.etl_attr_ddb_table.name,
+                "type": "table",
+            },
+        )
+
+        self._exposed_env_vars.setdefault(
+            "CRAWLER_ATTRS_DDB_TABLE",
+            {
+                "resource_name": self.data_lake_house.crawler_attrs_ddb_table.name,
+                "type": "table",
+            },
+        )
 
         self.create_analysis_pipeline_registry()
         self.create_dap_submission_queue()
