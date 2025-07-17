@@ -6,6 +6,7 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
+from capepy.aws.dynamodb import UserTable
 from capepy.aws.utils import decode_error
 
 logger = logging.getLogger()
@@ -20,21 +21,6 @@ def index_handler(event, context):
     :param event: The event object that contains the HTTP request.
     :param context: Context object.
     """
-
-    user_attr_tablename = os.getenv("USER_ATTRS_DDB_TABLE")
-
-    # obligatory data validation
-    if user_attr_tablename is None:
-        return {
-            "statusCode": 500,
-            "body": (
-                "No user attribute table name provided. Cannot insert "
-                "notification message."
-            ),
-        }
-
-    # TODO: we need to add user attributes table to the capepy library
-    ddb_table = boto3.resource("dynamodb").Table(user_attr_tablename)
 
     try:
 
@@ -85,11 +71,9 @@ def index_handler(event, context):
                 #       use of something like this to ensure only public attrs
                 #       are returned
 
-                query_resp = ddb_table.get_item(
-                    Key={"user_id": f"{user_id}"},
-                )
+                ddb_table = UserTable()
 
-                user_item = query_resp.get("Item", None)
+                user_item = ddb_table.get_user(user_id)
 
                 if user_item is None:
                     logger.warning(
