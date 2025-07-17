@@ -36,13 +36,6 @@ def index_handler(event, context):
 
         headers = event.get("headers", {})
 
-        ### LEFTOFF
-        # TODO:
-        # - pull out bucket name and (optional) prefix. handler errors
-        # - query for contents of said bucket/prefix with boto3
-        # - add todos for authz/opa
-        # - ensure list bucket contents perms are on the api
-
         qsp = event.get("queryStringParameters")
 
         if qsp is None:
@@ -50,7 +43,6 @@ def index_handler(event, context):
         else:
             bucket = qsp.get("bucket")
 
-            # TODO: in the future bucket should be set as a required param.
             if not bucket:
                 resp_data, resp_status = bad_param_response()
             else:
