@@ -71,11 +71,14 @@ config:
       #   associate the user with. The named group must either be
       #   created in the `groups` block or in the `group_extra` file
       #   above
+      # * `attrs_file` (string, optional) - a path to a json file containing
+      #   user attributes to prime the system with for the user
       users:
         - email: cape.admin@example.com
           temporary_password: 1CapeCodUser!
           groups:
             - Admins
+          attrs_file: assets-untracked/principals/attrs/cape.admin.attrs.json
         # TODO: this user probably shouldn't actually be in here long
         #       term. This is the kind of user that the `users_extra`
         #       file is intended for. THIS IS JUST FOR TESTING IDENTITY
@@ -89,7 +92,24 @@ config:
             # create. May be a full path or relative to repo root. This file can
             # be keps out of the repo using something like the assets-untracked
             # mechanism discussed in the readme.
-            # users_extra: "./assets-untracked/principals/users.csv"
+            # users_extra: "assets-untracked/principals/users.csv"
+    # `authz_policy_engine` (mapping, required)
+    #
+    # NOTE: This currently only supports github repositories
+    #
+    # Contains information required to pull a versioned release of a
+    # Policy As Code repo. This repository's schema and policies will be
+    # used to populate a policy engine (store, schema and policies).
+    # Currently, this repo must provide a shcema and policies in the Cedar
+    # json format. This mapping has the following keys:
+    # * `repo_url: the url to the (publicly accessible) hosted
+    #   repository. This should not end in `.git`
+    # * `version`: This is the version of the artifact to get. This
+    #   version will most likely match a repo tag
+    # * `artifact_name`: The name of the release artifact to get. A
+    #   release could contain multiple items for which only a subset is
+    #   needed.
+
     # `glue` (mapping, optional)
     # Contains meta configuration related to aws glue.
     glue:
@@ -198,6 +218,8 @@ config:
       #     time, but the name is reserved for the future
       #   * `app`: there is no special handling for this type at this
       #     time, but the name is reserved for the future
+      #   * `service`: there is no special handling for this type at this
+      #     time, but the name is reserved for the future
       #   * `vpn`: any subnet marks as the VPN type will be configured to
       #     be a target of the external client VPN setup.
       # * `public`: (boolean, optional)
@@ -243,6 +265,12 @@ config:
           type: vpn
           routes:
             - "nataz1"
+        - name: srvcaz1
+          cidr-block: 10.0.124.0/23
+          !!merge <<: *az1
+          type: service
+          routes:
+            - "nataz1"
         # AZ 2
         - name: nataz2
           cidr-block: 10.0.255.0/24
@@ -267,6 +295,12 @@ config:
           type: vpn
           routes:
             - "nataz2"
+        - name: srvcaz2
+          cidr-block: 10.0.252.0/23
+          !!merge <<: *az2
+          type: service
+          routes:
+            - "nataz1"
       # `api` (mapping, optional)
       # Contains the configuration for apis and the API application load
       # balancer. If this is not included, a default configuration will be
@@ -308,6 +342,10 @@ config:
         #    A description for the api. Will be used in description
         #    tags. The key is required, but the value may be left
         #    empty.
+        # * `short_name` (string, required)
+        #    A short name for the api. Will be used in resource naming
+        #    and can be a max of 4 characters and must be unique across
+        #    apis.
         # * `spec_file` (string, required)
         #   Path to an OpenApi 3.0.1 yaml specification jinja2
         #   template. This file should include *no* AWS id's, names,
@@ -317,15 +355,15 @@ config:
         #   spec, all authorizers must be defined in the component
         #   section, but may be applied at the API or endpoint levels.
         #   The authorizer named "default" defined here will be applied
-        #   at the API level currently. Each mapping is keyed on an 
-        #   authorizor name (which must conform to AWS resource naming 
-        #   rules, and will be used as the base of a resource name, so 
+        #   at the API level currently. Each mapping is keyed on an
+        #   authorizor name (which must conform to AWS resource naming
+        #   rules, and will be used as the base of a resource name, so
         #   it will be constrained in max length) and should contain:
         #   * `file` (string, required)
         #   Path (absolute or relative to repo root) to the file
         #   containing the code for the authorizer lambda function
         #   * `type` (string, required)
-        #   Type of lambda authorizer. Allowed values are "request", 
+        #   Type of lambda authorizer. Allowed values are "request",
         #   "token", or "cognito_user_pools".
         #   * `identity_sources` (string[], optional)
         #   List of strings of required query params or request headers
@@ -347,6 +385,11 @@ config:
         #   the env var. No new environment variables may be defined
         #   here, the only valid entries are those exposed by the
         #   swimlane. If not provided, this defaults to an empty list.
+        # * `layer_args` (mapping, optional)
+        #   A mapping of args to use in construction of a lambda layer
+        #   for all functions in the API. Keys must match the names of
+        #   keywords args in CapePythonLambdaLayer and values must be as
+        #   expected by that class.
         # * `handlers` (mapping[], optional)
         #   A list of mappings containing configuration for lambda
         #   handlers tied to the API's endpoints. Each mapping should
@@ -380,9 +423,10 @@ config:
         #     * runtime (string defaults to "python3.10")
         #     * timeout (int, defaults to 3[unit is seconds])
         apis:
-          dap:
-            desc: "Data Analysis Pipeline API"
-            spec_file: "assets/api/data-analysis-pipeline/dap-openapi-301.yaml.j2"
+          - name: "capi"
+            desc: "CAPE API"
+            short_name: "capi"
+            spec_file: "assets/api/capi/capi-openapi-301.yaml.j2"
             # TODO: this is the default authorizer for the whole
             #       api. give it attrs like file, name, cache
             #       timeout, etc. probably want this to be a list of
@@ -398,6 +442,13 @@ config:
                 # allowed request, token, or cognito_user_pools
                 type: "request"
                 identity_sources:
+                # TODO: need to specify headers that are
+                #       identity sources (e.g. the JWT is
+                #       maybe in the `Authorization` header.
+                #       Until a front end is sending this
+                #       we will leave it unspecified as the
+                #       API GW will halt requests without
+                #       that header
                 # This is how long the authz result is cached. 0
                 # turns off caching which is great for debug of
                 # dev
@@ -406,24 +457,133 @@ config:
             env_vars:
               - "DAP_QUEUE_NAME"
               - "DAP_REG_DDB_TABLE"
+              - "DDB_REGION"
+              - "USER_ATTRS_DDB_TABLE"
+              - "ETL_ATTRS_DDB_TABLE"
+              - "CRAWLER_ATTRS_DDB_TABLE"
+            # env_vars: TODO: add env vars for this API if needed.
+            layer_args:
+              # TODO: determine if the added complexity of
+              #       managing a ton of layers is desirable
+              #       enough to make the layer args handler
+              #       soecific instead of whole api specific.
+              description: CAPI API python pip dependencies layer
+              compatible_runtimes:
+                - python3.10
+              reqs_pth: assets/api/capi/requirements.txt
+            # TODO: memory and timeouts for these functions need
+            #       some love
             handlers:
-              - id: "list_daps_handler"
-                name: "lsdaps"
-                code: "assets/api/data-analysis-pipeline/handlers/list_daps.py"
+              - id: "get_daps_handler"
+                name: "getdaps"
+                code: "assets/api/capi/handlers/get_daps.py"
                 funct_args:
                   handler: "index.index_handler"
                   runtime: "python3.10"
                   architectures:
                     - "x86_64"
-                  description: "lsdaps Lambda Funnction"
+                  description: "getdaps Lambda Funnction"
                   memory_size: 128
                   timeout: 3
-              - id: "list_dap_executors_handler"
-                name: "lsexec"
-                code: "assets/api/data-analysis-pipeline/handlers/list_dap_executors.py"
+              - id: "get_dap_executors_handler"
+                name: "getdapexecutors"
+                code: "assets/api/capi/handlers/get_dap_executors.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getdapexecutors Lambda Funnction"
+                  memory_size: 128
+                  timeout: 3
               - id: "submit_dap_run_handler"
-                name: "sbmtdap"
-                code: "assets/api/data-analysis-pipeline/handlers/submit_dap_run.py"
+                name: "submitdaprun"
+                code: "assets/api/capi/handlers/submit_dap_run.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "submitdaprun Lambda Funnction"
+                  memory_size: 128
+                  timeout: 3
+              - id: "get_raw_objstore_authz_handler"
+                name: "getrawobjstoreauthz"
+                code: "assets/api/capi/handlers/get_raw_objstores.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getrawobjstores Lambda Function"
+                  memory_size: 128
+                  timeout: 10
+              - id: "get_raw_obj_upload_url_handler"
+                name: "getrawobjuploadurl"
+                code: "assets/api/capi/handlers/get_raw_obj_post_url.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getrawobjuploadurl Lambda Function"
+                  memory_size: 128
+                  timeout: 10
+              - id: "get_user_attributes_handler"
+                name: "getuserattributes"
+                code: "assets/api/capi/handlers/get_user_attributes.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getuserattributes Lambda Function"
+                  memory_size: 128
+                  timeout: 10
+              - id: "get_user_attribute_val_handler"
+                name: "getuserattributeval"
+                code: "assets/api/capi/handlers/get_user_attribute_val.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getuserattributeval Lambda Function"
+                  memory_size: 128
+                  timeout: 10
+              - id: "get_s3_contents_handler"
+                name: "gets3contents"
+                code: "assets/api/capi/handlers/get_s3_contents.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "gets3contents Lambda Function"
+                  memory_size: 128
+                  timeout: 10
+              - id: "get_object_etls_handler"
+                name: "getobjectetls"
+                code: "assets/api/capi/handlers/get_object_etls.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getobjectetls Lambda Function"
+                  memory_size: 128
+                  timeout: 10
+              - id: "get_bucket_crawler_handler"
+                name: "getbucketcrawler"
+                code: "assets/api/capi/handlers/get_bucket_crawler.py"
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getbucketcrawler Lambda Function"
+                  memory_size: 128
+                  timeout: 10
       # `static_apps` (mapping[], optional)
       # Contains configuration for static apps deployed as part of CAPE.
       # Static apps are deployed to s3 as html/js/css bundles and are
@@ -437,6 +597,10 @@ config:
       #    resource naming. As it is used in resource naming it should be
       #    kept as short as possible, but it must be unique across static
       #    app names in the swimlane.
+      # * `short_name` (string, required)
+      #    A short name for the static app. This is used in book keeping
+      #    and resource naming. This should be kept to 4 characters max
+      #    and should be unique across all static apps.
       # * `fqdn` (string, required)
       #   This is the FQDN for the static app. The domain must match the
       #   swimlane's domain presently. The FQDN becomes the name of the S3
@@ -452,6 +616,7 @@ config:
       # TODO: ISSUE #192
       static-apps:
         - name: "dap-ui"
+          short_name: "dap"
           fqdn: "analysis-pipelines.cape-dev.org"
           dir: "./assets/web/static/dap-ui"
       # `instance_apps` (mapping, optional)
@@ -480,6 +645,10 @@ config:
         # * `name` (string, required)
         #   Used in resource naming and book keeping. Must be unique
         #   across instance apps
+        # * `short_name` (string, required)
+        #   Used in resource naming and book keeping. Must be unique
+        #   across instance apps and ideally less than 4 characters due
+        #   to resource naming limits.
         # * `image` (string, required)
         #   The id of the AMI to use for the instance. This AMI must
         #   already exist in AWS
@@ -561,7 +730,8 @@ config:
         #   only supported value is "athena"
         instances:
           - name: "jupyterhub"
-            image: "ami-0975c1d1f7820aafe"
+            short_name: "jh"
+            image: "ami-0bb505a20b855ef57"
             public_ip: False
             instance_type: "t3a.medium"
             subnet_types:
@@ -587,7 +757,49 @@ config:
                   - admin
               rebuild_on_change: True
             services:
-              - athena
+              - cognito
+          - name: "opa"
+            short_name: "opa"
+            image: "ami-05080e4998b881ee0"
+            public_ip: False
+            instance_type: "t3a.medium"
+            subnet_types:
+              - service
+            subdomain: "opa"
+            # TODO: don't think we need a cognito client setup here
+            #       (no SSO needs on this instance) at this time.
+            #       could change if we need to setup userpool queries
+            #       in opa directly i guess...
+            port: 8181
+            protocol: "HTTP"
+            healthcheck:
+              path: "/"
+              port: 8181
+              protocol: "HTTP"
+              matcher: "302"
+            user_data:
+              template: assets/instance/user-data/templates/opa.j2
+              # TODO: define template vars
+              rebuild_on_change: True
+              # NOTE: At this time, the opa instance only needs to
+              #       read from s3 to get policy bundles. This will
+              #       probably change in the future (remain an
+              #       option, but not be the only or preferred
+              #       mechanism.
+              vars:
+                bundle_repo_name: "https://github.com/cape-ph/cape-opa-policy"
+                bundle_version: "2025.05.14"
+                bundle_asset_name: "cape-opa-bundle.tar.gz"
+                meta_bundle_min_dl_delay: 120
+                meta_bundle_max_dl_delay: 300
+            services:
+              # TODO: Issue #186 - It would be awesome if we could
+              #       specify needed actions (e.g. R/W/X type
+              #       stuff) here as well as give some indication of
+              #       *which* service endpoint we care about (e.g.
+              #       here we would care about specifying which
+              #       bucket we want to read from
+              - s3
       # `vpn` (mapping, required)
       # Contains configuration for the vpn for the swimlane.
       # NOTE: At this time, we roll the VPN in with each swimlane. This
