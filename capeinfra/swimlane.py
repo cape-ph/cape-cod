@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any
 
 import pulumi_aws as aws
-from pulumi import ResourceOptions, warn
+from pulumi import ResourceOptions, log
 
 # TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
 #       it should not be here after 145.
@@ -333,10 +333,11 @@ class ScopedSwimlane(CapeComponentResource):
 
         for rte, rcfg in rte_cfgs.items():
             if rcfg is None:
-                warn(
+                log.warn(
                     f"Subnet {sn_name} is configured to have a route to "
                     f"a subnet ({rte}) that is not found. This route will "
-                    "be ignored."
+                    "be ignored.",
+                    self,
                 )
                 continue
             # NOTE: special handling for the NAT routes. we

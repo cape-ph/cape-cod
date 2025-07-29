@@ -2,11 +2,12 @@
 
 import csv
 import json
+import os
 from typing import Any
 
 import pulumi_aws as aws
 from boto3.dynamodb.types import TypeSerializer
-from pulumi import FileArchive, FileAsset, Output, ResourceOptions
+from pulumi import FileArchive, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import get_inline_role
@@ -544,6 +545,10 @@ class CapePrincipals(CapeComponentResource):
         # Doing basic column checking to make sure the file is well formed.
         expected_cols = ["name", "description", "precedence"]
 
+        if not os.path.exists(filepth):
+            log.warn(f"Unable to locate specified groups file: {filepth}", self)
+            return
+
         with open(filepth) as grpcsv:
             grpreader = csv.reader(grpcsv, skipinitialspace=True)
             # our first row will be column names. grab em and make sure we have
@@ -579,6 +584,10 @@ class CapePrincipals(CapeComponentResource):
         """
         # Doing basic column checking to make sure the file is well formed.
         expected_cols = ["email", "temporary_password", "groups", "attrs_file"]
+
+        if not os.path.exists(filepth):
+            log.warn(f"Unable to locate specified user file: {filepth}", self)
+            return
 
         with open(filepth) as usrcsv:
             usrreader = csv.reader(usrcsv, skipinitialspace=True)
