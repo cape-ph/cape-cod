@@ -66,7 +66,7 @@ config:
             # create. May be a full path or relative to repo root. This file can
             # be keps out of the repo using something like the assets-untracked
             # mechanism discussed in the readme.
-            # groups_extra: "./assets-untracked/principals/groups.csv"
+            groups_extra: "./assets-untracked/principals/groups.csv"
 
             # `users`  (mapping[], required)
             # Contains user specifications that are required for all cape
@@ -84,7 +84,7 @@ config:
                   temporary_password: 1CapeCodUser!
                   groups:
                       - Admins
-                  attrs_file: assets-untracked/principals/attrs/cape.admin.attrs.json
+                  attrs_file: ./assets-untracked/principals/attrs/cape.admin.attrs.json
                 # TODO: this user probably shouldn't actually be in here long
                 #       term. This is the kind of user that the `users_extra`
                 #       file is intended for. THIS IS JUST FOR TESTING IDENTITY
@@ -99,7 +99,7 @@ config:
             # create. May be a full path or relative to repo root. This file can
             # be keps out of the repo using something like the assets-untracked
             # mechanism discussed in the readme.
-            # users_extra: "assets-untracked/principals/users.csv"
+            users_extra: "./assets-untracked/principals/users.csv"
 
         # `authz_policy_engine` (mapping, required)
         #
