@@ -34,7 +34,13 @@ def index_handler(event, context):
 
         # next, we really only want to return a few of the key/values for each
         # item. so extract what we want:
-        keys = ("pipeline_name", "pipeline_type", "version")
+        keys = (
+            "display_name",
+            "pipeline_name",
+            "pipeline_type",
+            "version",
+            "profiles",
+        )
         resp_data = [dict((k, r[k]) for k in keys) for r in pipeline_records]
 
         # And return our response as a 200

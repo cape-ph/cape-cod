@@ -509,6 +509,9 @@ paths:
                                 items:
                                     type: object
                                     properties:
+                                        display_name:
+                                            type: string
+                                            description: The pipeline name for display
                                         pipeline_name:
                                             type: string
                                             description: The pipeline name
@@ -520,6 +523,19 @@ paths:
                                         version:
                                             type: string
                                             description: The pipeline version
+                                        profiles:
+                                            type: array
+                                            description: array of profiles available for a pipeline
+                                            items:
+                                                type: object
+                                                properties:
+                                                    key:
+                                                        type: string
+                                                        description: The key for the profile in object storage
+                                                    profile_name:
+                                                        type: string
+                                                        description: A display name for the profile
+                                                    
                 "500":
                     description:
                         "Server Error - Unable to read the pipeline registry."
