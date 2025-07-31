@@ -509,6 +509,9 @@ paths:
                                 items:
                                     type: object
                                     properties:
+                                        display_name:
+                                            type: string
+                                            description: The pipeline name for display
                                         pipeline_name:
                                             type: string
                                             description: The pipeline name
@@ -520,6 +523,19 @@ paths:
                                         version:
                                             type: string
                                             description: The pipeline version
+                                        profiles:
+                                            type: array
+                                            description: array of profiles available for a pipeline
+                                            items:
+                                                type: object
+                                                properties:
+                                                    key:
+                                                        type: string
+                                                        description: The key for the profile in object storage
+                                                    profile_name:
+                                                        type: string
+                                                        description: A display name for the profile
+                                                    
                 "500":
                     description:
                         "Server Error - Unable to read the pipeline registry."
@@ -528,6 +544,68 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_daps_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
+    /dap/pipelineprofiles:
+        get:
+            parameters:
+                - in: query
+                  name: pipeline
+                  schema:
+                    type: string
+                    description: "The name of the pipeline profiles are being fetched for"
+                  required: true
+                - in: query
+                  name: version
+                  schema:
+                    type: string
+                    description: "The version of the pipeline profiles are being fetched for"
+                  required: true
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of available profiles for the pipeline/version pair" 
+                                items:
+                                    type: object
+                                    properties:
+                                        key:
+                                            type: string
+                                            description: The key for the profile in object storage
+                                        profileName:
+                                            type: string
+                                            description: A display name for the profile
+                {# TODO: default response (for 4xx) #}
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_dap_profiles_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"

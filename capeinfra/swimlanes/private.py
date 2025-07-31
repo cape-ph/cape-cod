@@ -27,6 +27,7 @@ from capeinfra.iam import (
     get_sqs_lambda_dap_submit_policy,
     get_vpce_api_invoke_policy,
 )
+from capeinfra.pipeline.dapregistry import DAPRegistry
 
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
@@ -220,114 +221,11 @@ class PrivateSwimlane(ScopedSwimlane):
 
     def create_analysis_pipeline_registry(self):
         """Sets up an analysis pipeline registry database."""
-        # setup a DynamoDB table to hold a mapping of pipeline names (user
-        # facing names) to various config info for the running of the analysis
-        # pipelines. E.g. a nextflow pipeline may have a default nextflow config
-        # in the value object of its entry whereas a snakemake pipeline may have
-        # a default snakemake config.
-        # NOTE: DynamoDB stuff lives outside a VPC and is managed by AWS. This
-        #       is in the private swimlane as it fits there logically. we may
-        #       want to consider moving all AWS managed items into CapeMeta
-        #       eventually.
-        # NOTE: we can set up our Dynamo connections to go through a VPC
-        #       endpoint instead of the way we're currently doing (using the
-        #       fact that we have a NAT and egress requests to go through the
-        #       boto3 dynamo client, which makes the requests go through the
-        #       public internet). This is arguably more secure and performant as
-        #       it's a direct connection to Dynamo from our clients.
-        self.analysis_pipeline_registry_ddb_table = aws.dynamodb.Table(
-            f"{self.basename}-anlysppln-rgstry-ddb",
-            name=f"{self.basename}-AnalysisPipelineRegistry",
-            # NOTE: this table will be accessed as needed to do submit analysis
-            #       pipeline jobs. it'll be pretty hard (at least till this is
-            #       in use for a while) to come up with read/write metrics to
-            #       set this table up as PROVISIONED with those values. We'd
-            #       probably be much cheaper to go that route if we have a
-            #       really solid idea of how many reads/writes this table needs
-            billing_mode="PAY_PER_REQUEST",
-            hash_key="pipeline_name",
-            range_key="version",
-            attributes=[
-                # NOTE: we do not need to define any part of the "schema" here
-                #       that isn't needed in an index.
-                {
-                    "name": "pipeline_name",
-                    "type": "S",
-                },
-                {
-                    "name": "version",
-                    "type": "S",
-                },
-            ],
+        self.analysis_pipeline_registry = DAPRegistry(
+            "cape-dap-registry",
             opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Analysis Pipeline Registry DynamoDB Table"
-                ),
-            },
+            desc_name=(f"{self.desc_name} Analysis Pipeline Registry"),
         )
-
-        # TODO: long term it is not tenable for us to have all the
-        #       config stuff for all the pipeline frameworks
-        #       specified in this manner. we should consider keeping
-        #       the default config in common files or something
-        #       like that and then point to the file in this table
-        nextflow_config = {
-            "M": {
-                "aws": {
-                    "M": {
-                        "accessKey": {"S": "<YOUR S3 ACCESS KEY>"},
-                        "secretKey": {"S": "<YOUR S3 SECRET KEY>"},
-                        "region": {"S": "us-east-2"},
-                        "client": {
-                            "M": {
-                                "maxConnections": {"N": "20"},
-                                "connectionTimeout": {"N": "10000"},
-                                "uploadStorageClass": {
-                                    "S": "INTELLIGENT_TIERING"
-                                },
-                                "storageEncryption": {"S": "AES256"},
-                            }
-                        },
-                        "batch": {
-                            "M": {
-                                "cliPath": {"S": "/usr/bin/aws"},
-                                "maxTransferAttempts": {"N": "3"},
-                                "delayBetweenAttempts": {"S": "5 sec"},
-                            }
-                        },
-                    }
-                }
-            }
-        }
-        nextflow_pipelines = {
-            "bactopia/bactopia": ["v3.0.1", "dev"],
-        }
-        for pipeline in nextflow_pipelines:
-            for version in nextflow_pipelines[pipeline]:
-                # TODO: we're hard coding this table for now. longer term we really
-                #       probably want an initial canned setup (for initial deploy) and
-                #       the ability to add these records at runtime so users can extend
-                #       when they need to. right now we're only adding the bactopia
-                #       tutorial as a pipeline
-                # TODO: ISSUE #84
-                aws.dynamodb.TableItem(
-                    f"{self.basename}-{disemvowel(pipeline)}-{version}-ddbitem",
-                    table_name=self.analysis_pipeline_registry_ddb_table.name,
-                    hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
-                    range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
-                        lambda rk: f"{rk}"
-                    ),
-                    item=Output.json_dumps(
-                        {
-                            "pipeline_name": {"S": pipeline},
-                            "version": {"S": version},
-                            "pipeline_type": {"S": "nextflow"},
-                            "nextflow_config": nextflow_config,
-                        }
-                    ),
-                    opts=ResourceOptions(parent=self),
-                )
 
         # read access to this this resource can be configured via the deployment
         # config (for api lambdas), so add it to the bookkeeping structure for
@@ -335,7 +233,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "DAP_REG_DDB_TABLE",
             {
-                "resource_name": self.analysis_pipeline_registry_ddb_table.name,
+                "resource_name": self.analysis_pipeline_registry.analysis_pipeline_registry_ddb_table.name,
                 "type": "table",
             },
         )
@@ -369,7 +267,7 @@ class PrivateSwimlane(ScopedSwimlane):
             "lambda.amazonaws.com",
             Output.all(
                 qname=self.dap_submit_queue.name,
-                table_name=self.analysis_pipeline_registry_ddb_table.name,
+                table_name=self.analysis_pipeline_registry.analysis_pipeline_registry_ddb_table.name,
             ).apply(
                 lambda args: get_sqs_lambda_dap_submit_policy(
                     args["qname"], args["table_name"]
@@ -401,7 +299,7 @@ class PrivateSwimlane(ScopedSwimlane):
             handler="index.index_handler",
             environment={
                 "variables": {
-                    "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
+                    "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry.analysis_pipeline_registry_ddb_table.name,
                     "DDB_REGION": self.aws_region,
                 }
             },
