@@ -162,7 +162,7 @@ class DAPRegistry(CapeComponentResource):
             self.dap_fixtures = json.load(f)
 
         # pipeline spec file starts with an outer list of objects defining
-        # pipeline types (e.g. nextflow). inner objects definie the pipelines
+        # pipeline types (e.g. nextflow). inner objects define the pipelines
         # for the type
         for pipeline_type_spec in self.dap_fixtures:
             pltype = pipeline_type_spec.get("type", None)
