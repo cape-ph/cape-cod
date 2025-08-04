@@ -57,7 +57,7 @@ key/cert can be regenerated (or new ones can be made for new clients) at any
 time from the server files and the PEM text only needs to be changed/inserted in
 the `ovpn` file if they are regenerated or new ones are created.
 
--   Create a directory for the pki environment, and initialize the environment:
+- Create a directory for the pki environment, and initialize the environment:
 
 ```bash
 mkdir -p ~/some/directory
@@ -65,19 +65,19 @@ cd ~/some/directory
 easyrsa init-pki
 ```
 
--   create a CA that will be used for the signing
+- create a CA that will be used for the signing
 
 ```bash
 easyrsa build-ca nopass
 ```
 
--   create a the server key and cert
+- create a the server key and cert
 
 ```bash
 easyrsa --san=DNS:server build-server-full server nopass
 ```
 
--   create a the client key and cert
+- create a the client key and cert
 
 ```bash
 # the name `client1.domain.tld` isn't really important. Often certs/keys will
@@ -87,8 +87,8 @@ easyrsa --san=DNS:server build-server-full server nopass
 easyrsa build-client-full client1.domain.tld nopass
 ```
 
--   at this point, all files needed for the deployment and the vpn connection
-    exist (as long as only one client cert/key pair is desired).
+- at this point, all files needed for the deployment and the vpn connection
+  exist (as long as only one client cert/key pair is desired).
 
 ### Modify Deployment Configuration
 
@@ -157,18 +157,17 @@ endpoint is not changed in any way, the VPN configuration should remain valid.
 AWS provides a mechanism to download the `ovpn` config file for a deployed
 endpoint. Obtaining this is the first step to connecting to the VPN.
 
--   Log into the AWS console
--   Navigate to the `VPC` console and select `Client VPN endpoints` under
-    `Virtual proivate network (VPN)` in the navigation pane to the left.
--   In the case of an account with only the `CAPE` instance deployed, there
-    should be a single VPN endpoint. If there is more than one, you will need to
-    examine the description of each to determine which applies to `CAPE`. The
-    description should be of the form
-    `cape-cod-XXX private swimlane Client VPN Endpoint`, where `XXX` is the
-    `stage-name` from the configuration. Select the radio button next to this
-    endpoint
--   Click the `Download client configuration` button at the top of the page and
-    save the file.
+- Log into the AWS console
+- Navigate to the `VPC` console and select `Client VPN endpoints` under
+  `Virtual proivate network (VPN)` in the navigation pane to the left.
+- In the case of an account with only the `CAPE` instance deployed, there should
+  be a single VPN endpoint. If there is more than one, you will need to examine
+  the description of each to determine which applies to `CAPE`. The description
+  should be of the form `cape-cod-XXX private swimlane Client VPN Endpoint`,
+  where `XXX` is the `stage-name` from the configuration. Select the radio
+  button next to this endpoint
+- Click the `Download client configuration` button at the top of the page and
+  save the file.
 
 The file will not be complete as AWS only has the server cert/key (and included
 in that is the CA cert chain). The config file will require manual insertion of
@@ -223,3 +222,27 @@ above. This subnet is authorized to route traffic (egress only) to the internet
 as well as within the VPN. The authorizations and routing are fluid and can
 change at any time during `CAPE` development. Additionally the VPN itself may be
 removed at any time in the future.
+
+## Create and Revoke Client Certificates
+
+Here are the instructions for creating a new client as well as revoking access
+to that client. Be sure to replace `$CLIENT_NAME` with the actual client name
+
+1. Generate a new client using
+
+    ```bash
+    easyrsa build-client-full $CLIENT_NAME nopass
+    ```
+
+2. Use the generated files to create an OpenVPN configuration as described above
+   and use to connect to the VPN as described above
+3. Revoke the client and generate the CRL using:
+
+    ```bash
+    easyrsa revoke $CLIENT_NAME
+    easyrsa gen-crl
+    ```
+
+4. Navigate to the VPC Endpoint in the AWS console, and under "Actions" select
+   "Import client certificate CRL" and paste the contents of the generated CRL
+   `.pem` file.
