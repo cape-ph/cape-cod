@@ -7,8 +7,26 @@ from capepy.aws.dynamodb import PipelineTable
 from capepy.aws.utils import decode_error
 
 
+# TODO: need to add some abstraction of this to capepy. it's repeated here and
+#       in get_object_etls at least
+def bad_param_response():
+    """Gets a response data object and status code when bad params are given.
+
+    :return: A tuple containins a response data object and an HTTP 400 status
+             code.
+    """
+    return (
+        {
+            "message": (
+                "Missing required query string parameters: pipeline and version"
+            )
+        },
+        400,
+    )
+
+
 def index_handler(event, context):
-    """Handler for the GET of all available analysis pipelines.
+    """Handler for the GET of available profiles for a DAP version.
 
     :param event: The event object that contains the HTTP request and json
                   data.
@@ -16,36 +34,36 @@ def index_handler(event, context):
     """
 
     try:
-        # get a reference to the registry table
-        ddb_table = PipelineTable()
+        headers = event.get("headers", {})
 
-        # as we're returning all available pipelines in the registry, we need to
-        # scan the whole table. scan is limited to 1MB return data, which won't be a
-        # problem till we have a lot of pipelines, but we'll include the pagination
-        # loop we'll need for future proofing
-        response = ddb_table.table.scan()
-        pipeline_records = response["Items"]
+        qsp = event.get("queryStringParameters")
 
-        while "LastEvaluatedKey" in response:
-            response = ddb_table.table.scan(
-                ExclusiveStartKey=response["LastEvaluatedKey"]
-            )
-            pipeline_records.extend(response["Items"])
+        if qsp is None:
+            resp_data, resp_status = bad_param_response()
+        else:
+            pipeline_name = qsp.get("pipeline")
+            version = qsp.get("version")
 
-        # next, we really only want to return a few of the key/values for each
-        # item. so extract what we want:
-        keys = (
-            "display_name",
-            "pipeline_name",
-            "pipeline_type",
-            "version",
-            "profiles",
-        )
-        resp_data = [dict((k, r[k]) for k in keys) for r in pipeline_records]
+            if not pipeline_name or not version:
+                resp_data, resp_status = bad_param_response()
+            else:
+                # get a reference to the registry table
+                ddb_table = PipelineTable()
 
+                dap = ddb_table.get_pipeline(pipeline_name, version)
+                resp_data = []
+                resp_status = 200
+                if dap:
+                    resp_data = [
+                        {
+                            "key": prof["key"],
+                            "profileName": prof["display_name"],
+                        }
+                        for prof in dap["profiles"]
+                    ]
         # And return our response as a 200
         return {
-            "statusCode": 200,
+            "statusCode": resp_status,
             "headers": {
                 "Content-Type": "application/json",
                 # TODO: ISSUE #141 CORS bypass. We do not want this long term.
