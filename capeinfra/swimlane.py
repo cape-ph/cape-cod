@@ -11,6 +11,7 @@ from pulumi import ResourceOptions, log
 #       it should not be here after 145.
 from capeinfra.datalake.datalake import CatalogDatabase
 from capeinfra.pipeline.batch import BatchCompute
+from capeinfra.pipeline.ecr import ContainerImage, ContainerRepository
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.loadbalancer import AppLoadBalancer
 from capeinfra.util.naming import disemvowel
@@ -82,6 +83,7 @@ class ScopedSwimlane(CapeComponentResource):
         self.compute_environments = dict[str, BatchCompute]()
         self.albs = {}
         self.domain_name = self.config.get("domain")
+        self.container_repository = ContainerRepository(self.basename)
 
         # we require a domain name for swimlanes.
         if self.domain_name is None:
@@ -99,6 +101,7 @@ class ScopedSwimlane(CapeComponentResource):
         self.create_domain_cert()
         self.create_vpc()
         self.create_subnets()
+        self.create_container_images()
         self.create_compute_environments()
         self.register_outputs({f"{self.basename}-vpc-id": self.vpc.id})
 
@@ -491,6 +494,18 @@ class ScopedSwimlane(CapeComponentResource):
 
             self.subnets[sn_name] = (sn_cfg["type"], subnet)
 
+    def create_container_images(self):
+        """Default implementation of container images creation for a swimlane.
+
+        The default implementation builds the container images and stores them
+        in the swimlane's container registry
+        """
+
+        for container_name, container_image in self.config.get(
+            "compute", "container_images", default={}
+        ).items():
+            self.container_repository.add_image(container_name, container_image)
+
     def create_compute_environments(self):
         """Default implementation of compute environment creation for a swimlane.
 
@@ -502,7 +517,7 @@ class ScopedSwimlane(CapeComponentResource):
             name = env.get("name")
             for sn_type in env.get("subnet_types"):
                 self.compute_environments[name] = BatchCompute(
-                    name,
+                    f"{self.basename}-{name}",
                     vpc=self.vpc,
                     subnets=self.get_subnets_by_type(sn_type),
                     config=env,

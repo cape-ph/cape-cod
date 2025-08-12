@@ -105,8 +105,10 @@ class BatchCompute(CapeComponentResource):
 
         env_subnets = [sn.id for _, sn in subnets.items()]
 
+        compute_env_name = f"{self.name}-btch"
         self.compute_environment = aws.batch.ComputeEnvironment(
-            f"{self.name}-btch",
+            compute_env_name,
+            compute_environment_name=compute_env_name,
             service_role=self.service_role.arn,
             type="MANAGED",
             compute_resources=aws.batch.ComputeEnvironmentComputeResourcesArgs(
