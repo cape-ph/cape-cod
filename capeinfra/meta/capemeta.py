@@ -11,6 +11,7 @@ from pulumi import FileArchive, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import get_inline_role
+from capeinfra.resources.compute import CapePythonLambdaLayer
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource
@@ -31,6 +32,12 @@ class CapeMeta(CapeComponentResource):
             f"{name}-assets-vbkt",
             desc_name=f"{self.desc_name} automation assets",
             opts=ResourceOptions(parent=self),
+        )
+
+        # maps layer names to layer objects
+        self._function_layers = {}
+        self.create_function_layers(
+            self.config.get("function_layers", default=[])
         )
 
         for etl_def in self.config.get("glue", "etl", default=[]):
@@ -54,6 +61,26 @@ class CapeMeta(CapeComponentResource):
                 "cape-meta-automation-assets-bucket": self.automation_assets_bucket.bucket
             }
         )
+
+    def create_function_layers(self, layer_specs):
+        """Create python AWS Lambda layers as per configuration.
+
+        Args:
+            layer_specs: The function_layers config from the pulumi config.
+        """
+        for layer_spec in layer_specs:
+            layer_name = layer_spec["name"]
+            reqs = layer_spec.get(
+                "reqs", f"./assets/lambda/layers/{layer_name}/requirements.txt"
+            )
+            layer = CapePythonLambdaLayer(
+                layer_name,
+                reqs,
+                self.automation_assets_bucket,
+                **layer_spec.get("args", {}),
+                opts=ResourceOptions(parent=self),
+            )
+            self._function_layers[layer.layer_name] = layer
 
 
 class CapePy(CapeComponentResource):
