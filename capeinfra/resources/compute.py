@@ -185,7 +185,7 @@ class CapePythonLambdaLayer(CapeComponentResource):
             self._run_command(pip_args, outstream=manifest)
 
     def handle_manifest_output(self, manifest_contents):
-        """Handle remote manifest based on (mis-)match with local manifest.
+        """Handle remote manifest based on match (or not) with local manifest.
 
         Args:
             manifest_contents: A pulumi Output linked to the contents of the
