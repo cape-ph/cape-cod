@@ -34,6 +34,33 @@ config:
     # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
     # functions can be found.
     cape-cod:meta:
+        # `function_layers` (mapping[], optional)
+        # This is a mapping with a list for a value which defines all function
+        # layer specs (e.g. spec for Lambda layers if in AWS) the will be
+        # build up as part of CAPE's metadata and then can be used by name
+        # in later configured resources. Each list item will have the following
+        # keys:
+        # * name (string, required) - The name of the layer. Must be unique
+        #   across all layers, and when in AWS must conform to bucket object
+        #   key requirements:
+        #   https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
+        # * reqs (string, optional) - A path to the python requirements file
+        #   for the layer. If not provided it will be assumed to be
+        #   `./assets/lambda/layers/<name>` where `name` is the name cofigured
+        #   for the layer
+        # * args (mapping, optional) - A mapping of function args to use in
+        #   construction of a lambda layer. Keys must match the names of
+        #   keywords args in CapePythonLambdaLayer and values must be as
+        #   expected by that class. If not provided defaults will be used where
+        #   required.
+        function_layers:
+            # TODO: ISSUE #266 add ETL capepy layer.
+            - name: capi-all
+              args:
+                  description:
+                      CAPI API python pip dependencies layer for all handlers.
+                  compatible_runtimes:
+                      - python3.10
         # `principals` (mapping, required)
         # Contains local users and groups required for any cape deployment.
         # TODO: any issue specifying princpals at this level? will we need
@@ -413,6 +440,10 @@ config:
                 #   * `code` (string, required)
                 #     The path in the repo (from repo root) for the lambda that
                 #     implements the endpoint.
+                #   * `layers` (string[], optional)
+                #     A list of layer names (configured in
+                #     cape-meta:function_layers) that should be applied to the
+                #     function execution environment.
                 #   * `funct_args` (mapping, optional)
                 #     Arguments to pass *as is* to the lambda function
                 #     constructor. The keys used need to map to actual argument
@@ -470,21 +501,14 @@ config:
                           - "ETL_ATTRS_DDB_TABLE"
                           - "CRAWLER_ATTRS_DDB_TABLE"
                       # env_vars: TODO: add env vars for this API if needed.
-                      layer_args:
-                          # TODO: determine if the added complexity of
-                          #       managing a ton of layers is desirable
-                          #       enough to make the layer args handler
-                          #       soecific instead of whole api specific.
-                          description: CAPI API python pip dependencies layer
-                          compatible_runtimes:
-                              - python3.10
-                          reqs_pth: assets/api/capi/requirements.txt
                       # TODO: memory and timeouts for these functions need
                       #       some love
                       handlers:
                           - id: "get_daps_handler"
                             name: "getdaps"
                             code: "assets/api/capi/handlers/get_daps.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -496,6 +520,8 @@ config:
                           - id: "get_dap_profiles_handler"
                             name: "getdapprofiles"
                             code: "assets/api/capi/handlers/get_dap_profiles.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -507,6 +533,8 @@ config:
                           - id: "get_dap_executors_handler"
                             name: "getdapexecutors"
                             code: "assets/api/capi/handlers/get_dap_executors.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -518,6 +546,8 @@ config:
                           - id: "submit_dap_run_handler"
                             name: "submitdaprun"
                             code: "assets/api/capi/handlers/submit_dap_run.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -529,6 +559,8 @@ config:
                           - id: "get_raw_objstore_authz_handler"
                             name: "getrawobjstoreauthz"
                             code: "assets/api/capi/handlers/get_raw_objstores.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -540,6 +572,8 @@ config:
                           - id: "get_raw_obj_upload_url_handler"
                             name: "getrawobjuploadurl"
                             code: "assets/api/capi/handlers/get_raw_obj_post_url.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -552,6 +586,8 @@ config:
                           - id: "get_user_attributes_handler"
                             name: "getuserattributes"
                             code: "assets/api/capi/handlers/get_user_attributes.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -563,6 +599,8 @@ config:
                           - id: "get_user_attribute_val_handler"
                             name: "getuserattributeval"
                             code: "assets/api/capi/handlers/get_user_attribute_val.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -575,6 +613,8 @@ config:
                           - id: "get_s3_contents_handler"
                             name: "gets3contents"
                             code: "assets/api/capi/handlers/get_s3_contents.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -586,6 +626,8 @@ config:
                           - id: "get_object_etls_handler"
                             name: "getobjectetls"
                             code: "assets/api/capi/handlers/get_object_etls.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
@@ -597,6 +639,8 @@ config:
                           - id: "get_bucket_crawler_handler"
                             name: "getbucketcrawler"
                             code: "assets/api/capi/handlers/get_bucket_crawler.py"
+                            layers:
+                                - capi-all
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"
