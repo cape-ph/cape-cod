@@ -962,14 +962,7 @@ config:
                       subnet_types:
                           - compute
                       resources:
-                          instance_types:
-                              [
-                                  "m3.large",
-                                  "m4.large",
-                                  "m5.large",
-                                  "c3.large",
-                                  "c4.large",
-                              ]
+                          instance_types: ["m4.large", "m5.large", "c4.large"]
                           min_vcpus: 1
                           desired_vcpus: 2
                           max_vcpus: 4
