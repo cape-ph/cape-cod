@@ -41,7 +41,7 @@ class ContainerRepository(CapeComponentResource):
 
     def add_image(self, name, config):
         self.images[name] = ContainerImage(
-            f"{self.name}-{name}", repository=self.repository, config=config
+            f"{self.name}-{name}", repository=self, config=config
         )
 
 
@@ -51,7 +51,7 @@ class ContainerImage(CapeComponentResource):
     def __init__(
         self,
         name: Input[str],
-        repository: awsx.ecr.Repository,
+        repository: ContainerRepository,
         *args,
         **kwargs,
     ):
@@ -70,9 +70,9 @@ class ContainerImage(CapeComponentResource):
         self.name = name
 
         self.image = awsx.ecr.Image(
-            f"{repository.repository.id}-{self.name}-img",
+            f"{repository.name}-{self.name}-img",
             image_name=self.name,
-            repository_url=repository.url,
+            repository_url=repository.repository.url,
             **self.config,
         )
 

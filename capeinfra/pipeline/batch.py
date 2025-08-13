@@ -105,7 +105,7 @@ class BatchCompute(CapeComponentResource):
 
         env_subnets = [sn.id for _, sn in subnets.items()]
 
-        compute_env_name = f"{self.name}-btch"
+        compute_env_name = f"{self.name}-cmpt-env"
         self.compute_environment = aws.batch.ComputeEnvironment(
             compute_env_name,
             compute_environment_name=compute_env_name,

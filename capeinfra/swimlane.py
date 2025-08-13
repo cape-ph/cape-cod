@@ -11,7 +11,7 @@ from pulumi import ResourceOptions, log
 #       it should not be here after 145.
 from capeinfra.datalake.datalake import CatalogDatabase
 from capeinfra.pipeline.batch import BatchCompute
-from capeinfra.pipeline.ecr import ContainerImage, ContainerRepository
+from capeinfra.pipeline.ecr import ContainerRepository
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.loadbalancer import AppLoadBalancer
 from capeinfra.util.naming import disemvowel
@@ -517,7 +517,7 @@ class ScopedSwimlane(CapeComponentResource):
             name = env.get("name")
             for sn_type in env.get("subnet_types"):
                 self.compute_environments[name] = BatchCompute(
-                    f"{self.basename}-{name}",
+                    f"{self.basename}-{name}-btch",
                     vpc=self.vpc,
                     subnets=self.get_subnets_by_type(sn_type),
                     config=env,
