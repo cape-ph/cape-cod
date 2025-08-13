@@ -1,4 +1,4 @@
-FROM amazoncorretto:8
+FROM amazoncorretto:21
 
 # Install Nextflow
 RUN curl -s https://get.nextflow.io | bash
