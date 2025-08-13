@@ -1,31 +1,23 @@
 """Module of compute abstractions."""
 
-import csv
-import json
 import os
 import os.path
 import subprocess
 import tempfile
 import zipfile
-from pathlib import Path
-from typing import Any
+from io import BytesIO
 
 import pulumi_aws as aws
 from pulumi import (
-    AssetArchive,
     FileArchive,
     FileAsset,
-    Output,
     ResourceOptions,
-    error,
-    warn,
+    log,
 )
-from pulumi_command import local
 
-import capeinfra
-from capeinfra.iam import get_inline_role
-from capeinfra.resources.objectstorage import VersionedBucket
-from capeinfra.util.naming import disemvowel
+from capeinfra.resources.objectstorage import (
+    VersionedBucket,
+)
 from capepulumi import CapeComponentResource
 
 
@@ -36,177 +28,313 @@ class CapePythonLambdaLayer(CapeComponentResource):
 
     Args:
         name: The short name for the layer resource.
+        reqs: The path to the requirements file for the layer.
+        objstore: The VersionedBucket where the layer zip and manifest will be
+                  stored.
         description: An optional description for the layer resource.
         license_info: Optional license info for the layer. Matches the
                       form of the LambdaLayer arg of the same name.
         compatible_runtimes: Optional list of runtimes for the layer. Matches
                              the form of the LambdaLayer arg of the same name.
-
-        code_zip_pth: Optional path to a zip file containing all the
-                      dependencies to be added to the layer.
-        reqs_pth: Optional path to a requirements file specifying the
-                  dependincies to be added to the layer.
     Raises:
         ValueError: If neither or both of  {code_zip_pth, reqs_pth} is
         specified. Exactly one of these is required.
     """
 
+    # prefix for all layers in object storage
+    LAYERS_OBJST_PREFIX = "layers"
+    # local and remote filename for the layer zip file
+    LAYER_ZNAME = "layer.zip"
+    # local and remote filename for the layer manifest file
+    MANIFEST_NAME = "manifest.txt"
+
     def __init__(
         self,
         name: str,
+        reqs: str,
+        objstore: VersionedBucket,
         description: str | None = None,
         license_info: str | None = None,
         compatible_runtimes: list[str] | None = None,
-        code_zip_pth: str | None = None,
-        reqs_pth: str | None = None,
         *args,
         **kwargs,
     ):
-        if code_zip_pth is None and reqs_pth is None:
-            msg = (
-                f"Cannot specify a CapePyLambdaLayer without a code zip file "
-                f"OR a requirements file. At least one is required (layer "
-                f"name: {name})."
-            )
-            error(msg)
-            raise ValueError(msg)
-
-        if None not in (code_zip_pth, reqs_pth):
-            msg = (
-                f"Cannot specify a CapePyLambdaLayer with a code zip file "
-                f"AND a requirements file. Only one may be specified (layer "
-                f"name: {name})."
-            )
-            error(msg)
-            raise ValueError(msg)
-
         super().__init__(
-            "capeinfra:resources:CapeLambdaLayer", name, *args, **kwargs
+            "capeinfra:resources:compute:CapePythonLambdaLayer",
+            name,
+            desc_name="Abstraction of a config-driven Python Lambda layer",
+            **kwargs,
+        )
+        self.layer_name = name
+        self.reqs = reqs
+        self._objstore = objstore
+        self._remote_manifest_key = None
+        self._remote_zip_key = None
+        self._layer_obj = None
+        self._manifest_obj = None
+
+        # unfortunately, using tempfile.TemporaryDirectory context manager here
+        # gets cleaned up too quickly unless everything goes perfect (debugging
+        # with it is hard). the `delete` param to the constructor isn't
+        # available in python 3.10, so we're using mkdtmp
+
+        self._prefix_dir = tempfile.mkdtemp(
+            prefix=f"{self.layer_name}-lambda-layer-"
         )
 
-        self.name = name
-        self._code = None
+        self._local_manifest_pth = os.path.join(
+            self._prefix_dir, self.MANIFEST_NAME
+        )
+        self._local_zip_pth = os.path.join(self._prefix_dir, self.LAYER_ZNAME)
+        self._install_dir = os.path.join(self._prefix_dir, "python")
 
-        self._prepare_layer_code(code_zip_pth, reqs_pth)
+        # we will do this in all cases, even if there is no difference against
+        # the remote (because we won't know there are no differences without
+        # doing this)
+        self.build_local_layer()
+        self.pip_list_layer()
 
+        manifest_contents = self._objstore.get_object_contents(
+            self.remote_manifest_key
+        )
+        if manifest_contents is not None:
+            # manifest was found in s3, so we need to compare it to local stuff
+            # and publish if there are changes
+            manifest_contents.apply(lambda mc: self.handle_manifest_output(mc))
+        else:
+            # manifest was not found in s3, so blindly publish what we have
+            self.publish_layer_assets()
+
+        # by here we have everything we need to make the layer object
         self.lambda_layer = aws.lambda_.LayerVersion(
-            f"{self.name}-lmbd-lyr",
-            layer_name=self.name,
+            f"{self.layer_name}-lmbd-lyr",
+            layer_name=self.layer_name,
             description=description,
             license_info=license_info,
             compatible_runtimes=compatible_runtimes,
-            code=self._code,
+            s3_bucket=self._objstore.bucket.id.apply(lambda b: f"{b}"),
+            # s3_key=self._layer_obj_key,
+            s3_key=self.remote_zip_key,
             opts=ResourceOptions(parent=self),
         )
 
-    def _prepare_layer_code(self, code_zip_pth, reqs_pth):
-        """Prepare a FileArchive containing the dependencies specified.
+        # TODO: maybe make this configurable? if everything goes well, delete
+        #       the tempdir, but until we do that we'll need manual cleanup.
+        # shutil.rmtree(self._prefix_dir)
 
-        Only one of the two arguments should be provided. As this method is
-        called internally to the class argument consistency is ensured
-        elsewhere.
+    @property
+    def remote_manifest_key(self):
+        """Return the remote manifest key, setting default if not overridden."""
+        if self._remote_manifest_key is None:
+            self._remote_manifest_key = (
+                f"{self.LAYERS_OBJST_PREFIX}/{self.layer_name}"
+                f"/{self.MANIFEST_NAME}"
+            )
+        return self._remote_manifest_key
 
-        The zip file and directory of installed pip dependencies created by this
-        method are not cleaned up. This is an artifact of testing and debugging
-        this function that proved useful in practice. Be aware of this and if
-        you need to ensure a layer is completely rebuilt (including pulling the
-        packages), it is best to remove directories created by this function
-        before performing a deployment (assuming the directories have not been
-        purged another way as they are created in the system `tmp` directory.
+    @property
+    def remote_zip_key(self):
+        """Return the remote zip key, setting default if not overridden."""
+        if self._remote_zip_key is None:
+            self._remote_zip_key = (
+                f"{self.LAYERS_OBJST_PREFIX}/{self.layer_name}"
+                f"/{self.LAYER_ZNAME}"
+            )
+        return self._remote_zip_key
+
+    def _run_command(self, cmd_args, outstream=None, errstream=None):
+        """Run a shell command as a subprocess and raise error on failure.
 
         Args:
-            code_zip_pth: Optional (local) path to a zip file containing
-                          dependencies to be placed in the layer.
-            reqs_pth: Optional (local) path to a requirements file containing
-                      dependencies to be placed in the layer.
+            cmd_args: A list of tokens for the command. Each space separated
+                      token should be a list element.
+            outstream: Optional file-like for the output stream of the command.
+                       Defaults to None, which will go to pulumi standard out.
+            errstream: Optional file-like for the error stream of the command.
+                       Defaults to None, which will go to pulumi standard out.
         """
+        cp = subprocess.run(
+            cmd_args,
+            stdout=outstream,
+            stderr=errstream,
+        )
 
-        # NOTE: This function was attempted using pulumi's `local.Command`
-        #       provider before this implementation. It seemed ok, but then
-        #       suddenly stopped responding to changes that should have caused a
-        #       rebuild of the layer (or that i thought should). also it
-        #       appeared that there were some timing issues that sometimes had
-        #       the zip file totally empty (as though it were being used prior
-        #       to being finalized). Rather than wasting a ton of time, this was
-        #       changed to a more direct implementation. The promise of
-        #       `local.Command` is pretty useful, so when time permits we should
-        #       look into making use of that and seeing if we can determine the
-        #       issue(s) and how to solve them.
+        # if there's an error running the command, log it and bail.
+        if cp.returncode != 0:
+            msg = f"Lambda layer command failed. error: {cp.stderr}"
+            log.error(msg)
+            raise RuntimeError(msg)
 
-        if code_zip_pth is not None:
-            # if we were handed a zip path, we can just use it as is
-            self._code = FileArchive(code_zip_pth)
-        else:
-            # in this case we have a requirements file. we'll need to make a
-            # local installation of all the packages and then zip those
-            # appropriately. For AWS Lambda layers, this means we have a zip
-            # containing a single `python/` directory into which all the
-            # dependencies we need have been installed
+    def build_local_layer(self):
+        """Install layer packages locally to a temporary directory."""
 
-            # name for the temp directory we will use to build our on-disk pip
-            # installations
-            layer_dir_name = f"{self.name}-lambda-layer"
-            # name of the zip file we'll pass onto the lambday layer
-            zip_name = f"{layer_dir_name}.zip"
-            # full path to the directory we'll build our pip installations in
-            prefix_dir = os.path.join(tempfile.gettempdir(), layer_dir_name)
-            # `python` directory required by AWS lambda. all pip dependencies
-            # will go in here (via `pip install -t`)
-            install_dir = os.path.join(prefix_dir, "python")
+        # the full pip command we'll run (in the format desired by
+        # subprocess.run)
+        pip_args = f"pip install -r {self.reqs} -t {self._install_dir}".split()
+        self._run_command(pip_args)
 
-            # ensure our install direcrtory exists.
-            # NOTE: making a tempdir here instead of a named directory gets
-            #       cleaned up too fast. So we'll make a directory in the temp
-            #       location and leave it there.
-            # TODO: this may no longer be the case with move away from
-            #       local.Command. re-examine
-            Path(install_dir).mkdir(parents=True, exist_ok=True)
+    def pip_list_layer(self):
+        """Generate the pip list file for the local layer environment."""
 
-            # the full pip command we'll run (in the format desired by
-            # subprocess.run)
-            pip_args = [
-                "pip",
-                "install",
-                "-r",
-                f"{reqs_pth}",
-                "-t",
-                f"{install_dir}",
-            ]
+        # the full pip command we'll run (in the format desired by
+        # subprocess.run)
+        pip_args = (
+            f"pip list --format freeze --path {self._install_dir}".split()
+        )
+        with open(self._local_manifest_pth, "w") as manifest:
+            self._run_command(pip_args, outstream=manifest)
 
-            # run the pip command. when completed, cp will contain all the
-            # return values and output for the completed process
-            cp = subprocess.run(
-                pip_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    def handle_manifest_output(self, manifest_contents):
+        """Handle remote manifest based on (mis)match with local manifest.
+
+        Args:
+            manifest_contents: A pulumi Output linked to the contents of the
+                               remote manifest for the layer.
+        """
+        obj_env_spec = BytesIO(manifest_contents)
+
+        # check if the manifests match or have differences
+        import_objs = self.evaluate_layer_diffs(obj_env_spec)
+        self.publish_layer_assets(import_objs=import_objs)
+
+    def evaluate_layer_diffs(self, env_spec):
+        """Return boolean stating if local and remote manifests match.
+
+        Args:
+            env_spec: A BytesIO containing the contents of the remote manifest.
+
+        Returns:
+            True if the remote and local manifests match, else False.
+        """
+        diffs = True
+
+        if env_spec is not None:
+            # we'll read both files into lists of lines then do set math to
+            # determine if they're the same or not. This way only the contents
+            # are diffed, nit the order.
+
+            local_manifest_lines = open(
+                self._local_manifest_pth, "r"
+            ).readlines()
+
+            # readlines keeps line endings, so make sure we do same here.
+            remote_manifest_lines = (
+                env_spec.getvalue().decode("utf-8").splitlines(keepends=True)
             )
 
-            # if there's an error running pip, log it and bail.
-            if cp.returncode != 0:
-                msg = (
-                    f"Lambda layer pip installation failed. error: {cp.stderr}"
+            # NOTE: difflib.Differ exists, but is not really what we want.
+            #       making sure the set of lines is the same in both
+            #       regardless of order is better than trying to determine what
+            #       lines are different and which file has the defferences
+            diffs = (
+                True
+                if set.difference(
+                    set(local_manifest_lines), set(remote_manifest_lines)
                 )
-                error(msg)
-                raise RuntimeError(msg)
+                else False
+            )
 
-            # build up the zip file for passing on to lambda. the format of this
-            # archive is very important. iot must contain a single directory
-            # called `python` that then contains all of the dependencies in a
-            # manner consistent with a pip installation.
+        return diffs
+
+    def publish_layer_assets(self, import_objs=False):
+        """Publish our layer assets to S3 or get refernces to existing ones.
+
+        Args:
+            import_objs: True if the remote objects should be imported as
+                         references, False if we are publishing new files.
+        """
+
+        # NOTE: Apolgies to anyone that comes here later. I regret some
+        #       things...
+        #       Lambda wants "deployment packages" which are zip files in this
+        #       case. Problem with zip files is that creating the same one 2x
+        #       will yield different files (timestamps and such). Uploading
+        #       these different files to s3 is (rightfully) seen as a new file
+        #       version, so pulumi shows differences in multiple places.
+        #       The way pulumi works, it wants to know about every resource it
+        #       manages. So it is not possible to say "add this zip file to s3
+        #       if it has changed, but don't do anything if it hasn't". Because
+        #       doing nothing with that file is seen by pulumi as it being
+        #       deleted from the deployment. So we need a mechanism to import an
+        #       existing ref. Pulumi has a way to do this, but you have to "add"
+        #       the exact same object (constructing a BucketObjectV2 with all
+        #       the same params as when you add, but give it an import id that
+        #       matches what a new object would have been given). With a zip
+        #       file, this means we need to pass the same zip file to the
+        #       add_object call. But that zip file is in s3 and we can't
+        #       recreate locally...see where this is going?
+        #       So "publish" here is not just uploading a new version of a zip.
+        #       It can mean that if the manifests match we need to download the
+        #       current zip out of s3 and then re-add it with an import id.
+        #       WE NEED TO SERIOUSLY LOOK AT A BETTER WAY TO DO THIS.
+
+        # in all cases, the manifest conetents will be this value. if the remote
+        # and local manifests have the same cotents, then our import will work
+        # even if we give a new file. not so much in the case of the zips...
+        manifest = FileAsset(self._local_manifest_pth)
+        code = None
+
+        def write_local_zip(contents):
+            """Write a pulumi Output to a local file.
+
+            This  file will be written to our local zip path.
+
+            Args:
+                contents: A pulumi Output containg the vytes to write to the
+                          file.
+            """
+            with open(self._local_zip_pth, "wb") as zfile:
+                zfile.write(contents)
+
+        if import_objs:
+            # need to get the zipfile from s3 and then re-upload in the import
+            # or pulumi will see a change...
+            remote_zip_contents = self._objstore.get_object_contents(
+                self.remote_zip_key
+            )
+            if remote_zip_contents is not None:
+                # manifest was found in s3, so we need to compare it to local stuff
+                # and publish if there are changes
+                remote_zip_contents.apply(lambda rzc: write_local_zip(rzc))
+        else:
+            # first, build up the zip file for as lambda will expect it. the format
+            # of this archive is very important. it must contain a single directory
+            # named `python` that then contains all of the dependencies in a manner
+            # consistent with a pip installation.
             # we installed our requirements above into just such a directory,
             # and so need to zip only the python directory (ignoring all other
             # pathing).
-            # NOTE: this could be done with the system `zip` utility as well,
-            #       though removing pathing is not so straight forward there
-            #       (without changing directories. This is a bit more verbose,
-            #       but also predictable
             with zipfile.ZipFile(
-                f"{prefix_dir}/{zip_name}", "w", zipfile.ZIP_DEFLATED
+                self._local_zip_pth, "w", zipfile.ZIP_DEFLATED
             ) as zp:
-                for root, dirs, files in os.walk(install_dir):
+                # 2nd tuple item is a list of dirs, which we ignore
+                for root, _, files in os.walk(self._install_dir):
                     for file in files:
                         zp.write(
                             os.path.join(root, file),
+                            # remove existing full pathing in the zip and make
+                            # relative to the python directory
                             arcname=os.path.join(
-                                root.replace(f"{prefix_dir}/", ""), file
+                                root.replace(f"{self._prefix_dir}/", ""), file
                             ),
                         )
-            self._code = FileArchive(f"{prefix_dir}/{zip_name}")
+
+        # the _local_zip_pth should now be usable regarldess of if we imported
+        # or have a new set of files.
+        code = FileArchive(self._local_zip_pth)
+
+        # add new objects or get references for the existing ones so pulumi
+        # manages correctly
+        self._layer_obj = self._objstore.add_object(
+            f"{self.layer_name}-lyr",
+            self.remote_zip_key,
+            code,
+            import_id=self.remote_zip_key if import_objs else None,
+        )
+
+        self._manifest_obj = self._objstore.add_object(
+            f"{self.layer_name}-mnfst",
+            self.remote_manifest_key,
+            manifest,
+            import_id=self.remote_manifest_key if import_objs else None,
+        )
