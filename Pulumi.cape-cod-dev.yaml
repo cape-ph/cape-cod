@@ -988,7 +988,9 @@ config:
                               ]
                           max_vcpus: 16
                 container_images:
-                    # nextflow_kickstart:
+                    nextflow_kickstart:
+                        context: ./assets/containers/bactopia-kickstart
+                        platform: linux/amd64
     # `cape-cod:datalakehouse` (mapping, required)
     # Contains configuration specific to the data lake house (DLH). The DLH
     # contains tributaries, which are compionents that consist of a pair of raw
