@@ -46,7 +46,7 @@ config:
         #   https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
         # * reqs (string, optional) - A path to the python requirements file
         #   for the layer. If not provided it will be assumed to be
-        #   `./assets/lambda/layers/<name>` where `name` is the name cofigured
+        #   `./assets/lambda/layers/<name>` where `name` is the name configured
         #   for the layer
         # * args (mapping, optional) - A mapping of function args to use in
         #   construction of a lambda layer. Keys must match the names of

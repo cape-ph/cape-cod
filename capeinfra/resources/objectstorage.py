@@ -86,7 +86,7 @@ class VersionedBucket(CapeComponentResource):
         Args:
             key: The full object key to get the contents of.
             log_missing_keys: True if a logging message should be recorded for
-                              missing keys, False (default) to supress.
+                              missing keys, False (default) to suppress.
 
         Returns: The contents of the file as a pulumi Output (bytes) or None if
                  the key is not found.

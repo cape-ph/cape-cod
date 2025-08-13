@@ -185,7 +185,7 @@ class CapePythonLambdaLayer(CapeComponentResource):
             self._run_command(pip_args, outstream=manifest)
 
     def handle_manifest_output(self, manifest_contents):
-        """Handle remote manifest based on (mis)match with local manifest.
+        """Handle remote manifest based on (mis-)match with local manifest.
 
         Args:
             manifest_contents: A pulumi Output linked to the contents of the
@@ -238,14 +238,14 @@ class CapePythonLambdaLayer(CapeComponentResource):
         return diffs
 
     def publish_layer_assets(self, import_objs=False):
-        """Publish our layer assets to S3 or get refernces to existing ones.
+        """Publish our layer assets to S3 or get references to existing ones.
 
         Args:
             import_objs: True if the remote objects should be imported as
                          references, False if we are publishing new files.
         """
 
-        # NOTE: Apolgies to anyone that comes here later. I regret some
+        # NOTE: Apologies to anyone that comes here later. I regret some
         #       things...
         #       Lambda wants "deployment packages" which are zip files in this
         #       case. Problem with zip files is that creating the same one 2x
@@ -281,7 +281,7 @@ class CapePythonLambdaLayer(CapeComponentResource):
             This  file will be written to our local zip path.
 
             Args:
-                contents: A pulumi Output containg the vytes to write to the
+                contents: A pulumi Output containing the vytes to write to the
                           file.
             """
             with open(self._local_zip_pth, "wb") as zfile:
@@ -320,7 +320,7 @@ class CapePythonLambdaLayer(CapeComponentResource):
                             ),
                         )
 
-        # the _local_zip_pth should now be usable regarldess of if we imported
+        # the _local_zip_pth should now be usable regardless of if we imported
         # or have a new set of files.
         code = FileArchive(self._local_zip_pth)
 
