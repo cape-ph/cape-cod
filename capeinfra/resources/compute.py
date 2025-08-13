@@ -193,12 +193,14 @@ class CapePythonLambdaLayer(CapeComponentResource):
         """
         obj_env_spec = BytesIO(manifest_contents)
 
-        # check if the manifests match or have differences
-        import_objs = self.evaluate_layer_diffs(obj_env_spec)
+        # check if the manifests match or have differences. We'll import if
+        # there are no differences otherwise we'll publish new ones
+        import_objs = not self.layers_have_diffs(obj_env_spec)
+
         self.publish_layer_assets(import_objs=import_objs)
 
-    def evaluate_layer_diffs(self, env_spec):
-        """Return boolean stating if local and remote manifests match.
+    def layers_have_diffs(self, env_spec):
+        """Return boolean stating if local and remote manifests have differences.
 
         Args:
             env_spec: A BytesIO containing the contents of the remote manifest.
@@ -233,7 +235,6 @@ class CapePythonLambdaLayer(CapeComponentResource):
                 )
                 else False
             )
-
         return diffs
 
     def publish_layer_assets(self, import_objs=False):
