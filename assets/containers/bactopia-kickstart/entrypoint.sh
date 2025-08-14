@@ -38,4 +38,10 @@ cd /scratch
 BUCKET_TEMP_NAME=nextflow-spot-batch-temp-${AWS_BATCH_JOB_ID}
 aws --region "${AWS_REGION}" s3 mb s3://"${BUCKET_TEMP_NAME}"
 
-nextflow run "${PIPELINE}" ${PIPELINE_VERSION} -profile aws -work-dir s3://"${BUCKET_TEMP_NAME}" ${NF_OPTS}
+BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
+    run "${PIPELINE}" ${PIPELINE_VERSION} \
+    -profile aws \
+    -work-dir s3://"${BUCKET_TEMP_NAME}" \
+    --aws_cli_path /home/ec2-user/miniconda/bin/aws \
+    --aws_region ${AWS_REGION} \
+    ${NF_OPTS}
