@@ -34,9 +34,6 @@ fi
 
 cd /scratch
 
-# sanitize BUCKET_NAME
-BUCKET_NAME_RESULTS=$(echo "${BUCKET_NAME_RESULTS}" | sed -e 's#s3://##')
-
 # Make temporary bucket for work directory
 BUCKET_TEMP_NAME=nextflow-spot-batch-temp-${AWS_BATCH_JOB_ID}
 aws --region "${AWS_REGION}" s3 mb s3://"${BUCKET_TEMP_NAME}"

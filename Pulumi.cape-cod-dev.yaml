@@ -962,7 +962,10 @@ config:
                       subnet_types:
                           - compute
                       resources:
-                          instance_types: ["m4.large", "m5.large", "c4.large"]
+                          instance_types:
+                              - m4.large
+                              - m5.large
+                              - c4.large
                           min_vcpus: 1
                           desired_vcpus: 2
                           max_vcpus: 4
@@ -972,13 +975,11 @@ config:
                           - compute
                       resources:
                           instance_types:
-                              [
-                                  "c4.large",
-                                  "c4.xlarge",
-                                  "c4.2xlarge",
-                                  "c4.4xlarge",
-                                  "c4.8xlarge",
-                              ]
+                              - c4.large
+                              - c4.xlarge
+                              - c4.2xlarge
+                              - c4.4xlarge
+                              - c4.8xlarge
                           max_vcpus: 16
                 container_images:
                     nextflow_kickstart:
