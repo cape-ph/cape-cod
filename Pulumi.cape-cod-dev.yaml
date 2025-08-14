@@ -957,20 +957,34 @@ config:
                 #   Any supported argument listed here will be passed on as
                 #   configured.
                 environments:
+                    - name: workflows
+                      image: ami-0cfe23bad78a802ea
+                      subnet_types:
+                          - compute
+                      resources:
+                          instance_types:
+                              - m4.large
+                              - m5.large
+                              - c4.large
+                          min_vcpus: 1
+                          desired_vcpus: 2
+                          max_vcpus: 4
                     - name: analysis
                       image: ami-0cfe23bad78a802ea
                       subnet_types:
                           - compute
                       resources:
                           instance_types:
-                              [
-                                  "c4.large",
-                                  "c4.xlarge",
-                                  "c4.2xlarge",
-                                  "c4.4xlarge",
-                                  "c4.8xlarge",
-                              ]
+                              - c4.large
+                              - c4.xlarge
+                              - c4.2xlarge
+                              - c4.4xlarge
+                              - c4.8xlarge
                           max_vcpus: 16
+                container_images:
+                    nextflow_kickstart:
+                        context: ./assets/containers/bactopia-kickstart
+                        platform: linux/amd64
     # `cape-cod:datalakehouse` (mapping, required)
     # Contains configuration specific to the data lake house (DLH). The DLH
     # contains tributaries, which are compionents that consist of a pair of raw

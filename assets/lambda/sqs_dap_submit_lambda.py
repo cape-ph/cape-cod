@@ -65,7 +65,7 @@ def index_handler(event, context):
                 #   -r dev \
                 #   -work-dir s3://nextflow-s3-bucket-1234/bactopia/workdir \
                 #   -profile test,aws \
-                #   --aws_queue analysis-jobq-9f9048f \
+                #   --aws_queue ccd-pvsl-analysis-btch-jobq-6431fe1 \
                 #   --aws_region us-east-2 \
                 #   --outdir s3://nextflow-s3-bucket-1234/bactopia/out_tutorial \
                 #   --aws_cli_path /home/ec2-user/miniconda/bin/aws \
@@ -89,7 +89,7 @@ def index_handler(event, context):
                     -r {pipeline_version} \
                     -work-dir s3://nextflow-s3-bucket-1234/bactopia/workdir \
                     -profile aws \
-                    --aws_queue analysis-jobq-9f9048f \
+                    --aws_queue ccd-pvsl-analysis-btch-jobq-6431fe1 \
                     --aws_region us-east-2 \
                     --outdir {output_path} \
                     --aws_cli_path /home/ec2-user/miniconda/bin/aws \
