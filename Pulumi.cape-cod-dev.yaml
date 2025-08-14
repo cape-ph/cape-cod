@@ -1161,7 +1161,7 @@ config:
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
-            - name: nsis
+            - name: seqauto
               buckets:
                   input-raw:
                       name:
