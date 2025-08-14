@@ -1175,3 +1175,42 @@ config:
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
+            - name: seqauto
+              buckets:
+                  input-raw:
+                      name:
+                      crawler:
+                  input-clean:
+                      name:
+                      crawler:
+                          classifiers:
+                          prefix: input # prefixes for tables in the database
+                  result-raw:
+                      name:
+                  result-clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
+              pipelines:
+                  data:
+                      etl:
+                          # TODO: TBD
+                          # - name: fastx
+                          #   src: input-raw
+                          #   sink: input-clean
+                          #   script: glue/etl/etl_fasta_fastq.py
+                          #   prefix: fastx
+                          #   suffixes:
+                          #       - gz
+                          #       - fasta
+                          #       - fastq
+                          #   pymodules:
+                          #       - pyfastx==2.1.0
+                          #   max_concurrent_runs: 5
+                          # - name: bactopia-results
+                          #   script: glue/etl/etl_bactopia_results.py
+                          #   src: result-raw
+                          #   sink: result-clean
+                          #   prefix: pipeline-output/bactopia-runs
+                          #   suffixes:
+                          #       - tsv
