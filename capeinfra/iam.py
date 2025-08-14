@@ -602,43 +602,51 @@ def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
         The policy statement as a dictionary json encoded string.
     """
 
+    statements = [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+            ],
+            "Resource": "arn:aws:logs:*:*:*",
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                # This is the bare minimum required for an SQS notified
+                # lambda to do its job.
+                "sqs:GetQueueAttributes",
+                "sqs:ReceiveMessage",
+                "sqs:DeleteMessage",
+            ],
+            "Resource": [
+                f"arn:aws:sqs:*:*:{queue_name}",
+            ],
+        },
+    ]
+
+    # generally we will have job names here (otherwise whey put in a job queue)
+    # but if they have not been defined at the time of the tributary deployemnt,
+    # we may not. so only add the policy for them if we have some listed.
+    if job_names:
+        statements.append(
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "glue:StartJobRun",
+                    "glue:GetJobRun",
+                ],
+                "Resource": [
+                    f"arn:aws:glue:*:*:job/{job}" for job in job_names
+                ],
+            }
+        )
     return json.dumps(
         {
             "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "logs:PutLogEvents",
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                    ],
-                    "Resource": "arn:aws:logs:*:*:*",
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        # This is the bare minimum required for an SQS notified
-                        # lambda to do its job.
-                        "sqs:GetQueueAttributes",
-                        "sqs:ReceiveMessage",
-                        "sqs:DeleteMessage",
-                    ],
-                    "Resource": [
-                        f"arn:aws:sqs:*:*:{queue_name}",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "glue:StartJobRun",
-                        "glue:GetJobRun",
-                    ],
-                    "Resource": [
-                        f"arn:aws:glue:*:*:job/{job}" for job in job_names
-                    ],
-                },
-            ],
+            "Statement": statements,
         },
     )
 
