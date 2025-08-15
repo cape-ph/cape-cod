@@ -1,10 +1,67 @@
 """Abstractions for batch pipelines."""
 
+import json
+
 import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 
 from capeinfra.iam import get_inline_role, get_instance_profile
+from capeinfra.pipeline.ecr import ContainerRepository
 from capepulumi import CapeComponentResource
+
+
+class BatchJobDefinition(CapeComponentResource):
+    """A batch job definition."""
+
+    def __init__(
+        self,
+        name: Input[str],
+        properties: dict,
+        repository: ContainerRepository,
+        *args,
+        **kwargs,
+    ):
+        """Constructor.
+
+        Args:
+            name: The name for the batch job.
+            properties: The AWS Batch Job containerProperties
+            repository: The container repository that stores container images for lookup
+        Returns:
+        """
+        # This maintains parental relationships within the pulumi stack
+        super().__init__(
+            "capeinfra:datalake:BatchJobDefinition", name, *args, **kwargs
+        )
+
+        self.name = f"{name}"
+
+        def apply_uri(uri):
+            properties["image"] = uri
+            return json.dumps(properties)
+
+        json_props = (
+            repository.images[properties["image"]].image.image_uri.apply(
+                apply_uri
+            )
+            if properties["image"] in repository.images
+            else json.dumps(properties)
+        )
+
+        self.job_definition = aws.batch.JobDefinition(
+            self.name,
+            name=self.name,
+            type="container",
+            container_properties=json_props,
+        )
+
+        # We also need to register all the expected outputs for this component
+        # resource that will get returned by default.
+        self.register_outputs(
+            {
+                "job_definition": self.job_definition.id,
+            }
+        )
 
 
 class BatchCompute(CapeComponentResource):
