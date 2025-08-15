@@ -38,6 +38,7 @@ cd /scratch
 BUCKET_TEMP_NAME=nextflow-spot-batch-temp-${AWS_BATCH_JOB_ID}
 aws --region "${AWS_REGION}" s3 mb s3://"${BUCKET_TEMP_NAME}"
 
+# Execute Nextflow
 BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
     run "${PIPELINE}" ${PIPELINE_VERSION} \
     -profile aws \
@@ -45,3 +46,9 @@ BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
     --aws_cli_path /home/ec2-user/miniconda/bin/aws \
     --aws_region ${AWS_REGION} \
     ${NF_OPTS}
+
+# Cleanup
+# Empty temporary bucket
+aws --region "${AWS_REGION}" s3 rm s3://"${BUCKET_TEMP_NAME}" --recursive
+# Remove temporary bucket
+aws --region "${AWS_REGION}" s3 rb s3://"${BUCKET_TEMP_NAME}"
