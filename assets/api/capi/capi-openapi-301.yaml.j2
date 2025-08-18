@@ -492,6 +492,82 @@ paths:
               passthroughBehavior: "when_no_match"
               timeoutInMillis: 29000
               type: "mock"
+    /objstorage/creatempu:
+        post:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket the MPU will be created for"
+                  required: true
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: "The the key the object will be reconstructed as"
+                  required: true
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        # TODO: response comes back in XML, need to get to json if possible
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing information about the MPU"
+                                properties:
+                                    bucket:
+                                        type: string
+                                        description: "The name of the bucket the MPU is created for"
+                                    key:
+                                        type: string
+                                        description: "The object key the MPU will result in"
+                                    uploadId:
+                                        type: string
+                {# TODO: default response (for 4xx) #}
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/CreateMultipartUpload/{key}?uploads"
+                responses : 
+                    {# TODO: response for 4xx, 5xx #}
+                    default: 
+                        statusCode: "200",
+                        responseParameters: 
+                            method.response.header.Content-Type: "application/json",
+                requestParameters: 
+                    integration.request.path.bucket: method.request.query.bucket,
+                    integration.request.path.key: method.request.query.key
+                responseParameters: 
+                    method.response.body.bucket: integration.response.body.Bucket,
+                    method.response.body.key: integration.response.body.Key,
+                    method.response.body.uploadId: integration.response.body.UploadId
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
     /dap/pipelines:
         get:
             responses:
