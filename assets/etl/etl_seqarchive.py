@@ -7,7 +7,7 @@ from capepy.aws.glue import EtlJob
 
 etl_job = EtlJob()
 
-# This ETL expects to operate on a tar.gz file containing a metatdata file
+# This ETL expects to operate on a tar.gz file containing a metadata file
 # (meta.json) and a `sequencing` directory containing some number of gzipped
 # files fastx files (fasta, fastq). The metadata will be extracted, augmented
 # for later use and then written to the clean data sink. The fastx files will be
@@ -20,7 +20,7 @@ archive_obj_key = etl_job.parameters["OBJECT_KEY"]
 sample_archive = etl_job.get_src_file()
 archbio = io.BytesIO(sample_archive)
 
-# baisc tar file check
+# basic tar file check
 if not tarfile.is_tarfile(archbio):
     msg = (
         f"The given sample reads archive {archive_obj_key} is malformed and "
