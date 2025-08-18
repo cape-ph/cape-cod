@@ -185,6 +185,9 @@ config:
                 - name: etl-bactopia-results
                   key: glue/etl/etl_bactopia_results.py
                   srcpth: ./assets/etl/etl_bactopia_results.py
+                - name: etl-seqreadarch
+                  key: glue/etl/etl_seqarchive.py
+                  srcpth: ./assets/etl/etl_seqarchive.py
     # `cape-cod:swimlanes` (mapping, required)
     # Contains the configuration for all swimlanes. Swimlanes define logical
     # separations of public, protected and private resources in CAPE. Each
@@ -1205,23 +1208,11 @@ config:
               pipelines:
                   data:
                       etl:
-                          # TODO: TBD
-                          # - name: fastx
-                          #   src: input-raw
-                          #   sink: input-clean
-                          #   script: glue/etl/etl_fasta_fastq.py
-                          #   prefix: fastx
-                          #   suffixes:
-                          #       - gz
-                          #       - fasta
-                          #       - fastq
-                          #   pymodules:
-                          #       - pyfastx==2.1.0
-                          #   max_concurrent_runs: 5
-                          # - name: bactopia-results
-                          #   script: glue/etl/etl_bactopia_results.py
-                          #   src: result-raw
-                          #   sink: result-clean
-                          #   prefix: pipeline-output/bactopia-runs
-                          #   suffixes:
-                          #       - tsv
+                          - name: seqreadarch
+                            src: input-raw
+                            sink: input-clean
+                            script: glue/etl/etl_seqarchive.py
+                            prefix: unprocessed
+                            suffixes:
+                                - gz
+                            max_concurrent_runs: 5
