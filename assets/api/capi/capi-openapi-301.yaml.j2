@@ -493,6 +493,7 @@ paths:
               timeoutInMillis: 29000
               type: "mock"
     /objstorage/creatempu:
+    {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
         post:
             parameters:
                 - in: query
@@ -505,7 +506,7 @@ paths:
                   name: key
                   schema:
                     type: string
-                    description: "The the key the object will be reconstructed as"
+                    description: "The key the object will be reconstructed as"
                   required: true
             responses:
                 "200":
@@ -526,28 +527,86 @@ paths:
                                         description: "The object key the MPU will result in"
                                     uploadId:
                                         type: string
-                {# TODO: default response (for 4xx) #}
                 "500":
                     description:
                         "Server Error - Unable to query object API (error occurred)."
             x-amazon-apigateway-integration:
+                credentials: "{{ aws_proxy_roles['s3'] }}"
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/CreateMultipartUpload/{key}?uploads"
-                responses : 
-                    {# TODO: response for 4xx, 5xx #}
+                responses: 
                     default: 
-                        statusCode: "200",
-                        responseParameters: 
-                            method.response.header.Content-Type: "application/json",
+                        statusCode: "200"
                 requestParameters: 
-                    integration.request.path.bucket: method.request.query.bucket,
-                    integration.request.path.key: method.request.query.key
+                    integration.request.path.bucket: method.request.querystring.bucket
+                    integration.request.path.key: method.request.querystring.key
                 responseParameters: 
-                    method.response.body.bucket: integration.response.body.Bucket,
-                    method.response.body.key: integration.response.body.Key,
+                    method.response.body.bucket: integration.response.body.Bucket
+                    method.response.body.key: integration.response.body.Key
                     method.response.body.uploadId: integration.response.body.UploadId
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
+    /objstorage/abortmpu:
+    {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
+        delete:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket the MPU will be created for"
+                  required: true
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: "The key the object will be reconstructed as"
+                  required: true
+                - in: query
+                  name: uploadId
+                  schema:
+                    type: string
+                    description: "The id of the previously created multipart upload"
+                  required: true
+            responses:
+                "204":
+                    description: "Success"
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                credentials: "{{ aws_proxy_roles['s3'] }}"
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/AbortMultipartUpload/{key}"
+                responses: 
+                    default: 
+                        statusCode: "204"
+                requestParameters: 
+                    integration.request.path.bucket: method.request.querystring.bucket
+                    integration.request.path.key: method.request.querystring.key
+                    integration.request.querystring.uploadId: method.request.querystring.uploadId
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
