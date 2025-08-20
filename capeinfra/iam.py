@@ -58,11 +58,9 @@ def get_s3_api_proxy_policy(
                 "Effect": "Allow",
                 "Action": [
                     # api for MPU
-                    # NOTE: not adding UploadPart at this time. using presigned
-                    #       urls and not sure at this point if UploadPart is
-                    #       required in that case
                     "s3:AbortMultipartUpload",
                     "s3:CreateMultipartUpload",
+                    "s3:UploadPart",
                     "s3:CompleteMultipartUpload",
                     "s3:ListParts",
                     "s3:ListMultipartUploads",
