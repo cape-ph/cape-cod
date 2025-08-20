@@ -86,22 +86,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
 
     /objuploadurl:
         get:
@@ -149,22 +134,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /user/attributes:
         get:
             parameters:
@@ -219,22 +189,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /user/attribute:
         get:
             parameters:
@@ -284,22 +239,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /objstorage/contents:
         get:
             parameters:
@@ -361,22 +301,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /objstorage/etls:
         get:
             parameters:
@@ -424,22 +349,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /objstorage/crawler:
         get:
             parameters:
@@ -476,22 +386,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /objstorage/creatempu:
     {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
         post:
@@ -512,8 +407,8 @@ paths:
                 "200":
                     description: "Success"
                     content:
-                        # TODO: response comes back in XML, need to get to json if possible
-                        application/json:
+                        # NOTE: response body comes back in XML
+                        application/xml:
                             schema:
                                 type: object
                                 description:
@@ -527,6 +422,7 @@ paths:
                                         description: "The object key the MPU will result in"
                                     uploadId:
                                         type: string
+                                        description: "The ID for the new multipart upload"
                 "500":
                     description:
                         "Server Error - Unable to query object API (error occurred)."
@@ -551,6 +447,110 @@ paths:
                 type: "aws"
         options:
             $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+    /objstorage/completempu:
+    {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
+        post:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket the MPU will be created for"
+                  required: true
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: "The key the object will be reconstructed as"
+                - in: query
+                  name: uploadId
+                  schema:
+                    type: string
+                    description: "The id of the previously created multipart upload"
+                  required: true
+            requestBody:
+                application/xml:
+                    schema:
+                        type: array
+                        description: Array of objects about previously uplaoded part for the MPU being completed
+                        items:
+                            type: object
+                            properties:
+                                PartNumber:
+                                    type: string 
+                                    description: Part number of a previously uploaded part
+                                ETag:
+                                    type: string
+                                    description: ETag of a previously uploaded part
+                            xml:
+                                name: Part
+                        xml: 
+                            name: CompleteMultipartUpload
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        # NOTE: response body comes back in XML
+                        application/xml:
+                            schema:
+                                type: object
+                                description : >
+                                    An object containing information about the MPU. 
+                                    Fields are the same as AWS documentation, which can be found here: 
+                                    https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
+                                properties:
+                                    location:
+                                        type: string
+                                    bucket:
+                                        type: string
+                                    key:
+                                        type: string
+                                    eTag:
+                                        type: string
+                                    checksumCRC32:
+                                        type: string
+                                    checksumCRC32C:
+                                        type: string
+                                    checksumCRC64NVME:
+                                        type: string
+                                    checksumSHA1:
+                                        type: string
+                                    checksumSHA256:
+                                        type: string
+                                    checksumType:
+                                        type: string
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                credentials: "{{ aws_proxy_roles['s3'] }}"
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/CompleteMultipartUpload/{key}"
+                responses: 
+                    default: 
+                        statusCode: "200"
+                requestParameters: 
+                    integration.request.path.bucket: method.request.querystring.bucket
+                    integration.request.path.key: method.request.querystring.key
+                    integration.request.querystring.uploadId: method.request.querystring.uploadId
+                responseParameters: 
+                    method.response.body.bucket: integration.response.body.Bucket
+                    method.response.body.key: integration.response.body.Key
+                    method.response.body.location: integration.response.body.Location
+                    method.response.body.eTag: integration.response.body.ETag
+                    method.response.body.checksumCRC32: integration.response.body.ChecksumCRC32
+                    method.response.body.checksumCRC32C: integration.response.body.ChecksumCRC32C
+                    method.response.body.checksumCRC64NVME: integration.response.body.ChecksumCRC64NVME
+                    method.response.body.checksumSHA1: integration.response.body.ChecksumSHA1
+                    method.response.body.checksumSHA256: integration.response.body.ChecksumSHA256
+                    method.response.body.checksumCRCType: integration.response.body.ChecksumType
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws"
+        options:
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /objstorage/abortmpu:
     {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
         delete:
@@ -566,7 +566,6 @@ paths:
                   schema:
                     type: string
                     description: "The key the object will be reconstructed as"
-                  required: true
                 - in: query
                   name: uploadId
                   schema:
@@ -596,22 +595,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /dap/pipelines:
         get:
             responses:
@@ -668,22 +652,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /dap/pipelineprofiles:
         get:
             parameters:
@@ -730,22 +699,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /dap/executors:
         get:
             responses:
@@ -788,22 +742,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /dap/submit:
         post:
             requestBody:
@@ -862,22 +801,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws_proxy"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
 # resusable components that follow OpenApi 3.0.1 spec
 components:
     x-amazon-apigateway-integrations:
