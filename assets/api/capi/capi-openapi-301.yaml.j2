@@ -550,22 +550,7 @@ paths:
                 timeoutInMillis: 29000
                 type: "aws"
         options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
+            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
     /objstorage/abortmpu:
     {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
         delete:
@@ -895,6 +880,21 @@ paths:
               type: "mock"
 # resusable components that follow OpenApi 3.0.1 spec
 components:
+    x-amazon-apigateway-integrations:
+        {# TODO: all endpoints are bypassing COORS right now. They should not. #}
+        AwsapigwOptionsCoors:
+              responses:
+                default:
+                    statusCode: "200"
+                    responseParameters:
+                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+              requestTemplates:
+                  application/json: "{'statusCode':200}"
+              passthroughBehavior: "when_no_match"
+              timeoutInMillis: 29000
+              type: "mock"
     responses:
         200OptionsCors:
             description: "200 response"
