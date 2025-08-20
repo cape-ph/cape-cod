@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 
 import boto3
 from botocore.exceptions import ClientError
@@ -10,43 +9,7 @@ from capepy.aws.utils import decode_error
 
 logger = logging.getLogger(__name__)
 
-sqs_client = boto3.client("sqs")
-
-
-# TODO: ISSUE #86
-def send_submit_dap_message(queue_name: str, queue_url: str, qmsg: dict):
-    """Send the new DAP sumission as a json message to the specified queue.
-
-    Args:
-        queue_name: The name of the queue to send the message to. This is needed
-                    to make a message group id for the fifo queue.
-        queue_url: The URL of the queue to send the message to.
-        qmsg: A dict containing info about the new DAP being submitted to be
-              run.
-
-    Raises:
-        ClientError: On any error in sending the message.
-    """
-    body = json.dumps(qmsg)
-    try:
-        sqs_client.send_message(
-            QueueUrl=queue_url,
-            MessageBody=body,
-            MessageGroupId=f"{queue_name}-raw-data-msg",
-        )
-    except ClientError as err:
-        code, message = decode_error(err)
-
-        logger.exception(
-            f"Could not place message with body ({body}) on queue at URL "
-            f"({queue_url}). {code} "
-            f"{message}"
-        )
-        raise err
-
-    logger.info(
-        f"Message ({body}) SUCCESSFULLY placed on queue at url ({queue_url})"
-    )
+batch_client = boto3.client("batch")
 
 
 def index_handler(event, context):
@@ -57,11 +20,17 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
-    queue_name = os.getenv("DAP_QUEUE_NAME")
+    # TODO: Replace these hardcoded values
+    # workflow_queue_name = os.getenv("WORKFLOW_QUEUE_NAME")
+    # nextflow_job_definition = os.getenv("NEXTFLOW_JOB_DEFINITION_NAME")
+    # job_queue_name = os.getenv("JOB_QUEUE_NAME")
+    workflow_queue_name = "ccd-pvsl-workflows-btch-jobq-1ddc965"
+    nextflow_job_definition = "ccd-pvsl-nextflow-jobdef"
+    job_queue_name = "ccd-pvsl-analysis-btch-jobq-6431fe1"
 
     # obligatory data validation
-    if queue_name is None:
-        msg = "No queue name provided. Cannot submit new data analysis pipeline message."
+    if None in [workflow_queue_name, nextflow_job_definition, job_queue_name]:
+        msg = "No AWS Batch Job queues or definition provided. Cannot submit new data analysis pipeline message."
         logger.error(msg)
         return {"statusCode": 500, "body": msg}
 
@@ -71,54 +40,37 @@ def index_handler(event, context):
         pipeline_name = body["pipelineName"]
         pipeline_version = body["pipelineVersion"]
         output_path = body["outputPath"]
-        # TODO: ISSUE #TBD all below fields are specific to bactopia right
-        #       now...
-        r1_path = body["r1Path"]
-        r2_path = body["r2Path"]
-        ec2_id = body["ec2Id"]
-        sample = body["sample"]
-
-        msg = (
-            f"Data analysis pipeline {pipeline_name} (version "
-            f"{pipeline_version}) will be sent to the sumission queue with "
-            f"r1 path [{r1_path}], r2 path [{r2_path}], sample [{sample}], "
-            f"output path [{output_path}], and EC2 instance [{ec2_id}]."
+        nf_opts = body["nextflowOptions"]
+        nf_opts = (
+            f"--outdir {output_path} --aws_queue {job_queue_name} {nf_opts}"
         )
 
-        print(msg)
-
-        response = sqs_client.get_queue_url(QueueName=queue_name)
-        queue_url = response["QueueUrl"]
-
-        # NOTE: we just blindly put the message in the queue. all filtering of
-        #       invalid values (e.g. a pipeline name that doesn't exist) will
-        #       happen in the processing of the message from the queue in a
-        #       different lambda.
-        # TODO: Feels we should add a DAPipelineSpec class or something to
-        #       capepy lib that can be reused across lambdas instead of a hard
-        #       coded dict here. would understand outermost keys, and be able
-        #       to be constructed with a collection of pipeline param keys
-        #       (maybe with some validation meta as well). deferring that for a
-        #       bit tho. could also just mod the PipelineRecord class for the
-        #       same purpose and have it be able to serialize/deserialize
-        #       to/from dicts for jsoning.
-        qmsg = {
-            "pipeline_name": pipeline_name,
-            "pipeline_version": pipeline_version,
-            "pipeline_parameters": {
-                "output_path": output_path,
-                "r1_path": r1_path,
-                "r2_path": r2_path,
-                "sample": sample,
-                "ec2_id": ec2_id,
+        response = batch_client.submit_job(
+            jobName=f"nextflow-{context.aws_request_id}",
+            jobQueue=workflow_queue_name,
+            jobDefinition=nextflow_job_definition,
+            containerOverrides={
+                "environment": [
+                    {"name": "PIPELINE", "value": pipeline_name},
+                    {"name": "PIPELINE_VERSION", "value": pipeline_version},
+                    {"name": "NF_OPTS", "value": nf_opts},
+                ]
             },
+        )
+
+        msg = {
+            "jobArn": response["jobArn"],
+            "jobName": response["jobName"],
+            "jobId": response["jobId"],
         }
 
-        send_submit_dap_message(queue_name, queue_url, qmsg)
+        # TODO: Add something like DyanmoDB for keeping track and maintaining
+        # running pipelines, right now we simply return the job information to
+        # the user
 
         return {
             "statusCode": 200,
-            "body": msg,
+            "body": json.dumps(msg),  # return the job information
             "headers": {
                 "Content-Type": "application/json",
                 # TODO: ISSUE #141 CORS bypass. We do not want this long term.

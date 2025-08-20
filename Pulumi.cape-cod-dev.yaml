@@ -497,7 +497,6 @@ config:
                               result_cached_sec: 0
                               logging_enabled: True
                       env_vars:
-                          - "DAP_QUEUE_NAME"
                           - "DAP_REG_DDB_TABLE"
                           - "DDB_REGION"
                           - "USER_ATTRS_DDB_TABLE"

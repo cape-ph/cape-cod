@@ -535,7 +535,7 @@ paths:
                                                     profile_name:
                                                         type: string
                                                         description: A display name for the profile
-                                                    
+
                 "500":
                     description:
                         "Server Error - Unable to read the pipeline registry."
@@ -587,7 +587,7 @@ paths:
                             schema:
                                 type: array
                                 description:
-                                    "An array of available profiles for the pipeline/version pair" 
+                                    "An array of available profiles for the pipeline/version pair"
                                 items:
                                     type: object
                                     properties:
@@ -710,28 +710,31 @@ paths:
     TODO: ISSUE #TBD all below fields are specific to bactopia right now. also, the
           descriptions are bunk if we keep using these params
 #}
-                                r1Path:
+                                nextflowOptions:
                                     type: string
-                                    description: The R1 path.
-                                r2Path:
-                                    type: string
-                                    description: The R2 path.
-                                ec2Id:
-                                    type: string
-                                    description:
-                                        The id of the EC2 instance serving as
-                                        executor.
-                                sample:
-                                    type: string
-                                    description: >
-                                        The name of the sample being processed.
-                                        Affects output directory and file names
+                                    description: The command line flags to pass to Nextflow
             responses:
                 "200":
 {#
     TODO: need the response headers (i.e. cors)
 #}
                     description: "Success submitting pipeline for execution."
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing information about the successfully submitted job"
+                                properties:
+                                    jobArn:
+                                        type: string
+                                        description: "The submitted job ARN"
+                                    jobId:
+                                        type: string
+                                        description: "The submitted job ID"
+                                    jobName:
+                                        type: string
+                                        description: "The submitted job name"
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['submit_dap_run_handler'] }}/invocations"
