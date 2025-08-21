@@ -516,6 +516,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
                 "logs:PutLogEvents",
                 "logs:CreateLogGroup",
                 "logs:CreateLogStream",
+                "logs:GetLogEvents",
             ],
             "Resource": "arn:aws:logs:*:*:*",
         },
@@ -537,7 +538,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
         },
         {  # TODO: make this policy more strict once we organize our queues/resources
             "Effect": "Allow",
-            "Action": ["batch:SubmitJob"],
+            "Action": ["batch:SubmitJob", "batch:DescribeJobs"],
             "Resource": [
                 "*",
             ],
