@@ -29,14 +29,6 @@ def bad_param_response():
     )
 
 
-def extract_object_keys(obj, keys):
-    out = {}
-    for key in keys:
-        if key in obj:
-            out[key] = obj[key]
-    return out
-
-
 def index_handler(event, context):
     """Handler for the GET of available ec2 instances to executing pipelines.
 
@@ -66,14 +58,14 @@ def index_handler(event, context):
                 response = logs_client.get_log_events(
                     **{k: v for k, v in params.items() if v is not None}
                 )
-                resp_data = extract_object_keys(
-                    response,
-                    [
-                        "events",
-                        "nextForwardToken",
-                        "nextBackwardToken",
-                    ],
-                )
+                keys = [
+                    "events",
+                    "nextForwardToken",
+                    "nextBackwardToken",
+                ]
+                resp_data = {
+                    key: response[key] for key in keys if key in response
+                }
 
         return {
             "statusCode": resp_status,

@@ -776,10 +776,10 @@ paths:
         get:
             parameters:
                 - in: query
-                  name: jobId
+                  name: jobIds
                   schema:
                     type: string
-                    description: "The id of the job to check the status of"
+                    description: "A comma delineated list of job ids to check the status of"
                   required: true
             responses:
                 "200":
@@ -790,62 +790,64 @@ paths:
                     content:
                         application/json:
                             schema:
-                                type: object
+                                type: array
                                 description:
-                                    "An object of the requested job's status"
-                                properties:
-                                    jobName:
-                                        type: string
-                                        description:
-                                            The name of the job
-                                    jobId:
-                                        type: string
-                                        description:
-                                            The ID of the job
-                                    status:
-                                        type: string
-                                        enum:
-                                            - SUBMITTED
-                                            - PENDING
-                                            - RUNNABLE
-                                            - STARTING
-                                            - RUNNING
-                                            - SUCCEEDED
-                                            - FAILED
-                                        description:
-                                            The current status of the job
-                                    statusReason:
-                                        type: string
-                                        description:
-                                            The reason of the status
-                                    isCancelled:
-                                        type: boolean
-                                        description:
-                                            Whether the job has been cancelled or not
-                                    isTerminated:
-                                        type: boolean
-                                        description:
-                                            Whether the job has been terminated or not
-                                    createdAt:
-                                        type: integer
-                                        description:
-                                            The time the job was submitted
-                                    startedAt:
-                                        type: integer
-                                        description:
-                                            The time the job started running
-                                    stoppedAt:
-                                        type: integer
-                                        description:
-                                            The time the job stopped running
-                                    environment:
-                                        type: object
-                                        description:
-                                            The environment variables passed to the job
-                                    logStreamName:
-                                        type: string
-                                        description:
-                                            The log stream name for retrieving execution logs
+                                    "A list of requests job statuses"
+                                items:
+                                    type: object
+                                    properties:
+                                        jobName:
+                                            type: string
+                                            description:
+                                                The name of the job
+                                        jobId:
+                                            type: string
+                                            description:
+                                                The ID of the job
+                                        status:
+                                            type: string
+                                            enum:
+                                                - SUBMITTED
+                                                - PENDING
+                                                - RUNNABLE
+                                                - STARTING
+                                                - RUNNING
+                                                - SUCCEEDED
+                                                - FAILED
+                                            description:
+                                                The current status of the job
+                                        statusReason:
+                                            type: string
+                                            description:
+                                                The reason of the status
+                                        isCancelled:
+                                            type: boolean
+                                            description:
+                                                Whether the job has been cancelled or not
+                                        isTerminated:
+                                            type: boolean
+                                            description:
+                                                Whether the job has been terminated or not
+                                        createdAt:
+                                            type: integer
+                                            description:
+                                                The time the job was submitted
+                                        startedAt:
+                                            type: integer
+                                            description:
+                                                The time the job started running
+                                        stoppedAt:
+                                            type: integer
+                                            description:
+                                                The time the job stopped running
+                                        environment:
+                                            type: object
+                                            description:
+                                                The environment variables passed to the job
+                                        logStreamName:
+                                            type: string
+                                            description:
+                                                The log stream name for retrieving execution logs
                 "500":
                     description:
                         "Server error while getting DAP job status."

@@ -20,17 +20,9 @@ def bad_param_response():
              code.
     """
     return (
-        {"message": ("Missing required query string parameters: jobId")},
+        {"message": ("Missing required query string parameters: jobIds")},
         400,
     )
-
-
-def extract_object_keys(obj, keys):
-    out = {}
-    for key in keys:
-        if key in obj:
-            out[key] = obj[key]
-    return out
 
 
 def index_handler(event, context):
@@ -48,15 +40,16 @@ def index_handler(event, context):
         if qsp is None:
             resp_data, resp_status = bad_param_response()
         else:
-            job_id = qsp.get("jobId")
-            if job_id is None:
+            job_ids = qsp.get("jobIds")
+            if job_ids is None:
                 resp_data, resp_status = bad_param_response()
             else:
-                response = batch_client.describe_jobs(jobs=[job_id])
-                job = response["jobs"][0]
-                resp_data = extract_object_keys(
-                    job,
-                    [
+                response = batch_client.describe_jobs(
+                    jobs=[id.strip() for id in job_ids.split(",") if id]
+                )
+                resp_data = []
+                for job in response["jobs"]:
+                    keys = [
                         "jobName",
                         "jobArn",
                         "jobId",
@@ -67,19 +60,19 @@ def index_handler(event, context):
                         "createdAt",
                         "startedAt",
                         "stoppedAt",
-                    ],
-                )
-                resp_data["environment"] = {}
-                if "container" in job:
-                    container_data = job["container"]
-                    if "logStreamName" in container_data:
-                        resp_data["logStreamName"] = container_data[
-                            "logStreamName"
-                        ]
-                    for env_var in container_data.get("environment", []):
-                        resp_data["environment"][env_var["name"]] = env_var[
-                            "value"
-                        ]
+                    ]
+                    job_info = {key: job[key] for key in keys if key in job}
+                    if "container" in job:
+                        container_data = job["container"]
+                        if "logStreamName" in container_data:
+                            job_info["logStreamName"] = container_data[
+                                "logStreamName"
+                            ]
+                        job_info["environment"] = {
+                            env["name"]: env["value"]
+                            for env in container_data.get("environment", [])
+                        }
+                    resp_data.append(job_info)
 
         return {
             "statusCode": resp_status,
