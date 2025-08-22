@@ -16,6 +16,7 @@ from capeinfra.iam import (
     get_api_lambda_authorizer_policy,
     get_api_policy,
     get_inline_role,
+    get_s3_api_proxy_policy,
     get_vpce_api_invoke_policy,
 )
 from capeinfra.resources.compute import CapePythonLambdaLayer
@@ -90,6 +91,7 @@ class CapeRestApi(CapeComponentResource):
         self._configure_logging()
         self._create_api_ep_lambdas(resource_grants)
         self._create_api_authorizer_lambdas()
+        self._create_aws_proxy_roles()
         self._render_spec()
         self._create_rest_api()
         self._deploy_stage(self.domain_name)
@@ -221,6 +223,29 @@ class CapeRestApi(CapeComponentResource):
             # lambda function created
             self._ids_to_lambdas[hcfg["id"]] = (hcfg["name"], handler_lambda)
 
+    def _create_aws_proxy_roles(self):
+        """Create roles that allow the API to directly proxy AWS services.
+
+        NOTE: These are used for API integrations that are of type "aws" (as
+        opposed to types like "aws_proxy" used for lambdas). OpenAPI specs with
+        these integrations require role arns to be in the yml. So here we are.
+
+        We're going with a single role per service for now (instead of a role
+        per endpoint or something like that).
+        """
+        # TODO: ISSUE 245
+        self._aws_proxy_roles = {}
+
+        self._aws_proxy_roles["s3"] = self._api_lambda_role = get_inline_role(
+            f"{self.name}-awsprxys3-role",
+            (
+                f"{self.desc_name} {self.config.get('desc')} AWS S3 api integration proxy role"
+            ),
+            "apigw",
+            "apigateway.amazonaws.com",
+            get_s3_api_proxy_policy(),
+        ).arn
+
     def _render_spec(self):
         """Render the configured open api spec as a jijna2 template."""
         template = get_j2_template_from_path(self.spec_path)
@@ -233,6 +258,7 @@ class CapeRestApi(CapeComponentResource):
             "domain": self.domain_name,
             "authorizers": {},
             "handlers": {},
+            "aws_proxy_roles": self._aws_proxy_roles,
         }
         spec_kwargs["handlers"].update(
             {k: lf.arn for k, (_, lf) in self._ids_to_lambdas.items()}
