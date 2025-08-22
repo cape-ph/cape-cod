@@ -651,6 +651,21 @@ config:
                                 description: "getbucketcrawler Lambda Function"
                                 memory_size: 128
                                 timeout: 10
+                          - id: "get_mpu_part_upload_urls_handler"
+                            name: "getmpuparturls"
+                            code: "assets/api/capi/handlers/get_mpu_part_urls.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description:
+                                    "getrawobjuploadurl Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+
             # `static_apps` (mapping[], optional)
             # Contains configuration for static apps deployed as part of CAPE.
             # Static apps are deployed to s3 as html/js/css bundles and are
