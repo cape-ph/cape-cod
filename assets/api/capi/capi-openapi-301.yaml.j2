@@ -405,7 +405,7 @@ paths:
                 type: "aws_proxy"
         options: *AwsapigwOptionsMock
     /objstorage/creatempu:
-    {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
+    {# TODO: responses (endpoint and integration) for 4xx/5xx #}
         post:
             parameters:
                 - in: query
@@ -524,7 +524,7 @@ paths:
                 type: "aws_proxy"
         options: *AwsapigwOptionsMock
     /objstorage/completempu:
-    {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
+    {# TODO: responses (endpoint and integration) for 4xx/5xx #}
         post:
             parameters:
                 - in: query
@@ -548,7 +548,7 @@ paths:
                 application/xml:
                     schema:
                         type: array
-                        description: Array of objects about previously uplaoded part for the MPU being completed
+                        description: Array of objects about previously uploaded part for the MPU being completed
                         items:
                             type: object
                             properties:
@@ -627,7 +627,7 @@ paths:
                 type: "aws"
         options: *AwsapigwOptionsMock
     /objstorage/abortmpu:
-    {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
+    {# TODO: responses (endpoint and integration) for 4xx/5xx #}
         delete:
             parameters:
                 - in: query

@@ -75,7 +75,7 @@ def index_handler(event, context):
                     #       where the system is configured with a max allowed
                     #       epiration and a default expiration. The client can
                     #       ask for any exiration seconds, but can get no more
-                    #       than the max allowed (the value utlimately set
+                    #       than the max allowed (the value ultimately set
                     #       would need to be returned in the results)
                     # hard-coded 8 hours for now
                     ExpiresIn=28800,
