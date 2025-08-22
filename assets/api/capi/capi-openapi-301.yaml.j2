@@ -40,6 +40,31 @@ security:
     {% endfor %}
 {% endif %}
 
+# NOTE: AWS only supports using reusable component (in the open api sense) 
+#       integration definitions for HTTP apis. we have a REST API here. So in 
+#       order to get something that acts like a reusable component we're using 
+#       YAML anchors and aliases. If in the future AWS fixes their openapi spec
+#       stuff for REST apis so that we can define reusable integrations, this 
+#       set of definitions can be moved to the normal openapi components 
+#       pattern.
+x-cape-api-anchors:
+    {# 
+        TODO: our options integration mock bypasses COORS. this needs to be 
+        fixed 
+    #}
+    AwsapigwOptionsMock: &AwsapigwOptionsMock
+        responses:
+            default:
+                statusCode: "200"
+                responseParameters:
+                    method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                    method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                    method.response.header.Access-Control-Allow-Origin: "'*'"
+            requestTemplates:
+                application/json: "{'statusCode':200}"
+            passthroughBehavior: "when_no_match"
+            timeoutInMillis: 29000
+            type: "mock"
 paths:
     {#
         TODO: The object storage URI paths should be formalized to match other
@@ -78,16 +103,14 @@ paths:
                     description:
                         "Server Error - Unable to query object storage API (error occurred)."
             x-amazon-apigateway-integration:
-                # this is the integration http method, not the endpoint http method. all lambda backed
+               # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_raw_objstore_authz_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
-
+        options: *AwsapigwOptionsMock
     /objuploadurl:
         get:
             parameters:
@@ -133,8 +156,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /user/attributes:
         get:
             parameters:
@@ -188,8 +210,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /user/attribute:
         get:
             parameters:
@@ -238,8 +259,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /objstorage/contents:
         get:
             parameters:
@@ -300,8 +320,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /objstorage/etls:
         get:
             parameters:
@@ -348,8 +367,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /objstorage/crawler:
         get:
             parameters:
@@ -385,8 +403,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /objstorage/creatempu:
     {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
         post:
@@ -431,7 +448,7 @@ paths:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/CreateMultipartUpload/{key}?uploads"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}?uploads"
                 responses: 
                     default: 
                         statusCode: "200"
@@ -445,8 +462,67 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
+    /objstorage/parturls:
+        get:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket to get an array of PUT URLs for"
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: 
+                        "The object key the reassembled parts will yield
+                        limited to"
+                - in: query
+                  name: uploadId
+                  schema:
+                    type: string
+                    description: "The id of the previously created multipart upload"
+                  required: true
+                - in: query
+                  name: numParts 
+                  schema:
+                    type: integer
+                    description: "The number of parts the MPU will consist of"
+                  required: true
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description: An array of objects describing PUT urls for parts
+                                items:
+                                    type: object
+                                    description:
+                                        "An object containing the PUT URL and 
+                                        part number associated with it."
+                                    properties:
+                                        url:
+                                            type: string
+                                            description: A PUT URL
+                                        partNumber:
+                                            type: integer
+                                            description:
+                                                "The part number specific to the URL"
+                "500":
+                    description:
+                        "Server Error - Unable to generate pre-signed part upload PUT URLs."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_mpu_part_upload_urls_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
     /objstorage/completempu:
     {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
         post:
@@ -527,7 +603,7 @@ paths:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/CompleteMultipartUpload/{key}"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
                 responses: 
                     default: 
                         statusCode: "200"
@@ -549,8 +625,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /objstorage/abortmpu:
     {# TODO: responses (endpoint and itegration) for 4xx/5xx #}
         delete:
@@ -583,7 +658,7 @@ paths:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/AbortMultipartUpload/{key}"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
                 responses: 
                     default: 
                         statusCode: "204"
@@ -594,8 +669,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /dap/pipelines:
         get:
             responses:
@@ -651,8 +725,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /dap/pipelineprofiles:
         get:
             parameters:
@@ -698,8 +771,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /dap/executors:
         get:
             responses:
@@ -741,8 +813,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
     /dap/submit:
         post:
             requestBody:
@@ -800,25 +871,9 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options:
-            $ref: "#/components/responses/x-amazon-apigateway-integrations/AwsapigwOptionsCoors"
+        options: *AwsapigwOptionsMock
 # resusable components that follow OpenApi 3.0.1 spec
 components:
-    x-amazon-apigateway-integrations:
-        {# TODO: all endpoints are bypassing COORS right now. They should not. #}
-        AwsapigwOptionsCoors:
-              responses:
-                default:
-                    statusCode: "200"
-                    responseParameters:
-                        method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                        method.response.header.Access-Control-Allow-Origin: "'*'"
-              requestTemplates:
-                  application/json: "{'statusCode':200}"
-              passthroughBehavior: "when_no_match"
-              timeoutInMillis: 29000
-              type: "mock"
     responses:
         200OptionsCors:
             description: "200 response"
