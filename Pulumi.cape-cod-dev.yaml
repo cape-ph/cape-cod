@@ -532,9 +532,9 @@ config:
                                 description: "getdapprofiles Lambda Funnction"
                                 memory_size: 128
                                 timeout: 3
-                          - id: "get_dap_executors_handler"
-                            name: "getdapexecutors"
-                            code: "assets/api/capi/handlers/get_dap_executors.py"
+                          - id: "get_dap_status_handler"
+                            name: "getdapstatus"
+                            code: "assets/api/capi/handlers/get_dap_status.py"
                             layers:
                                 - capi-all
                             funct_args:
@@ -542,7 +542,20 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdapexecutors Lambda Funnction"
+                                description: "getdapstatus Lambda Funnction"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "get_dap_logs_handler"
+                            name: "getdaplogs"
+                            code: "assets/api/capi/handlers/get_dap_logs.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdaplogs Lambda Funnction"
                                 memory_size: 128
                                 timeout: 3
                           - id: "submit_dap_run_handler"
