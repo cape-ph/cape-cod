@@ -21,8 +21,6 @@ def index_handler(event, context):
 
         headers = event.get("headers", {})
 
-        resp_data = {}
-
         print(f"Event: {event}")
         print(f"Context: {context}")
 
@@ -31,8 +29,6 @@ def index_handler(event, context):
         key = qsp.get("key")
         upload_id = qsp.get("uploadId")
         num_parts = int(qsp.get("numParts"))
-
-        # LEFTOFF
 
         # assume the best will happen and set our output up for success
         resp_status = 200
@@ -53,7 +49,7 @@ def index_handler(event, context):
             "Access-Control-Allow-Methods": "OPTIONS,GET",
         }
 
-        part_urls = []
+        resp_data = []
 
         if None in [bucket, key, upload_id, num_parts]:
             resp_data = {
@@ -75,20 +71,22 @@ def index_handler(event, context):
                         "UploadId": upload_id,
                         "PartNumber": i,
                     },
-                    # TODO: need to make this more resillient. perhaps something
-                    #       where the system is configuraed with a "max allowed"
-                    #       duration and a default. The client can ask for any
-                    #       exiration seconds, but can get no more than that max
-                    #       (the value set would need to be returned in the results)
+                    # TODO: need to make this more resilient. perhaps something
+                    #       where the system is configured with a max allowed
+                    #       epiration and a default expiration. The client can
+                    #       ask for any exiration seconds, but can get no more
+                    #       than the max allowed (the value utlimately set
+                    #       would need to be returned in the results)
+                    # hard-coded 8 hours for now
                     ExpiresIn=28800,
                 )
-                part_urls.append({"url": put_url, "partNumber": i})
+                resp_data.append({"url": put_url, "partNumber": i})
 
         # And return our response however it ended up
         return {
             "statusCode": resp_status,
             "headers": resp_headers,
-            "body": json.dumps(part_urls),
+            "body": json.dumps(resp_data),
         }
     except ClientError as err:
         code, message = decode_error(err)
