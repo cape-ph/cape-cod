@@ -56,7 +56,8 @@ def index_handler(event, context):
                     "limit": int(limit) if limit is not None else limit,
                 }
                 response = logs_client.get_log_events(
-                    **{k: v for k, v in params.items() if v is not None}
+                    logGroupName="/aws/batch/job",
+                    **{k: v for k, v in params.items() if v is not None},
                 )
                 keys = [
                     "events",
