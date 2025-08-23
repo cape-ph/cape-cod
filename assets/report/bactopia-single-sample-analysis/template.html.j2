@@ -1,0 +1,145 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>CAPE Bactopia Single Sample Analysis Report</title>
+  </head>
+  <body>
+    <div>
+        <div><p><b>Sample ID:</b></p></div>
+        <div><p>{{ sample_id }}</p></div>
+        <div><p><b>Sample Type:</b></p></div>
+        <div><p>{{ sample_type }}</p></div>
+        <div><p><b>Sample Matrix:</b></p></div>
+        <div><p>{{ sample_matrix }}</p></div>
+    </div>
+    <div>
+        <div><p><b>Sample Collection Date:</b></p></div>
+        <div><p>{{ sample_collection_date }}</p></div>
+        <div><p><b>Sample Collection Location:</b></p></div>
+        <div><p>{{ sample_collection_location }}</p></div>
+    </div>
+    <div>
+        <div><p><b>Bioinformatic Pipeline:</b></p></div>
+        <div><p>
+            {{ pipeline_meta["name"] }} (ver {{ pipeline_meta["version"] }}) 
+        </p></div>
+        <div><p><b>Analysis Run Date:</b></p></div>
+        <div><p>{{ pipeline_meta["run_date"] }}</p></div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Family</th>
+                <th>Genus</th>
+                <th>Species</th>
+                <th>Strain</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in organisms_identified %}
+                <tr>
+                    {% for k,v in row.items() %}
+                        <td>{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <h2>Virulence Information</h2>
+    <h3>Exact Protein Match</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Element Symbol</th>
+                <th>Element Name</th>
+                <th>Scope</th>
+                <th>Subtype</th>
+                <th>Class</th>
+                <th>Subclass</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in virulence_info["exact_protein_match"] %}
+                <tr>
+                    {% for k,v in row.items() %}
+                        <td>{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <h3>Similarity-based Protein Match</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Element Symbol</th>
+                <th>Element Name</th>
+                <th>Scope</th>
+                <th>Subtype</th>
+                <th>Class</th>
+                <th>Subclass</th>
+                <th>% Coverage of reference</th>
+                <th>% Identity to reference</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in virulence_info["similarity_based_protein_match"] %}
+                <tr>
+                    {% for k,v in row.items() %}
+                        <td>{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <h2>Antimicrobial Resistance Information</h2>
+    <h3>Exact Protein Match</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Element Symbol</th>
+                <th>Element Name</th>
+                <th>Scope</th>
+                <th>Subtype</th>
+                <th>Class</th>
+                <th>Subclass</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in amr_info["exact_protein_match"] %}
+                <tr>
+                    {% for k,v in row.items() %}
+                        <td>{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <h3>Similarity-based Protein Match</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Element Symbol</th>
+                <th>Element Name</th>
+                <th>Scope</th>
+                <th>Subtype</th>
+                <th>Class</th>
+                <th>Subclass</th>
+                <th>% Coverage of reference</th>
+                <th>% Identity to reference</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in amr_info["similarity_based_protein_match"] %}
+                <tr>
+                    {% for k,v in row.items() %}
+                        <td>{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+  </body>
+</html>
