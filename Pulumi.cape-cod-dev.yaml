@@ -188,6 +188,69 @@ config:
                 - name: etl-seqreadarch
                   key: glue/etl/etl_seqarchive.py
                   srcpth: ./assets/etl/etl_seqarchive.py
+        # `report` (mapping[], optional)
+        # Contains configuration related to canned reports that can be
+        # generated. Every item in the list is required to have:
+        # * `id` (string, required) - The unique id of the report.
+        # * `short_name` (string, required)
+        #   A short name that will be used in resource creation
+        #   (naming of the resources). As this is used in resource
+        #   names, it should be kept as short as possible, but
+        #   must be unique across reports.
+        # * `display_name` (string, required) - The display name to be used
+        #   for the report. Does not need to be unique, but common display
+        #   names will appear as different items with the same text in user
+        #   interfaces.
+        # * `template_path` (string, optional) - The jinja2 template path of
+        #   the report in the deployment repo. If not provided it defaults to
+        #   ./assets/report/{id}/template.html.j2 where `{id}` is the
+        #   configured id for this report.
+        # * data_function (mapping, required) - Configuration for the lambda
+        #   function that will retrieve data for the report:
+        #   * `code` (string, optional)
+        #     The path in the repo (from repo root) for the lambda that
+        #     implements the data function. If not provided it defaults to
+        #     ./assets/report/{id}/data_function.py where `{id}` is the
+        #     configured id for this report.
+        #   * `layers` (string[], optional)
+        #     A list of layer names (configured in
+        #     cape-meta:function_layers) that should be applied to the
+        #     function execution environment.
+        #   * `funct_args` (mapping, optional)
+        #     Arguments to pass *as is* to the lambda function
+        #     constructor. The keys used need to map to actual argument
+        #     names of the pulumi lambda function constructor.
+        #     Additionally, most args will be ignored (e.g.
+        #     environment, role) as they are dynamically injected in
+        #     code or not used currently. If not provided, the handler
+        #     will default to  "index.index_handler" and the runtime
+        #     will default to "python3.10". The following arguments are
+        #     optional but supported:
+        #     * architectures (string[], defaults to ["x86_64"])
+        #     * description (string, defaults to "handler_name Lambda
+        #       Function")
+        #     * handler (string, defaults to "index.index_handler")
+        #     * memory_size (int, defaults to 128[unit is MB])
+        #     * runtime (string defaults to "python3.10")
+        #     * timeout (int, defaults to 3[unit is seconds])
+        report:
+            - id: bactopia-single-sample-analysis
+              short_name: bctpssa
+              display_name: "Bactopia Single Sample Analysis"
+              template_path: "./assets/report/bactopia-single-sample-analysis/template.html.j2"
+              data_function:
+                  code: "./assets/report/bactopia-single-sample-analysis/data_function.py"
+                  layers:
+                      - capi-all
+                  funct_args:
+                      handler: "index.index_handler"
+                      runtime: "python3.10"
+                      architectures:
+                          - "x86_64"
+                      description:
+                          "Bactopia Single Sample Report Data Lambda Function"
+                      memory_size: 128
+                      timeout: 3
     # `cape-cod:swimlanes` (mapping, required)
     # Contains the configuration for all swimlanes. Swimlanes define logical
     # separations of public, protected and private resources in CAPE. Each
