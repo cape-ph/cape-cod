@@ -7,7 +7,14 @@ from typing import Any
 
 import pulumi_aws as aws
 from boto3.dynamodb.types import TypeSerializer
-from pulumi import FileArchive, FileAsset, Output, ResourceOptions, log
+from pulumi import (
+    AssetArchive,
+    FileArchive,
+    FileAsset,
+    Output,
+    ResourceOptions,
+    log,
+)
 
 import capeinfra
 from capeinfra.iam import get_inline_role
@@ -48,6 +55,12 @@ class CapeMeta(CapeComponentResource):
                 #       (as opposed to archive assets)
                 source=FileAsset(etl_def["srcpth"]),
             )
+
+        self.canned_reports = CapeCannedReports(
+            self.automation_assets_bucket,
+            self._function_layers,
+            config=self.config.get("report", default=[]),
+        )
 
         self.capepy = CapePy(self.automation_assets_bucket)
         self.principals = CapePrincipals(
@@ -658,4 +671,236 @@ class CapePrincipals(CapeComponentResource):
             allowed_oauth_flows=["code"],
             supported_identity_providers=["COGNITO"],
             **options,  # pyright: ignore
+        )
+
+
+class CapeCannedReports(CapeComponentResource):
+    """Class that encapsulates canned reporting infrastructure.
+
+    Canned reports have a few parts each, and then some common infra tying
+    them together. Each canned report functionally consists of a data
+    access function and a report template. The templates will be stored in
+    S3 (in the `automation_assets_bucket` under the `reports/templates`
+    prefix. The access functions will be deployed as a lambda function.
+    Metadata about the report (location of template, data acces lambda arn,
+    display names, etc) are stored in dynamodb keyed on the configured
+    unique report identifier.
+    """
+
+    @property
+    def default_config(self) -> dict:
+        """Implementation of abstract property `default_config`.
+
+        Returns:
+            The default config dict for the canned report config
+        """
+        return {
+            "template_prefix": "reports/templates",
+            "reports": [],
+        }
+
+    def __init__(
+        self, assets_bucket: VersionedBucket, function_layers: dict, **kwargs
+    ):
+        self.name = "cape-reports"
+        super().__init__(
+            "capeinfra:meta:capemeta:CapeCannedReports",
+            self.name,
+            desc_name=(
+                "Resources for canned report management in the CAPE "
+                "infrastructure"
+            ),
+            **kwargs,
+        )
+
+        self.assets_bucket = assets_bucket
+        # TODO: feels like this should be some globally accessible thing instead
+        #       of sending in the capemeta dict that tracks layers. someday...
+        self._function_layers = function_layers
+
+        self._template_prefix = self.config.get("template_prefix")
+        report_cfgs = self.config.get("reports")
+
+        if not report_cfgs:
+            # NOTE: we can take this opportunity to *not* deploy stuff like the
+            #       dynamo table containing canned report metadata if we want to
+            #       get into general cost savings opporunities. for now however
+            #       we will deploy all infra even when resources that need the
+            #       infra are not configured.
+            log.info(f"No canned CAPE-wide canned reports configured.", self)
+
+        self.create_canned_report_store()
+
+        self._report_roles = {}
+
+        for rc in report_cfgs:
+            self._create_canned_report(rc)
+
+    def create_canned_report_store(self):
+        """Sets up a data store to hold canned report metadata."""
+        # setup a DynamoDB table to hold documents containing metadata on canned
+        # reports. keyed on unique report id
+        # NOTE: we can set up our Dynamo connections to go through a VPC
+        #       endpoint instead of the way we're currently doing (using the
+        #       fact that we have a NAT and egress requests to go through the
+        #       boto3 dynamo client, which makes the requests go through the
+        #       public internet). VPC endpoint is arguably more secure and
+        #       performant as it's a direct connection to Dynamo from our
+        #       clients, but it adds cost.
+        self.canned_report_ddb_table = aws.dynamodb.Table(
+            f"{self.name}-cnndrprts-ddb",
+            name=f"{self.name}-CannedReportsStore",
+            # NOTE: this table will be accessed as needed to fetch canned report
+            #       metadata. it'll be pretty hard (at least till this is in use
+            #       in use for a while) to come up with read/write metrics to
+            #       set this table up as PROVISIONED with those values. We'd
+            #       probably be much cheaper to go that route if we have a
+            #       really solid idea of how many reads/writes this table needs
+            billing_mode="PAY_PER_REQUEST",
+            hash_key="report_id",
+            range_key=None,
+            attributes=[
+                # NOTE: we do not need to define any part of the "schema" here
+                #       that isn't needed in an index.
+                {
+                    "name": "report_id",
+                    "type": "S",
+                },
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (f"{self.desc_name} Canned Report DynamoDB Table"),
+            },
+        )
+
+    def _create_canned_report(self, report_config):
+        """Deploy all resources that are part of a canned report.
+
+        Args:
+            report_config: The configuration for a canned report.
+        """
+        # TODO: just for reference, remove this
+        """
+        report:
+            - id: bactopia-single-sample-analysis
+            short_name: bctpssa
+            display_name: "Bactopia Single Sample Analysis"
+            template_path: "./assets/report/bactopia-single-sample-analysis/template.html.j2"
+            data_function:
+                code: "./assets/report/bactopia-single-sample-analysis/data_function.py"
+                layers:
+                    - capi-all
+                funct_args:
+                    handler: "index.index_handler"
+                    runtime: "python3.10"
+                    architectures:
+                        - "x86_64"
+                    description:
+                        "Bactopia Single Sample Report Data Lambda Function"
+                    memory_size: 128
+                    timeout: 3
+        """
+        # TODO:
+        # - make template s3 objects
+        # - make lambda function
+        # - make dynamo item for the report (needs lambda arn, probs need to
+        # handle pulumi output value)
+
+        template_key = f"{self._template_prefix}/{report_config['id']}"
+        template_obj = self.assets_bucket.add_object(
+            f"{self.name}-cnndrprt-{report_config['short_name']}",
+            key=template_key,
+            source=FileAsset(report_config["template_path"]),
+        )
+
+        # TODO: this is the role for the data retireval function. it will
+        #       have differening needs based on where data comes from. right now
+        #       we're returning canned data so there are no special needs, but
+        #       when that is replaced with athena queries or bucket reading,
+        #       new perms will be needed per data function. not sure what that
+        #       looks like right now (but willl invlolve adding a policy where
+        #       we currently pass None below)
+        report_role = get_inline_role(
+            f"{self.name}-{report_config['short_name']}-lmbd-role",
+            (
+                f"{self.desc_name} {self.config.get('desc')} lambda role for "
+                f"report data function {report_config['display_name']}"
+            ),
+            "lmbd",
+            "lambda.amazonaws.com",
+            None,
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        )
+
+        # we should not get here unless we have a configured report, and if we
+        # have a configured report all of these dict keys should exist. if they
+        # do not, allowing the KeyError to happen is just fine
+        funct_args = report_config["data_function"]["funct_args"]
+        # TODO: need a better way to access layers from CapeMeta *and*
+        #       to access the layer objects from a CapePythonLambdaLayer
+        layers = [
+            self._function_layers[n]._layer_obj.arn
+            for n in report_config["data_function"]["layers"]
+            if self._function_layers[n]._layer_obj is not None
+        ]
+
+        report_data_lambda = aws.lambda_.Function(
+            f"{self.name}-{report_config['short_name']}-datfn",
+            role=report_role.arn,
+            layers=layers,
+            code=AssetArchive(
+                {"index.py": FileAsset(report_config["data_function"]["code"])}
+            ),
+            # TODO: we'll need different env vars per function as these get more
+            #       complicated. need to figure out how we'll expose those to
+            #       the functions
+            environment={"variables": {}},
+            opts=ResourceOptions(parent=self),
+            # below are allowed to be configured externally and if not given
+            # will be defaulted to values in pulumi docs (except description
+            # which is given a sensible default)
+            handler=funct_args.get("handler", "index.index_handler"),
+            runtime=funct_args.get("runtime", "python3.10"),
+            architectures=funct_args.get("architectures", ["x86_64"]),
+            description=funct_args.get(
+                "description",
+                f"{report_config.get('display_name')} Lambda Function",
+            ),
+            memory_size=funct_args.get("memory_size", 128),
+            timeout=funct_args.get("timeout", 3),
+        )
+
+        report_meta = {
+            "report_id": report_config["id"],
+            "short_name": report_config["short_name"],
+            "display_name": report_config["display_name"],
+            "template_key": template_key,
+            "template_bucket": self.assets_bucket.bucket.bucket,
+            "data_function": report_data_lambda.arn,
+        }
+
+        Output.all(report_meta_kw=report_meta).apply(
+            lambda kw: self._store_canned_report_meta(kw)
+        )
+
+    def _store_canned_report_meta(self, kwargs):
+        """"""
+        report_meta = kwargs["report_meta_kw"]
+        serializer = TypeSerializer()
+
+        # given how we call this helper, all Output objects should have resolved
+        # to strings by here.
+        serialized_attrs = {
+            k: serializer.serialize(v) for k, v in report_meta.items()
+        }
+
+        aws.dynamodb.TableItem(
+            f"{self.name}-{report_meta['short_name']}-ddbitem",
+            table_name=self.canned_report_ddb_table.name,
+            hash_key=self.canned_report_ddb_table.hash_key,
+            # TODO: do we have a range key here? schema is unknown and UID
+            #       is really the only thing we can bank on being there
+            range_key=None,
+            item=Output.json_dumps(serialized_attrs),
+            opts=ResourceOptions(parent=self),
         )
