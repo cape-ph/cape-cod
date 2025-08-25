@@ -1,20 +1,24 @@
+"""Lambda for data retrieval for the bactopia single sample analysis report."""
+
 # TODO:
 # need a layer with weasyprint and jinja2
 # - need this to be a lambda that returns (for now) this fake data.
 # - when we have the actual athena query, we will return data from the lake
 #   based on an incoming single sample analysis jobid
 import datetime
+import json
+import logging
 
-import jinja2
-import weasyprint
+from botocore.exceptions import ClientError
+from capepy.aws.utils import decode_error
 
-# TODO:
+logger = logging.getLogger()
+logger.setLevel("INFO")
 
-# - need this to be a lambda that returns (for now) this fake data.
-# - when we have the actual athena query, we will return data from the lake
-#   based on an incoming single sample analysis jobid
-
-template_data = {
+# TODO: this is to be replaced with a call to an athena query eventually. format
+#       is speculative (though tied to the report template using this data, so
+#       if this changes that needs to as well.
+FAKE_TEMPLATE_DATA = {
     "sample_id": "0123456789",
     "sample_type": "Environmental",
     "sample_matrix": "Soil",
@@ -138,3 +142,62 @@ template_data = {
         ],
     },
 }
+
+
+def index_handler(event, context):
+    """Return data required for the bactopia single sample analysis report.
+
+    If there is no `Authorization` header present, this will return a 401.
+
+    :param event: The event object that contains the HTTP request.
+    :param context: Context object.
+    """
+
+    try:
+
+        headers = event.get("headers", {})
+        payload = event.get("Payload")
+
+        print(f"Payload from calling lambda: {payload}")
+
+        # TODO: eventually this needs to be replaced with an athena query
+        resp_data = FAKE_TEMPLATE_DATA
+
+        # assume the best will happen and set our output up for success
+        resp_status = 200
+        resp_headers = {
+            "Content-Type": "application/json",
+            # TODO: ISSUE #141 CORS bypass. We do not want this long term.
+            #       When we get all the api and web resources on the same
+            #       domain, this may not matter too much. But we may
+            #       eventually end up with needing to handle requests from
+            #       one domain served up by another domain in a lambda
+            #       handler. In that case we'd need to be able to handle
+            #       CORS, and would want to look into allowing
+            #       configuration of the lambda (via pulumi config that
+            #       turns into env vars for the lambda) that set the
+            #       origins allowed for CORS.
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,GET",
+        }
+
+        # And return our response however it ended up
+        return {
+            "statusCode": resp_status,
+            "headers": resp_headers,
+            "body": json.dumps(resp_data),
+        }
+    except ClientError as err:
+        code, message = decode_error(err)
+
+        msg = (
+            f"Error during fetch of bactopia single sample analysis report "
+            f"data. {code} "
+            f"{message}"
+        )
+
+        return {
+            "statusCode": 500,
+            "body": msg,
+        }
