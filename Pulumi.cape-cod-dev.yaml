@@ -61,6 +61,13 @@ config:
                       CAPI API python pip dependencies layer for all handlers.
                   compatible_runtimes:
                       - python3.10
+            - name: report-gen
+              args:
+                  description:
+                      CAPI API python pip dependencies layer for all report
+                      generators.
+                  compatible_runtimes:
+                      - python3.10
         # `principals` (mapping, required)
         # Contains local users and groups required for any cape deployment.
         # TODO: any issue specifying princpals at this level? will we need
@@ -748,6 +755,20 @@ config:
                                     - "x86_64"
                                 description:
                                     "getrawobjuploadurl Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_canned_report_handler"
+                            name: "getcannedreport"
+                            code: "assets/api/capi/handlers/get_canned_report.py"
+                            layers:
+                                - capi-all
+                                - report-gen
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getcannedreport Lambda Function"
                                 memory_size: 128
                                 timeout: 10
 
