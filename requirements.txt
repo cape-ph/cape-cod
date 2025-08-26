@@ -21,6 +21,6 @@ python-docx>=1.1.0,<2.0.0
 pyfastx>=2.1.0,<3.0.0
 # gphl sequencing requirements
 tabula-py>=2.9.0,<3.0.0
-pypdf>=4.3.0,<5.0.0
+pypdf>=6.0.0,<7.0.0
 # cape api lambda requirements
 multipart>=1.2.1,<2.0.0
