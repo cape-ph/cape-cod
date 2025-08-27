@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
+from pulumi import AssetArchive, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import (
@@ -175,18 +175,6 @@ class CapeRestApi(CapeComponentResource):
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
-        # all of our lambda functs will get the capepy layer. and maybe more...
-        funct_layers = [capeinfra.meta.capepy.lambda_layer.arn]
-        funct_layer_args = self.config.get("layer_args", default=None)
-
-        if funct_layer_args:
-
-            api_lambda_layer = CapePythonLambdaLayer(
-                f"{self.name}",
-                **funct_layer_args,
-            )
-            funct_layers.append(api_lambda_layer.lambda_layer.arn)
-
         # make functions from the configuration and save the mapping of the
         # function arn to the label we'll need to replace in the spec file.
         for hcfg in self.config.get("handlers", default=[]):
@@ -198,13 +186,29 @@ class CapeRestApi(CapeComponentResource):
             # needed for a few args below. if not given or if there are missing
             # keys, we'll get default values
             funct_args = hcfg.get("funct_args", {})
+            layer_names = hcfg.get("layers", [])
+
+            layer_arns = [
+                v.lambda_layer.arn
+                for k, v in capeinfra.meta._function_layers.items()
+                if k in layer_names
+            ]
+
+            # TODO: we also build lambdas elsewhere (e.g. capemeta) and they
+            #       don't allow additional env vars. need to get that the same.
+            vars = funct_args.get("environment", {"variables": {}}).get(
+                "variables"
+            )
+            vars.update(self.env_vars)
+
+            log.warn(f"{hcfg['name']} lambda is getting vars: {vars}")
 
             handler_lambda = aws.lambda_.Function(
                 f"{self.name}-{hcfg['name']}-lmbdfn",
                 role=self._api_lambda_role.arn,
-                layers=funct_layers,
+                layers=layer_arns,
                 code=AssetArchive({"index.py": FileAsset(hcfg["code"])}),
-                environment={"variables": self.env_vars},
+                environment={"variables": vars},
                 opts=ResourceOptions(parent=self),
                 # below are allowed to be configured externally and if not given
                 # will be defaulted to values in pulumi docs (except description
