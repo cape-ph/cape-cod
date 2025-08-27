@@ -543,6 +543,13 @@ def get_api_policy(grants: dict[str, list[Output]]):
                 "*",
             ],
         },
+        {  # TODO: make this policy more strict once we organize our queues/resources
+            "Effect": "Allow",
+            "Action": ["lambda:InvokeFunction"],
+            "Resource": [
+                "*",
+            ],
+        },
     ]
 
     # add the queue grants as configured
