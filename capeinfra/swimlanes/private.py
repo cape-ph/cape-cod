@@ -142,6 +142,15 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         )
 
+        # TODO: better way to register these things. this one comes from
+        #       capemeta and totally breaks the "encapsulation" we had here
+        self._exposed_env_vars.setdefault(
+            "CANNED_REPORT_DDB_TABLE",
+            {
+                "resource_name": capeinfra.meta.canned_reports.canned_report_ddb_table.name,
+                "type": "table",
+            },
+        )
         self.create_analysis_pipeline_registry()
         self.create_static_web_resources()
         self.create_application_instances()
