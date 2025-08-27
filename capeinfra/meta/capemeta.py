@@ -18,7 +18,10 @@ from pulumi import (
 
 import capeinfra
 from capeinfra.iam import get_inline_role
-from capeinfra.resources.compute import CapePythonLambdaLayer
+from capeinfra.resources.compute import (
+    CapeGHRleaseLambdaLayer,
+    CapePythonLambdaLayer,
+)
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource
@@ -76,24 +79,46 @@ class CapeMeta(CapeComponentResource):
         )
 
     def create_function_layers(self, layer_specs):
-        """Create python AWS Lambda layers as per configuration.
+        """Create AWS Lambda layers as per configuration.
 
         Args:
             layer_specs: The function_layers config from the pulumi config.
         """
         for layer_spec in layer_specs:
             layer_name = layer_spec["name"]
-            reqs = layer_spec.get(
-                "reqs", f"./assets/lambda/layers/{layer_name}/requirements.txt"
-            )
-            layer = CapePythonLambdaLayer(
-                layer_name,
-                reqs,
-                self.automation_assets_bucket,
-                **layer_spec.get("args", {}),
-                opts=ResourceOptions(parent=self),
-            )
-            self._function_layers[layer.layer_name] = layer
+            layer_type_args = layer_spec["type_args"]
+
+            match layer_type_args["type"]:
+                # Any key used in a case below are required for those cases and
+                # any KeyError is allowed to propagate should keys be missing
+                case "python":
+                    reqs = layer_type_args["reqs"]
+                    layer = CapePythonLambdaLayer(
+                        layer_name,
+                        reqs,
+                        self.automation_assets_bucket,
+                        **layer_spec.get("args", {}),
+                        opts=ResourceOptions(parent=self),
+                    )
+                    self._function_layers[layer.layer_name] = layer
+                case "gh-release":
+                    uri = layer_type_args["uri"]
+                    tag = layer_type_args["tag"]
+                    asset = layer_type_args["asset"]
+                    layer = CapeGHRleaseLambdaLayer(
+                        layer_name,
+                        uri,
+                        tag,
+                        asset,
+                        self.automation_assets_bucket,
+                        **layer_spec.get("args", {}),
+                        opts=ResourceOptions(parent=self),
+                    )
+                    self._function_layers[layer.layer_name] = layer
+                case _:
+                    msg = f"Unknown Lambda function layer type requested: {layer_type_args['type']}"
+                    log.error(msg)
+                    raise ValueError(msg)
 
 
 class CapePy(CapeComponentResource):
@@ -107,7 +132,7 @@ class CapePy(CapeComponentResource):
         )
 
         self.bucket = assets_bucket
-        capepy_whl = "capepy-2.1.0-py3-none-any.whl"
+        capepy_whl = "capepy-2.2.0-py3-none-any.whl"
         self.object = self.bucket.add_object(
             f"{self.name}-object",
             key=capepy_whl,
@@ -123,7 +148,7 @@ class CapePy(CapeComponentResource):
             layer_name=self.name,
             description="This layer provides the capepy Python library",
             license_info=" Apache-2.0",
-            compatible_runtimes=["python3.10"],
+            compatible_runtimes=["python3.10", "python3.13"],
             code=FileArchive("./assets/capepy/capepy_layer.zip"),
             opts=ResourceOptions(parent=self),
         )
