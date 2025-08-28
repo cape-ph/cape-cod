@@ -19,7 +19,7 @@ from pulumi import (
 import capeinfra
 from capeinfra.iam import get_inline_role
 from capeinfra.resources.compute import (
-    CapeGHRleaseLambdaLayer,
+    CapeGHReleaseLambdaLayer,
     CapePythonLambdaLayer,
 )
 from capeinfra.resources.objectstorage import VersionedBucket
@@ -105,7 +105,7 @@ class CapeMeta(CapeComponentResource):
                     uri = layer_type_args["uri"]
                     tag = layer_type_args["tag"]
                     asset = layer_type_args["asset"]
-                    layer = CapeGHRleaseLambdaLayer(
+                    layer = CapeGHReleaseLambdaLayer(
                         layer_name,
                         uri,
                         tag,
