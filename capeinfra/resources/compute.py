@@ -89,18 +89,34 @@ class CapeLambdaLayer(CapeComponentResource):
         )
         self._local_zip_pth = os.path.join(self._prefix_dir, self.LAYER_ZNAME)
 
-    def make_layer(self):
+    def _make_layer(self, layer_objs):
         """Construct the layer we are wrapping."""
+        log.warn(
+            f"+++ {self.layer_name} making layer, layer_objs: {layer_objs}"
+        )
+        layer_zip_obj = layer_objs[0]
 
-        self.lambda_layer = aws.lambda_.LayerVersion(
+        # self.lambda_layer = aws.lambda_.LayerVersion(
+        layer = aws.lambda_.LayerVersion(
             f"{self.layer_name}-lmbd-lyr",
             layer_name=self.layer_name,
             **self.layer_args,
-            s3_bucket=self._objstore.bucket.id.apply(lambda b: f"{b}"),
+            # s3_bucket=self._objstore.bucket.id.apply(lambda b: f"{b}"),
+            # s3_bucket=layer_zip_obj.bucket.apply(lambda b: f"{b}"),
+            s3_bucket=layer_zip_obj.bucket,
             # s3_key=self._layer_obj_key,
-            s3_key=self.remote_zip_key,
-            opts=ResourceOptions(parent=self),
+            # s3_key=self.remote_zip_key,
+            # s3_key=layer_zip_obj.key.apply(lambda k: f"{k}"),
+            s3_key=layer_zip_obj.key,
+            s3_object_version=layer_zip_obj.version_id,
+            # s3_object_version=layer_zip_obj.version_id.apply(
+            #     lambda vid: f"{vid}"
+            # ),
+            # opts=ResourceOptions(parent=self),
+            opts=ResourceOptions(parent=self, depends_on=[layer_zip_obj]),
         )
+        log.warn(f"+++ {self.layer_name} made layer: {layer}")
+        return layer
 
     def maybe_cleanup(self):
         """Cleanup tmp assets if configured for that."""
@@ -155,6 +171,7 @@ class CapeLambdaLayer(CapeComponentResource):
             log.error(msg)
             raise RuntimeError(msg)
 
+    # TODO: change me to prepare_blah
     @abstractmethod
     def handle_local_layer_contents(self):
         """Handle population of the local layer contents."""
@@ -182,10 +199,10 @@ class CapeLambdaLayer(CapeComponentResource):
             import_id=import_id,
         )
 
-    def publish_layer_assets(self, import_objs=False):
+    @abstractmethod
+    def publish_layer_assets(self, import_objs):
         """Publish assets for the layer.
 
-        The default implementation writes the local layer zip file to s3.
 
         Args:
             import_objs: True if import ids should be specified or pulumi
@@ -193,15 +210,10 @@ class CapeLambdaLayer(CapeComponentResource):
                          (e.g. importing remote resources into pulumi
                          deployments). Defaults to False.
         """
-        self._layer_obj = self._publish_asset(
-            FileArchive(self._local_zip_pth),
-            self.remote_zip_key,
-            self.LAYER_RES_SUFFIX,
-            import_id=self.remote_zip_key if import_objs else None,
-        )
+        pass
 
 
-class CapeGHRleaseLambdaLayer(CapeLambdaLayer):
+class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
     """CapeComponentResource wrapping a github release LambdaLayer.
 
     Args:
@@ -246,10 +258,11 @@ class CapeGHRleaseLambdaLayer(CapeLambdaLayer):
         # because we get the archive from a release managed elsewhere we will
         # publish what we get. if there are no changes, this will not actually
         # deploy anything
-        self.publish_layer_assets()
+        # self._layer_obj = self.publish_layer_assets()
+        self.publish_layer_assets(False)
 
         # now that everything is in s3, make a pulumi layer for deployment.
-        self.make_layer()
+        # self.make_layer(layer_objs)
 
         # NOTE: until fixed, this is a no-op. Intent is to clean up tmp files
         self.maybe_cleanup()
@@ -276,6 +289,24 @@ class CapeGHRleaseLambdaLayer(CapeLambdaLayer):
             open(self._local_zip_pth, "wb") as zf,
         ):
             shutil.copyfileobj(resp, zf)
+
+    def publish_layer_assets(self, import_objs):
+        """Publish assets for the layer.
+
+        Args:
+            import_objs: True if import ids should be specified or pulumi
+                         managed. Only needed in very specific circumstances
+                         (e.g. importing remote resources into pulumi
+                         deployments). Defaults to False.
+        """
+        layer_obj = self._publish_asset(
+            FileArchive(self._local_zip_pth),
+            self.remote_zip_key,
+            self.LAYER_RES_SUFFIX,
+            import_id=self.remote_zip_key if import_objs else None,
+        )
+
+        self.lambda_layer = self._make_layer([layer_obj])
 
 
 class CapePythonLambdaLayer(CapeLambdaLayer):
@@ -333,15 +364,18 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         manifest_contents = self._objstore.get_object_contents(
             self.remote_manifest_key
         )
+
         if manifest_contents is not None:
+            log.warn("--- FOUND MANIFEST IN S3, PUBLISHING MAYBE")
             # manifest was found in s3, so we need to compare it to local stuff
             # and publish if there are changes
             manifest_contents.apply(lambda mc: self.handle_manifest_output(mc))
         else:
+            log.warn("--- DID NOT FIND MANIFEST IN S3, ADDING NEW OBJECT")
             # manifest was not found in s3, so blindly publish what we have
-            self.publish_layer_assets()
+            self.publish_layer_assets(False)
 
-        self.make_layer()
+        # self.make_layer(layer_objs)
 
         # NOTE: until fixed, this is a no-op. Intent is to clean up tmp files
         self.maybe_cleanup()
@@ -393,7 +427,7 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         # there are no differences otherwise we'll publish new ones
         import_objs = not self.layers_have_diffs(obj_env_spec)
 
-        self.publish_layer_assets(import_objs=import_objs)
+        self.publish_layer_assets(import_objs)
 
     def layers_have_diffs(self, env_spec):
         """Return boolean stating if local and remote manifests have differences.
@@ -424,16 +458,13 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
             #       making sure the set of lines is the same in both
             #       regardless of order is better than trying to determine what
             #       lines are different and which file has the defferences
-            diffs = (
-                True
-                if set.difference(
-                    set(local_manifest_lines), set(remote_manifest_lines)
-                )
-                else False
-            )
+
+            diffs = set(local_manifest_lines) != set(remote_manifest_lines)
+
+        log.warn(f"--- Layer diffs? {diffs}")
         return diffs
 
-    def publish_layer_assets(self, import_objs=False):
+    def publish_layer_assets(self, import_objs):
         """Publish our layer assets to S3 or get references to existing ones.
 
         Args:
@@ -466,10 +497,11 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         #       WE NEED TO SERIOUSLY LOOK AT A BETTER WAY TO DO THIS.
 
         # in all cases, the manifest conetents will be this value. if the remote
-        # and local manifests have the same cotents, then our import will work
+        # and local manifests have the same contents, then our import will work
         # even if we give a new file. not so much in the case of the zips...
 
-        self._manifest_obj = self._publish_asset(
+        # self._manifest_obj = self._publish_asset(
+        manifest_obj = self._publish_asset(
             FileAsset(self._local_manifest_pth),
             self.remote_manifest_key,
             self.MANIFEST_RES_SUFFIX,
@@ -489,6 +521,8 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
                 zfile.write(contents)
 
         if import_objs:
+
+            log.warn("--- importing existing remote zip")
             # need to get the zipfile from s3 and then re-upload in the import
             # or pulumi will see a change...
             remote_zip_contents = self._objstore.get_object_contents(
@@ -499,6 +533,7 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
                 # and publish if there are changes
                 remote_zip_contents.apply(lambda rzc: write_local_zip(rzc))
         else:
+            log.warn("--- publishing local zip")
             # first, build up the zip file for as lambda will expect it. the format
             # of this archive is very important. it must contain a single directory
             # named `python` that then contains all of the dependencies in a manner
@@ -521,11 +556,17 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
                             ),
                         )
 
+        log.warn("--- calling _publish_asset")
         # the _local_zip_pth should now be usable regardless of if we imported
         # or have a new set of files.
-        self._layer_obj = self._publish_asset(
+        # self._layer_obj = self._publish_asset(
+        layer_obj = self._publish_asset(
             FileArchive(self._local_zip_pth),
             self.remote_zip_key,
             self.LAYER_RES_SUFFIX,
             import_id=self.remote_zip_key if import_objs else None,
         )
+
+        # return [layer_obj, manifest_obj]
+        self.lambda_layer = self._make_layer([layer_obj, manifest_obj])
+        log.warn(f"--- {self.layer_name} has a layer: {self.lambda_layer}")
