@@ -188,6 +188,17 @@ class CapeRestApi(CapeComponentResource):
             funct_args = hcfg.get("funct_args", {})
             layer_names = hcfg.get("layers", [])
 
+            import pprint
+
+            print("META'S FUNCTION LAYERS: ")
+            pprint.pprint(capeinfra.meta._function_layers)
+            pprint.pprint(
+                {
+                    k: v.lambda_layer
+                    for k, v in capeinfra.meta._function_layers.items()
+                }
+            )
+
             layer_arns = [
                 v.lambda_layer.arn
                 for k, v in capeinfra.meta._function_layers.items()
@@ -201,15 +212,15 @@ class CapeRestApi(CapeComponentResource):
             )
             vars.update(self.env_vars)
 
-            log.warn(f"{hcfg['name']} lambda is getting vars: {vars}")
-
             handler_lambda = aws.lambda_.Function(
                 f"{self.name}-{hcfg['name']}-lmbdfn",
                 role=self._api_lambda_role.arn,
                 layers=layer_arns,
                 code=AssetArchive({"index.py": FileAsset(hcfg["code"])}),
                 environment={"variables": vars},
-                opts=ResourceOptions(parent=self),
+                opts=ResourceOptions(
+                    parent=self,
+                ),
                 # below are allowed to be configured externally and if not given
                 # will be defaulted to values in pulumi docs (except description
                 # which is given a sensible default)
