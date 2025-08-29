@@ -370,60 +370,49 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         )
         self._install_dir = os.path.join(self._prefix_dir, "python")
 
-        self._make_null_layer()
+        # we will do this in all cases, even if there is no difference against
+        # the remote (because we won't know there are no differences without
+        # doing this)
+        op = self.prepare_local_layer_contents()
+        op2 = op.apply(lambda o: self.pip_list_layer_async())
+        # self.pip_list_layer()
 
-        # # we will do this in all cases, even if there is no difference against
-        # # the remote (because we won't know there are no differences without
-        # # doing this)
-        # op = self.prepare_local_layer_contents()
-        # op2 = op.apply(lambda o: self.pip_list_layer_async())
-        # # self.pip_list_layer()
-        #
-        # # grab the manifest contents from s3. result is a pulumi Output. if
-        # # there is no remote manifest, the output will yield None. otherwise the
-        # # it will be bytes.
-        # manifest_contents = op2.apply(
-        #     lambda o: self._objstore.get_object_contents(
-        #         self.remote_manifest_key
-        #     )
-        # )
-        #
-        # # determine if we are  deploying the local layer zip or impolrting the
-        # # existing remote one.
-        # deploy_local = manifest_contents.apply(
-        #     lambda mc: self._should_deploy_local_layer(mc)
-        # )
-        #
-        # # when we publish assets, we'll either deploy our local layer archive
-        # # or import existing remote resources. we import if we don't deploy
-        # # local.
-        # # deploy_local is a pulumi Output, so another apply is needed
-        # layer_assets = deploy_local.apply(
-        #     lambda dl: self.publish_layer_assets(import_objs=not dl)
-        # )
-        #
-        # layer_assets.apply(lambda la: self._make_layer(la))
-        #
-        # self.maybe_cleanup()
+        # grab the manifest contents from s3. result is a pulumi Output. if
+        # there is no remote manifest, the output will yield None. otherwise the
+        # it will be bytes.
+        manifest_contents = op2.apply(
+            lambda o: self._objstore.get_object_contents(
+                self.remote_manifest_key
+            )
+        )
 
-        # if manifest_contents is not None:
-        #     log.warn("--- FOUND MANIFEST IN S3, PUBLISHING MAYBE")
-        #     # manifest was found in s3, so we need to compare it to local stuff
-        #     # and publish if there are changes
-        #     manifest_contents.apply(lambda mc: self.handle_manifest_output(mc))
-        # else:
-        #     log.warn("--- DID NOT FIND MANIFEST IN S3, ADDING NEW OBJECT")
-        #     # manifest was not found in s3, so blindly publish what we have
-        #     self.publish_layer_assets(False)
-        #
-        # # self.make_layer(layer_objs)
-        #
-        # # NOTE: until fixed, this is a no-op. Intent is to clean up tmp files
-        # self.maybe_cleanup()
+        # determine if we are  deploying the local layer zip or impolrting the
+        # existing remote one.
+        deploy_local = manifest_contents.apply(
+            lambda mc: self._should_deploy_local_layer(mc)
+        )
 
-    def _make_null_layer(self):
+        # when we publish assets, we'll either deploy our local layer archive
+        # or import existing remote resources. we import if we don't deploy
+        # local.
+        # deploy_local is a pulumi Output, so another apply is needed
+        layer_assets = deploy_local.apply(
+            lambda dl: self.publish_layer_assets(import_objs=not dl)
+        )
+
+        # layer_assets.apply(lambda la: self._make_static_layer())
+
+        # NOTE: hving this call in an output.apply makes it so the python layers
+        #       (lambda_layer members) are not resolved correctly as futures
+        #       (meaning clients of the function layers get a None.
+        #       Need to figure out the secret sauce to get that right (maybe the
+        #       layer creation method needs to be async?
+        self._make_static_layer()
+        self.maybe_cleanup()
+
+    def _make_static_layer(self):
         """Construct the layer we are wrapping."""
-        log.warn(f"+++ {self.layer_name} making NULL layer")
+        log.warn(f"+++ {self.layer_name} making STATIC layer")
 
         self.lambda_layer = aws.lambda_.LayerVersion(
             f"{self.layer_name}-lmbd-lyr",
