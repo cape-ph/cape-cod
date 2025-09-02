@@ -83,6 +83,7 @@ config:
         #   required.
         function_layers:
             # TODO: ISSUE #266 add ETL capepy layer.
+            # TODO: make me a mapping with unique name keys instead of a list with names
             - name: capi-all
               cleanup_tmp: False
               type_args:
