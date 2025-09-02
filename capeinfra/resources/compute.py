@@ -1,6 +1,5 @@
 """Module of compute abstractions."""
 
-import asyncio
 import os
 import os.path
 import shutil
@@ -64,10 +63,11 @@ class CapeLambdaLayer(CapeComponentResource):
         super().__init__(
             self.type_name,
             name,
+            *args,
             **kwargs,
         )
         self.layer_name = name
-        self.lambda_layer = None
+        self._lambda_layer = None
         self.layer_args = {
             "description": description,
             "license_info": license_info,
@@ -91,23 +91,51 @@ class CapeLambdaLayer(CapeComponentResource):
         )
         self._local_zip_pth = os.path.join(self._prefix_dir, self.LAYER_ZNAME)
 
-    def _make_layer(self, layer_objs):
-        """Construct the layer we are wrapping."""
-        log.warn(
-            f"+++ {self.layer_name} making layer, layer_objs: {layer_objs}"
-        )
-        layer_zip_obj = layer_objs[0]
+    @property
+    def lambda_layer(self):
+        """Accessor for the _lambda_layer member.
 
-        self.lambda_layer = aws.lambda_.LayerVersion(
+        Causes the layer to be created if it has not been already.
+
+        Returns:
+            The _lambda_layer member.
+        """
+        if self._lambda_layer is None:
+            self._make_layer()
+        return self._lambda_layer
+
+    def should_deploy_local_layer(self):
+        """Determine if the layer should be deployed or imported.
+
+        The return of this method is a Pulumi Output wrapping a boolean.
+        This method should be overridden when special logic warrants.
+
+        Returns:
+            A Pulumi Output wrapping a boolean stating if the local layer
+            contents should be deployed (True) or if the remote contents should
+            be imported (False).
+        """
+        return Output.all().apply(lambda _: True)
+
+    def _make_layer(self):
+        """Construct the layer we are wrapping."""
+        self.prepare_local_layer_contents()
+        deploy_local = self.should_deploy_local_layer()
+        layer_assets = deploy_local.apply(
+            lambda b: self.publish_layer_assets(b)
+        )
+
+        layer_archive = layer_assets[0]
+
+        self._lambda_layer = aws.lambda_.LayerVersion(
             f"{self.layer_name}-lmbd-lyr",
             layer_name=self.layer_name,
             **self.layer_args,
-            s3_bucket=layer_zip_obj.bucket,
-            s3_key=layer_zip_obj.key,
-            s3_object_version=layer_zip_obj.version_id,
-            opts=ResourceOptions(parent=self, depends_on=[layer_zip_obj]),
+            s3_bucket=layer_archive.bucket,
+            s3_key=layer_archive.key,
+            s3_object_version=layer_archive.version_id,
+            opts=ResourceOptions(parent=self, depends_on=[layer_archive]),
         )
-        log.warn(f"+++ {self.layer_name} made layer: {self.lambda_layer}")
 
     def maybe_cleanup(self):
         """Cleanup tmp assets if configured for that."""
@@ -132,9 +160,8 @@ class CapeLambdaLayer(CapeComponentResource):
     def remote_zip_key(self):
         """Return the remote zip key, setting default if not overridden."""
         if self._remote_zip_key is None:
-            self._remote_zip_key = (
-                f"{self.LAYERS_OBJST_PREFIX}/{self.layer_name}"
-                f"/{self.LAYER_ZNAME}"
+            self._remote_zip_key = "/".join(
+                [self.LAYERS_OBJST_PREFIX, self.layer_name, self.LAYER_ZNAME]
             )
         return self._remote_zip_key
 
@@ -164,32 +191,21 @@ class CapeLambdaLayer(CapeComponentResource):
 
         return True
 
-    async def run_command_async(
-        self,
-        cmd,
-        outstream=asyncio.subprocess.PIPE,
-        errstream=asyncio.subprocess.PIPE,
-    ):
-        proc = await asyncio.create_subprocess_shell(
-            cmd, stdout=outstream, stderr=errstream
-        )
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"{cmd} returned {proc.returncode}: {stderr.decode()}"
-            )
-
-        return stdout.decode("utf-8")
-
-    # TODO: change me to prepare_blah
     @abstractmethod
     def prepare_local_layer_contents(self):
-        """Handle population of the local layer contents."""
+        """Handle population of the local layer contents.
+
+        This is always called, even if there is no change against a remote
+        object.
+        """
         pass
 
     def _publish_asset(self, asset, objkey, res_suffix, import_id=None):
         """Publish an archive to S3.
+
+        If the import_id is not None, this doesn't actually result in anything
+        new being "published" but references to remote objects are imported into
+        pulumi's world so things are tracked correctly.
 
         Args:
             asset: The pulumi asset to publish.
@@ -203,6 +219,7 @@ class CapeLambdaLayer(CapeComponentResource):
         """
         # add new objects or get references for the existing ones so pulumi
         # manages correctly
+
         return self._objstore.add_object(
             f"{self.layer_name}-{res_suffix}",
             objkey,
@@ -211,15 +228,22 @@ class CapeLambdaLayer(CapeComponentResource):
         )
 
     @abstractmethod
-    def publish_layer_assets(self, import_objs):
+    def publish_layer_assets(self, deploy_local):
         """Publish assets for the layer.
+
+        NOTE: This is called via an Output.apply lambda.
 
 
         Args:
-            import_objs: True if import ids should be specified or pulumi
-                         managed. Only needed in very specific circumstances
-                         (e.g. importing remote resources into pulumi
-                         deployments). Defaults to False.
+            deploy_local: True if we are deploying the local layer contents,
+                          False if import ids should be specified or pulumi
+                          managed. Only needed to be False in very specific
+                          circumstances (e.g. importing remote resources into
+                          pulumi deployments).
+        Returns:
+            The list of published assets for the layer. The first item in the
+            list *must* be the reference to the layer archive (needed by the
+            LayerVersion constructor).
         """
         pass
 
@@ -254,6 +278,7 @@ class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
         super().__init__(
             name,
             objstore,
+            *args,
             desc_name=(f"{name} pre-built GitHub release Lambda layer."),
             **kwargs,
         )
@@ -262,21 +287,6 @@ class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
         self.tag = tag
         self.asset = asset
         self._layer_archive_uri = None
-
-        # prime the system
-        self.prepare_local_layer_contents()
-
-        # because we get the archive from a release managed elsewhere we will
-        # publish what we get. if there are no changes, this will not actually
-        # deploy anything
-        # self._layer_obj = self.publish_layer_assets()
-        layer_assets = self.publish_layer_assets(False)
-
-        # now that everything is in s3, make a pulumi layer for deployment.
-        self._make_layer(layer_assets)
-
-        # NOTE: until fixed, this is a no-op. Intent is to clean up tmp files
-        self.maybe_cleanup()
 
     @property
     def type_name(self) -> str:
@@ -301,25 +311,33 @@ class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
         ):
             shutil.copyfileobj(resp, zf)
 
-    def publish_layer_assets(self, import_objs):
+    def publish_layer_assets(self, deploy_local):
         """Publish assets for the layer.
 
         Args:
-            import_objs: True if import ids should be specified or pulumi
-                         managed. Only needed in very specific circumstances
-                         (e.g. importing remote resources into pulumi
-                         deployments). Defaults to False.
+            deploy_local: True the local layer contents should be published,
+                          False if refereces to remote objects should be
+                          imported. Only needs to be False in very specific
+                          circumstances (e.g. importing remote resources into
+                          pulumi deployments).
+        Returns:
+            The list of published assets for the layer. The first item in the
+            list *must* be the reference to the layer archive (needed by the
+            LayerVersion constructor).
         """
+        # because this type of layer is built from a remote managed (and
+        # release-versioned) archive, we really should never have deploy_local
+        # as False here. We will let the fact that we will not deploy the same
+        # file (that has the same file hash) over an existing one due to how the
+        # Pulumi aws.s3 BucketObjectv2 works.
         layer_obj = self._publish_asset(
             FileArchive(self._local_zip_pth),
             self.remote_zip_key,
             self.LAYER_RES_SUFFIX,
-            import_id=self.remote_zip_key if import_objs else None,
+            import_id=None if deploy_local else self.remote_zip_key,
         )
 
         return [layer_obj]
-
-        # self.lambda_layer = self._make_layer([layer_obj])
 
 
 class CapePythonLambdaLayer(CapeLambdaLayer):
@@ -337,8 +355,6 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
                              the form of the LambdaLayer arg of the same name.
     """
 
-    # TODO: rewrite me...
-
     # local and remote filename for the layer manifest file
     MANIFEST_NAME = "manifest.txt"
     # suffix for manifest bucket object resources
@@ -355,6 +371,7 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         super().__init__(
             name,
             objstore,
+            *args,
             desc_name=f"{name} Python Lambda layer.",
             **kwargs,
         )
@@ -370,61 +387,6 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         )
         self._install_dir = os.path.join(self._prefix_dir, "python")
 
-        # we will do this in all cases, even if there is no difference against
-        # the remote (because we won't know there are no differences without
-        # doing this)
-        op = self.prepare_local_layer_contents()
-        op2 = op.apply(lambda o: self.pip_list_layer_async())
-        # self.pip_list_layer()
-
-        # grab the manifest contents from s3. result is a pulumi Output. if
-        # there is no remote manifest, the output will yield None. otherwise the
-        # it will be bytes.
-        manifest_contents = op2.apply(
-            lambda o: self._objstore.get_object_contents(
-                self.remote_manifest_key
-            )
-        )
-
-        # determine if we are  deploying the local layer zip or impolrting the
-        # existing remote one.
-        deploy_local = manifest_contents.apply(
-            lambda mc: self._should_deploy_local_layer(mc)
-        )
-
-        # when we publish assets, we'll either deploy our local layer archive
-        # or import existing remote resources. we import if we don't deploy
-        # local.
-        # deploy_local is a pulumi Output, so another apply is needed
-        layer_assets = deploy_local.apply(
-            lambda dl: self.publish_layer_assets(import_objs=not dl)
-        )
-
-        # layer_assets.apply(lambda la: self._make_static_layer())
-
-        # NOTE: hving this call in an output.apply makes it so the python layers
-        #       (lambda_layer members) are not resolved correctly as futures
-        #       (meaning clients of the function layers get a None.
-        #       Need to figure out the secret sauce to get that right (maybe the
-        #       layer creation method needs to be async?
-        self._make_static_layer()
-        self.maybe_cleanup()
-
-    def _make_static_layer(self):
-        """Construct the layer we are wrapping."""
-        log.warn(f"+++ {self.layer_name} making STATIC layer")
-
-        self.lambda_layer = aws.lambda_.LayerVersion(
-            f"{self.layer_name}-lmbd-lyr",
-            layer_name=self.layer_name,
-            **self.layer_args,
-            s3_bucket="ccd-meta-assets-vbkt-s3-8b7134e",
-            s3_key="layers/capi-all/layer.zip",
-            s3_object_version="SJdtg6pLsIroseQaOzQi8_C.muoglgMj",
-            opts=ResourceOptions(parent=self),
-        )
-        log.warn(f"+++ {self.layer_name} made layer: {self.lambda_layer}")
-
     @property
     def type_name(self) -> str:
         """Return the type_name (pulumi namespacing)."""
@@ -434,99 +396,66 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
     def remote_manifest_key(self):
         """Return the remote manifest key, setting default if not overridden."""
         if self._remote_manifest_key is None:
-            self._remote_manifest_key = (
-                f"{self.LAYERS_OBJST_PREFIX}/{self.layer_name}"
-                f"/{self.MANIFEST_NAME}"
+            self._remote_manifest_key = "/".join(
+                [self.LAYERS_OBJST_PREFIX, self.layer_name, self.MANIFEST_NAME]
             )
         return self._remote_manifest_key
 
     def prepare_local_layer_contents(self):
         """Install layer packages locally to a temporary directory."""
 
-        # the full pip command we'll run (in the format desired by
-        # subprocess.run)
+        # the full pip command we'll run
         pip_cmd = f"pip install -r {self.reqs} -t {self._install_dir}"
         pip_args = pip_cmd.split()
-        # self._run_command(pip_args)
-        corout = self.run_command_async(pip_cmd)
-        corout_output = Output.from_input(corout)
-        corout_output.apply(
-            lambda o: log.info(f"prepare_local_layer_contents output: {o}")
-        )
+        if self._run_command(pip_args):
+            return self._pip_list_layer()
+        else:
+            raise RuntimeError(
+                f"Error preparing local layer contents for layer: "
+                f"{self.layer_name}"
+            )
 
-        return corout_output
-
-    # def prepare_local_layer_contents(self):
-    #     """Install layer packages locally to a temporary directory."""
-    #
-    #     # the full pip command we'll run (in the format desired by
-    #     # subprocess.run)
-    #     pip_cmd = f"pip install -r {self.reqs} -t {self._install_dir}"
-    #     pip_args = pip_cmd.split()
-    #     self._run_command(pip_args)
-
-    def pip_list_layer_async(self):
+    def _pip_list_layer(self):
         """Generate the pip list file for the local layer environment."""
 
-        def write_local_manifest(pth, contents):
-            with open(pth, "w") as manifest:
-                manifest.write(contents)
-
-        # the full pip command we'll run (in the format desired by
-        # subprocess.run)
-        pip_cmd = f"pip list --format freeze --path {self._install_dir}"
-        pip_args = pip_cmd.split()
-
-        corout = self.run_command_async(pip_cmd)
-        corout_output = Output.from_input(corout)
-
-        corout_output.apply(
-            lambda o: write_local_manifest(self._local_manifest_pth, o)
-        )
-        return corout_output
-        # with open(self._local_manifest_pth, "w") as manifest:
-        #     # self._run_command(pip_args, outstream=manifest)
-        #     corout = self.run_command_async(pip_cmd)
-        #     corout_output = Output.from_input(corout)
-        #
-        #     corout_output.apply(lambda o: manifest.write(f"{o}"))
-
-    def pip_list_layer(self):
-        """Generate the pip list file for the local layer environment."""
-
+        rc = True
         # the full pip command we'll run (in the format desired by
         # subprocess.run)
         pip_cmd = f"pip list --format freeze --path {self._install_dir}"
         pip_args = pip_cmd.split()
         with open(self._local_manifest_pth, "w") as manifest:
-            self._run_command(pip_args, outstream=manifest)
+            rc = self._run_command(pip_args, outstream=manifest)
+        return rc
 
-    def _should_deploy_local_layer(self, manifest_output):
-        """Determine if we're deploying the local layer or importing the remote.
+    def should_deploy_local_layer(self):
+        """Determine if the layer should be deployed or imported.
 
-        Method returns a boolean stating if we should deploy the local layer
-        (True) or import an existing remote one (False). If the remote manifest
-        is the same as the local one, we will return False, otherwise we return
-        True.
+        The return of this method is a Pulumi Output wrapping a boolean.
+        This method should be overridden when special logic warrants.
 
-        Args:
-            manifest_output: A pulumi Output linked to the contents of the
-                             remote manifest for the layer.
         Returns:
-            True if the local layer should be deployed, False if the remote
-            should be imported.
+            A Pulumi Output wrapping a boolean stating if the local layer
+            contents should be deployed (True) or if the remote contents should
+            be imported (False).
         """
-        deploy_local = True
+        deploy_local = Output.all().apply(lambda _: True)
+
+        manifest_contents = self._objstore.get_object_contents(
+            self.remote_manifest_key
+        )
 
         # if manifest_contents is None, there was no remote manifest and we
         # have to deploy the local one.
-        if manifest_output is not None:
-            manifest_bio = BytesIO(manifest_output)
-
-            # check if the manifests match or have differences. We'll import if
-            # there are no differences otherwise we'll publish new ones
-            deploy_local = not self._do_layers_match(
-                manifest_bio.getvalue().decode("utf-8")
+        if manifest_contents is not None:
+            deploy_local = manifest_contents.apply(
+                lambda mc: not self._do_layers_match(
+                    # NOTE: we already checked mc for None, but that doesn't
+                    #       make checkers happy. doing the 'or b""' to get
+                    #       around that
+                    BytesIO(mc or b"")
+                    .getvalue()
+                    .decode("utf-8")
+                )
             )
 
         return deploy_local
@@ -565,62 +494,17 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
 
         return layers_match
 
-    # def handle_manifest_output(self, manifest_contents):
-    #     """Handle remote manifest based on match (or not) with local manifest.
-    #
-    #     Args:
-    #         manifest_contents: A pulumi Output linked to the contents of the
-    #                            remote manifest for the layer.
-    #     """
-    #     obj_env_spec = BytesIO(manifest_contents)
-    #
-    #     # check if the manifests match or have differences. We'll import if
-    #     # there are no differences otherwise we'll publish new ones
-    #     import_objs = not self.layers_have_diffs(obj_env_spec)
-    #
-    #     self.publish_layer_assets(import_objs)
-
-    # def layers_have_diffs(self, env_spec):
-    #     """Return boolean stating if local and remote manifests have differences.
-    #
-    #     Args:
-    #         env_spec: A BytesIO containing the contents of the remote manifest.
-    #
-    #     Returns:
-    #         True if the remote and local manifests match, else False.
-    #     """
-    #     diffs = True
-    #
-    #     if env_spec is not None:
-    #         # we'll read both files into lists of lines then do set math to
-    #         # determine if they're the same or not. This way only the contents
-    #         # are diffed, nit the order.
-    #
-    #         local_manifest_lines = open(
-    #             self._local_manifest_pth, "r"
-    #         ).readlines()
-    #
-    #         # readlines keeps line endings, so make sure we do same here.
-    #         remote_manifest_lines = (
-    #             env_spec.getvalue().decode("utf-8").splitlines(keepends=True)
-    #         )
-    #
-    #         # NOTE: difflib.Differ exists, but is not really what we want.
-    #         #       making sure the set of lines is the same in both
-    #         #       regardless of order is better than trying to determine what
-    #         #       lines are different and which file has the defferences
-    #
-    #         diffs = set(local_manifest_lines) != set(remote_manifest_lines)
-    #
-    #     log.warn(f"--- Layer diffs? {diffs}")
-    #     return diffs
-
-    def publish_layer_assets(self, import_objs):
+    def publish_layer_assets(self, deploy_local):
         """Publish our layer assets to S3 or get references to existing ones.
 
         Args:
-            import_objs: True if the remote objects should be imported as
-                         references, False if we are publishing new files.
+            deploy_local: True if the local layer contents should be deployed,
+                          False if remote objects should be imported as
+                          references.
+        Returns:
+            The list of published assets for the layer. The first item in the
+            list *must* be the reference to the layer archive (needed by the
+            LayerVersion constructor).
         """
 
         # NOTE: Apologies to anyone that comes here later. I regret some
@@ -647,16 +531,15 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         #       current zip out of s3 and then re-add it with an import id.
         #       WE NEED TO SERIOUSLY LOOK AT A BETTER WAY TO DO THIS.
 
-        # in all cases, the manifest conetents will be this value. if the remote
+        # in all cases, the manifest contents will be this value. if the remote
         # and local manifests have the same contents, then our import will work
         # even if we give a new file. not so much in the case of the zips...
 
-        # self._manifest_obj = self._publish_asset(
         manifest_obj = self._publish_asset(
             FileAsset(self._local_manifest_pth),
             self.remote_manifest_key,
             self.MANIFEST_RES_SUFFIX,
-            import_id=self.remote_manifest_key if import_objs else None,
+            import_id=None if deploy_local else self.remote_manifest_key,
         )
 
         def write_local_zip(contents):
@@ -671,20 +554,7 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
             with open(self._local_zip_pth, "wb") as zfile:
                 zfile.write(contents)
 
-        if import_objs:
-
-            log.warn("--- importing existing remote zip")
-            # need to get the zipfile from s3 and then re-upload in the import
-            # or pulumi will see a change...
-            remote_zip_contents = self._objstore.get_object_contents(
-                self.remote_zip_key
-            )
-            if remote_zip_contents is not None:
-                # manifest was found in s3, so we need to compare it to local stuff
-                # and publish if there are changes
-                remote_zip_contents.apply(lambda rzc: write_local_zip(rzc))
-        else:
-            log.warn("--- publishing local zip")
+        if deploy_local:
             # first, build up the zip file for as lambda will expect it. the format
             # of this archive is very important. it must contain a single directory
             # named `python` that then contains all of the dependencies in a manner
@@ -707,17 +577,24 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
                             ),
                         )
 
-        log.warn("--- calling _publish_asset")
+        else:
+            # need to get the zipfile from s3 and then re-upload in the import
+            # or pulumi will see a change...
+            remote_zip_contents = self._objstore.get_object_contents(
+                self.remote_zip_key
+            )
+            if remote_zip_contents is not None:
+                # manifest was found in s3, so we need to compare it to local stuff
+                # and publish if there are changes
+                remote_zip_contents.apply(lambda rzc: write_local_zip(rzc))
+
         # the _local_zip_pth should now be usable regardless of if we imported
         # or have a new set of files.
-        # self._layer_obj = self._publish_asset(
         layer_obj = self._publish_asset(
             FileArchive(self._local_zip_pth),
             self.remote_zip_key,
             self.LAYER_RES_SUFFIX,
-            import_id=self.remote_zip_key if import_objs else None,
+            import_id=None if deploy_local else self.remote_zip_key,
         )
 
         return [layer_obj, manifest_obj]
-        # self.lambda_layer = self._make_layer([layer_obj, manifest_obj])
-        # log.warn(f"--- {self.layer_name} has a layer: {self.lambda_layer}")
