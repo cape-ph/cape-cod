@@ -864,9 +864,8 @@ class CapeCannedReports(CapeComponentResource):
         # TODO: need a better way to access layers from CapeMeta *and*
         #       to access the layer objects from a CapePythonLambdaLayer
         layers = [
-            self._function_layers[n]._layer_obj.arn
+            self._function_layers[n].lambda_layer.arn
             for n in report_config["data_function"]["layers"]
-            if self._function_layers[n]._layer_obj is not None
         ]
 
         report_data_lambda = aws.lambda_.Function(
