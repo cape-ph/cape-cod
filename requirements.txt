@@ -24,3 +24,5 @@ tabula-py>=2.9.0,<3.0.0
 pypdf>=6.0.0,<7.0.0
 # cape api lambda requirements
 multipart>=1.2.1,<2.0.0
+# report-gen requirements
+weasyprint==66.0
