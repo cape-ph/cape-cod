@@ -530,8 +530,14 @@ def get_api_policy(grants: dict[str, list[Output]]):
             ],
         },
         {
+            # TODO: make this policy more strict once we organize our queues/resources
             "Effect": "Allow",
-            "Action": ["s3:ListBucket", "s3:ListAllMyBuckets", "s3:PutObject"],
+            "Action": [
+                "s3:ListBucket",
+                "s3:ListAllMyBuckets",
+                "s3:PutObject",
+                "s3:GetObject",
+            ],
             "Resource": [
                 "*",
             ],
@@ -539,6 +545,13 @@ def get_api_policy(grants: dict[str, list[Output]]):
         {  # TODO: make this policy more strict once we organize our queues/resources
             "Effect": "Allow",
             "Action": ["batch:SubmitJob", "batch:DescribeJobs"],
+            "Resource": [
+                "*",
+            ],
+        },
+        {  # TODO: make this policy more strict once we organize our queues/resources
+            "Effect": "Allow",
+            "Action": ["lambda:InvokeFunction"],
             "Resource": [
                 "*",
             ],

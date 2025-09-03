@@ -40,14 +40,42 @@ config:
         # build up as part of CAPE's metadata and then can be used by name
         # in later configured resources. Each list item will have the following
         # keys:
-        # * name (string, required) - The name of the layer. Must be unique
-        #   across all layers, and when in AWS must conform to bucket object
-        #   key requirements:
+        # * name (string, required)
+        #   The name of the layer. Must be unique across all layers, and when
+        #   in AWS must conform to bucket object key requirements:
         #   https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
-        # * reqs (string, optional) - A path to the python requirements file
-        #   for the layer. If not provided it will be assumed to be
-        #   `./assets/lambda/layers/<name>` where `name` is the name configured
-        #   for the layer
+        # * type_args (mapping, required)
+        #   * type (string, required)
+        #     The type of layer. Allowed values are
+        #       - `python` Layer will be built locally as a python environment by
+        #         pip-installing a requirements file
+        #       - `gh-release` - Layer is pre-built and provided as a release asset at a
+        #         github release URI of the format
+        #         https://github.com/[repo]/releases/download/[tagname]/[asset]
+        #   * reqs (string, optional)
+        #     This key is optional across all layer types, but is *required*
+        #     for layers of type "python". It's a path to the python
+        #     requirements file for the layer. E.g.
+        #     `./assets/lambda/layers/<name>/requirements.txt` where `name` is
+        #     the name configured for the layer. Only valid for "python" typed
+        #     layers
+        #   * uri (string, optional)
+        #     This key is optional across all layer types but is *required* for
+        #     layers of type "gh-release". It's the uri of the github repository.
+        #     Format is https://github.com/repo. Only valid for "gh-release"
+        #     typed layers.
+        #   * tag (string, optional)
+        #     This key is optional across all layer types but is *required* for
+        #     layers of type "gh-release". It's the tag value for a release.
+        #     This often is a version identifier, but depends on release naming
+        #     conventions of the repository. Only valid for "gh-release"
+        #     typed layers.
+        #   * asset (string, optional)
+        #     This key is optional across all layer types but is *required* for
+        #     layers of type "gh-release". It's the name of the asset in a
+        #     tagged release that is the layer archive of interest. Depends on
+        #     release naming conventions of the repository. Only valid for
+        #     "gh-release" typed layers.
         # * args (mapping, optional) - A mapping of function args to use in
         #   construction of a lambda layer. Keys must match the names of
         #   keywords args in CapePythonLambdaLayer and values must be as
@@ -55,12 +83,44 @@ config:
         #   required.
         function_layers:
             # TODO: ISSUE #266 add ETL capepy layer.
+            # TODO: make me a mapping with unique name keys instead of a list with names
             - name: capi-all
+              cleanup_tmp: False
+              type_args:
+                  type: python
+                  reqs: ./assets/lambda/layers/capi-all/requirements.txt
               args:
                   description:
                       CAPI API python pip dependencies layer for all handlers.
                   compatible_runtimes:
                       - python3.10
+                      - python3.13
+            - name: report-gen
+              cleanup_tmp: False
+              type_args:
+                  type: python
+                  reqs: ./assets/lambda/layers/report-gen/requirements.txt
+              args:
+                  description:
+                      CAPI API python pip dependencies layer for all report
+                      generators.
+                  compatible_runtimes:
+                      - python3.13
+
+            - name: kotify-cpu
+              cleanup_tmp: False
+              type_args:
+                  type: gh-release
+                  uri: https://github.com/kotify/cloud-print-utils
+                  tag: weasyprint-65.1
+                  asset: weasyprint-layer-python3.13-x86_64.zip
+              args:
+                  description:
+                      Third party Lambda layer (cloud-print-utils by kotify)
+                      with system dependencies for the weasyprint python
+                      library.
+                  compatible_runtimes:
+                      - python3.13
         # `principals` (mapping, required)
         # Contains local users and groups required for any cape deployment.
         # TODO: any issue specifying princpals at this level? will we need
@@ -188,6 +248,78 @@ config:
                 - name: etl-seqreadarch
                   key: glue/etl/etl_seqarchive.py
                   srcpth: ./assets/etl/etl_seqarchive.py
+        # `report` (mapping, optional)
+        # Contains configuration related to canned reports that can be
+        # generated. Contains the following keys
+        report:
+            # * `template_prefix` (string, optional) The prefix used for report
+            #    templates stored in s3
+            # * `reports` (mapping[], optional)
+            #    List of configured canned reports. Every item in the list is
+            #    required to have:
+            #   * `id` (string, required) - The unique id of the report.
+            #   * `short_name` (string, required)
+            #     A short name that will be used in resource creation
+            #     (naming of the resources). As this is used in resource
+            #     names, it should be kept as short as possible, but
+            #     must be unique across reports.
+            #   * `display_name` (string, required) - The display name to be
+            #     used for the report. Does not need to be unique, but common
+            #     display names will appear as different items with the same
+            #     text in user interfaces.
+            #   * `template_path` (string, optional) - The jinja2 template path
+            #     of the report in the deployment repo. If not provided it
+            #     defaults to
+            #     ./assets/report/{id}/template.html.j2 where `{id}` is the
+            #     configured id for this report.
+            #   * data_function (mapping, required) - Configuration for the
+            #     lambda function that will retrieve data for the report:
+            #     * `code` (string, optional)
+            #       The path in the repo (from repo root) for the lambda that
+            #       implements the data function. If not provided it defaults
+            #       to ./assets/report/{id}/data_function.py where `{id}` is
+            #       the configured id for this report.
+            #     * `layers` (string[], optional)
+            #       A list of layer names (configured in
+            #       cape-meta:function_layers) that should be applied to the
+            #       function execution environment.
+            #     * `funct_args` (mapping, optional)
+            #       Arguments to pass *as is* to the lambda function
+            #       constructor. The keys used need to map to actual argument
+            #       names of the pulumi lambda function constructor.
+            #       Additionally, most args will be ignored (e.g.
+            #       environment, role) as they are dynamically injected in
+            #       code or not used currently. If not provided, the handler
+            #       will default to  "index.index_handler" and the runtime
+            #       will default to "python3.10". The following arguments are
+            #       optional but supported:
+            #       * architectures (string[], defaults to ["x86_64"])
+            #       * description (string, defaults to "handler_name Lambda
+            #         Function")
+            #       * handler (string, defaults to "index.index_handler")
+            #       * memory_size (int, defaults to 128[unit is MB])
+            #       * runtime (string defaults to "python3.10")
+            #       * timeout (int, defaults to 3[unit is seconds])
+            template_prefix: reports/templates
+            reports:
+                - id: bactopia-single-sample-analysis
+                  short_name: bctpssa
+                  display_name: "Bactopia Single Sample Analysis"
+                  template_path: "./assets/report/bactopia-single-sample-analysis/template.html.j2"
+                  data_function:
+                      code: "./assets/report/bactopia-single-sample-analysis/data_function.py"
+                      layers:
+                          - capi-all
+                      funct_args:
+                          handler: "index.data_function"
+                          runtime: "python3.10"
+                          architectures:
+                              - "x86_64"
+                          description:
+                              "Bactopia Single Sample Report Data Lambda
+                              Function"
+                          memory_size: 128
+                          timeout: 3
     # `cape-cod:swimlanes` (mapping, required)
     # Contains the configuration for all swimlanes. Swimlanes define logical
     # separations of public, protected and private resources in CAPE. Each
@@ -502,6 +634,7 @@ config:
                           - "USER_ATTRS_DDB_TABLE"
                           - "ETL_ATTRS_DDB_TABLE"
                           - "CRAWLER_ATTRS_DDB_TABLE"
+                          - "CANNED_REPORT_DDB_TABLE"
                       # env_vars: TODO: add env vars for this API if needed.
                       # TODO: memory and timeouts for these functions need
                       #       some love
@@ -678,6 +811,25 @@ config:
                                     "getrawobjuploadurl Lambda Function"
                                 memory_size: 128
                                 timeout: 10
+                          - id: "get_canned_report_handler"
+                            name: "getcannedreport"
+                            code: "assets/api/capi/handlers/get_canned_report.py"
+                            layers:
+                                - kotify-cpu
+                                - report-gen
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.13"
+                                architectures:
+                                    - "x86_64"
+                                description: "getcannedreport Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                                environment:
+                                    variables:
+                                        LD_LIBRARY_PATH: "/opt/lib"
+                                        FONTCONFIG_PATH: "/opt/fonts"
 
             # `static_apps` (mapping[], optional)
             # Contains configuration for static apps deployed as part of CAPE.
