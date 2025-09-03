@@ -5,7 +5,6 @@ import datetime
 import io
 import json
 import logging
-import traceback
 
 import boto3
 import weasyprint
@@ -376,8 +375,6 @@ def index_handler(event, context):
         #       get_s3_object and get_report_data, which is
         #       dependent on moving those into capepy
 
-        # TODO: remove this traceback after debugging
-        logger.error(traceback.format_exc())
         msg = f"{e}"
         return {
             "statusCode": 500,
