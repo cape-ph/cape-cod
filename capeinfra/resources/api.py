@@ -188,17 +188,6 @@ class CapeRestApi(CapeComponentResource):
             funct_args = hcfg.get("funct_args", {})
             layer_names = hcfg.get("layers", [])
 
-            import pprint
-
-            print("META'S FUNCTION LAYERS: ")
-            pprint.pprint(capeinfra.meta._function_layers)
-            pprint.pprint(
-                {
-                    k: v.lambda_layer
-                    for k, v in capeinfra.meta._function_layers.items()
-                }
-            )
-
             layer_arns = [
                 v.lambda_layer.arn
                 for k, v in capeinfra.meta._function_layers.items()
