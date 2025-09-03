@@ -147,7 +147,7 @@ class CapeLambdaLayer(CapeComponentResource):
             shutil.rmtree(self._prefix_dir)
 
     # TODO: this property should really go into CapeComponentResource. it's in
-    #       use in the Swimlane heirarchy aids in inheritance. we would need to
+    #       use in the Swimlane hierarchy aids in inheritance. we would need to
     #       get all resources defining this and potentially require
     #       re-deployment of some resources, so it's not a simple fix.
     @property
@@ -316,7 +316,7 @@ class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
 
         Args:
             deploy_local: True the local layer contents should be published,
-                          False if refereces to remote objects should be
+                          False if references to remote objects should be
                           imported. Only needs to be False in very specific
                           circumstances (e.g. importing remote resources into
                           pulumi deployments).

@@ -707,7 +707,7 @@ class CapeCannedReports(CapeComponentResource):
     access function and a report template. The templates will be stored in
     S3 (in the `automation_assets_bucket` under the `reports/templates`
     prefix. The access functions will be deployed as a lambda function.
-    Metadata about the report (location of template, data acces lambda arn,
+    Metadata about the report (location of template, data access lambda arn,
     display names, etc) are stored in dynamodb keyed on the configured
     unique report identifier.
     """
@@ -749,7 +749,7 @@ class CapeCannedReports(CapeComponentResource):
         if not report_cfgs:
             # NOTE: we can take this opportunity to *not* deploy stuff like the
             #       dynamo table containing canned report metadata if we want to
-            #       get into general cost savings opporunities. for now however
+            #       get into general cost savings opportunities. for now however
             #       we will deploy all infra even when resources that need the
             #       infra are not configured.
             log.info(f"No canned CAPE-wide canned reports configured.", self)
@@ -843,7 +843,7 @@ class CapeCannedReports(CapeComponentResource):
         #       we're returning canned data so there are no special needs, but
         #       when that is replaced with athena queries or bucket reading,
         #       new perms will be needed per data function. not sure what that
-        #       looks like right now (but willl invlolve adding a policy where
+        #       looks like right now (but will invlolve adding a policy where
         #       we currently pass None below)
         report_role = get_inline_role(
             f"{self.name}-{report_config['short_name']}-lmbd-role",
