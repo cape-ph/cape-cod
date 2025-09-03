@@ -311,7 +311,7 @@ config:
                       layers:
                           - capi-all
                       funct_args:
-                          handler: "index.index_handler"
+                          handler: "index.data_function"
                           runtime: "python3.10"
                           architectures:
                               - "x86_64"
