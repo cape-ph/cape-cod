@@ -1,8 +1,11 @@
 """Lambda for handling GETs for listing public user attributes."""
 
+import base64
+import datetime
 import io
 import json
 import logging
+import traceback
 
 import boto3
 import weasyprint
@@ -15,12 +18,32 @@ logger = logging.getLogger()
 logger.setLevel("INFO")
 
 
+# TODO: move into capepy utils. waiting for the capepy layer refactor in this
+#       repo (moving to config/requirements.txt based layer definitions whereas
+#       capepy is a class into itself right now) before doing too many more
+#       capepy releases.
+class S3Exception(Exception):
+    pass
+
+
 class S3TemplateLoader(BaseLoader):
+    """Jinja2 template loader for templates on Amazon S3."""
+
     def __init__(self, bucket, prefix):
         self.bucket = bucket
         self.prefix = prefix
 
     def get_source(self, environment, template):
+        """Override of get_source for loading an S3 template.
+
+        Args:
+            environment: Jinja2 environment. Ignored here.
+            template: The name of the template to load.
+
+        Returns:
+            A tuple containing the template source as a string, the filename of
+            the template and the reload helper for the template.
+        """
         try:
             template_bytes = get_s3_object(
                 self.bucket, f"{self.prefix}/{template}"
@@ -28,11 +51,14 @@ class S3TemplateLoader(BaseLoader):
 
             template_io = io.BytesIO(template_bytes)
             return (
+                # source of template as a str
                 template_io.read().decode("utf-8"),
+                # name of the template
                 f"{template}.html",
+                # reload helper
                 lambda: True,
             )
-        except Exception as e:
+        except S3Exception as e:
             logger.error(e)
 
         raise TemplateNotFound(template)
@@ -43,7 +69,14 @@ class S3TemplateLoader(BaseLoader):
 #       capepy is a class into itself right now) before doing too many more
 #       capepy releases.
 def get_s3_object(bucket, key):
-    """"""
+    """Load an object as a file from S3.
+
+    Args:
+        bucket: The name of the bucket the object is housed in.
+        key: The full key for the object in the named bucket.
+
+    Returns: The contents of the object as bytes.
+    """
     # Create an S3 client object
     s3_client = boto3.client("s3")
 
@@ -62,9 +95,7 @@ def get_s3_object(bucket, key):
         # NOTE: need to properly handle exception stuff here, and we probably want
         #       this going somewhere very visible (e.g. SNS topic or a perpetual log
         #       as someone will need to be made aware)
-        raise Exception(err)
-
-    logger.info(f"Obtained object {key} from bucket {bucket}")
+        raise S3Exception(err)
 
     return response.get("Body").read()
 
@@ -92,12 +123,16 @@ def get_report_data(fnarn: str, payload: dict | None = None):
         # TODO: this is synchronous. eventually we probably want to move to
         #       asynchronous reports (i.e. generate -> store -> notify) in which
         #       case this would change (or be replaced with something like a
-        #       report generation queue)
+        #       report generation queue). In any event, this will cause us to
+        #       pay for 2 lambdas at a time while this one does nothing but
+        #       waits for the other to finish.
         InvocationType="RequestResponse",
         # this will give the data function execution log back to this caller. if
         # we have an error in getting report data, we'll log the issue here.
         LogType="Tail",
-        Payload=(json.dumps(payload).encode("utf-8") if payload else None),
+        # If we do not get a payload to pass to the lambda, we'll give it an
+        # empty payload (None is not a valid value for this arg)
+        Payload=(json.dumps(payload or {}).encode("utf-8")),
     )
 
     # RequestResponse types return 200 on success. Other invocation types have
@@ -123,8 +158,10 @@ def get_report_data(fnarn: str, payload: dict | None = None):
         #       as someone will need to be made aware)
         raise Exception(msg)
 
-    # TODO: this assumes a json payload for all data functions, which may be ok?
-    return json.loads(response.get("Body").read().decode("utf-8"))
+    # The data in this particular response comes back in "Payload" (as opposed
+    # to something like "Body" which some other reposnses use.
+    # TODO: this assumes all report data comes back as json...
+    return json.loads(response.get("Payload").read().decode("utf-8"))
 
 
 def convert_report_format(report_html, format="html"):
@@ -136,30 +173,71 @@ def convert_report_format(report_html, format="html"):
                 assuming the format conversion is supported.
 
     Return:
-        A BytesIO on the resultant formatted file on success.
+        On success, a tuple containing the reported formatted for the response,
+        additional headers for the response, and additional values for the
+        reposnse.
 
     Raises:
-        Excception on invalid format specified
+        Exception on invalid format specified.
     """
+
+    def encode_binary_report_format(report_bytes):
+        """Base64 encode a binary report to make API Gateway happy.
+
+        API Gateway handles text formats fine, but needs binary formats base64
+        encoded so they can be treated as strings. This needs to be undone on
+        the client side.
+
+        Args:
+            report_bytes: The contents of the report as bytes.
+
+        Returns:
+            The report_bytes base64 encoded and an additional values dict with
+            the value specifying this encoding.
+        """
+        return base64.b64encode(report_bytes).decode("utf-8"), {
+            "isBase64Encoded": True
+        }
+
+    additional_headers = {}
+    additional_values = {}
+    report_bytes = None
+
     match format:
         case "html":
             # in this case we already have html and will just return the
             # bytestream
-            return io.BytesIO(report_html.encode("utf-8"))
+            report_bytes = io.BytesIO(report_html.encode("utf-8")).getvalue()
+            additional_headers.update({"Content-Type": "text/html"})
         case "pdf":
             # in this case we want to feed the html to the pdf engine then
-            # return a bytestream on that
-            wep_html = weasyprint.HTML(string=report_html)
+            # return a base64 encoded bytestream on that
+            wep_html = weasyprint.HTML(string=report_html, encoding="utf-8")
             pdf_io = io.BytesIO()
             wep_html.write_pdf(target=pdf_io)
             pdf_io.seek(0)
-            return pdf_io
+            report_bytes, addl_vals = encode_binary_report_format(
+                pdf_io.getvalue()
+            )
+            additional_headers.update(
+                {
+                    "Content-Type": "application/pdf",
+                    "Content-Disposition": (
+                        f"attachment;filename="
+                        f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S-')}"
+                        f"bactopia-report.pdf"
+                    ),
+                }
+            )
+            additional_values.update(addl_vals)
         case _:
             msg = (
                 f"Cannot format report in requested format {format}. Format "
                 f"not supported"
             )
             raise Exception(msg)
+
+    return report_bytes, additional_headers, additional_values
 
 
 def index_handler(event, context):
@@ -197,6 +275,8 @@ def index_handler(event, context):
         }
 
         qsp = event.get("queryStringParameters")
+        additional_values = {}
+        additional_headers = {}
 
         # TODO: clean up, get a pattern for handling error and content type
         #       switching
@@ -206,7 +286,7 @@ def index_handler(event, context):
                     "message": "Missing required query string parameters: reportId"
                 }
             )
-            resp_headers["Content-Type"] = "application/json"
+            additional_headers["Content-Type"] = "application/json"
             resp_status = 400
         else:
             report_id = qsp.get("reportId")
@@ -218,7 +298,7 @@ def index_handler(event, context):
                         "message": "Missing required query string parameters: reportId"
                     }
                 )
-                resp_headers["Content-Type"] = "application/json"
+                additional_headers["Content-Type"] = "application/json"
                 resp_status = 400
             else:
                 ddb_table = CannedReportTable()
@@ -235,11 +315,13 @@ def index_handler(event, context):
                         "Report not found or caller doesn't have sufficient "
                         "permission to read canned reports."
                     )
-                    resp_headers["Content-Type"] = "application/json"
+                    additional_headers["Content-Type"] = "application/json"
                     resp_data = json.dumps({"message": msg})
                 else:
                     bucket = report_item.get("template_bucket")
-                    prefix, template = report_item.get(
+
+                    # _ here is the separator
+                    prefix, _, template = report_item.get(
                         "template_key"
                     ).rpartition("/")
 
@@ -251,21 +333,34 @@ def index_handler(event, context):
                     template = jinja_env.get_template(template)
 
                     report_data = get_report_data(
-                        report_item.get("data_function")
+                        # right now we are passing an empty args dict to the
+                        # data function. this will change eventually
+                        report_item.get("data_function"),
+                        {},
                     )
 
                     report_html = template.render(report_data)
 
-                    report_io = convert_report_format(report_html, format)
+                    report_bytes, additional_headers, additional_values = (
+                        convert_report_format(report_html, format)
+                    )
 
-                    resp_data = report_io.getvalue()
+                    resp_data = report_bytes
 
-        # And return our response however it ended up
-        return {
+        # update the headers with any additional ones we got, construct the
+        # return dict, update it with any additional values we got, and return
+        # it
+        resp_headers.update(additional_headers)
+
+        resp = {
             "statusCode": resp_status,
             "headers": resp_headers,
             "body": resp_data,
         }
+
+        resp.update(additional_values)
+
+        return resp
     except ClientError as err:
         code, message = decode_error(err)
 
@@ -280,6 +375,9 @@ def index_handler(event, context):
         #       dependent on getting a specific one raised from
         #       get_s3_object and get_report_data, which is
         #       dependent on moving those into capepy
+
+        # TODO: remove this traceback after debugging
+        logger.error(traceback.format_exc())
         msg = f"{e}"
         return {
             "statusCode": 500,
