@@ -144,60 +144,29 @@ FAKE_TEMPLATE_DATA = {
 }
 
 
-def index_handler(event, context):
+def data_function(event, context):
     """Return data required for the bactopia single sample analysis report.
 
-    If there is no `Authorization` header present, this will return a 401.
-
-    :param event: The event object that contains the HTTP request.
+    :param event: The event object that contains the calling lambda event data.
     :param context: Context object.
     """
 
-    try:
+    headers = event.get("headers", {})
 
-        headers = event.get("headers", {})
-        payload = event.get("Payload")
+    # payload will contain any data from the calling lambda that needs to
+    # propagate to the data function
+    payload = event.get("Payload")
 
-        print(f"Payload from calling lambda: {payload}")
+    # TODO: put in athena query to get data of interest. this lambda
+    #       function could end up being a more utilitarian "run some athena
+    #       query" generalization where the payload from the caller has some
+    #       named athena query to run along with values to apply to the
+    #       query before running (such as a sample id, etc). unclear at this
+    #       time if data functions will be super specialized for one task or
+    #       if we can have one function serve many needs
 
-        # TODO: eventually this needs to be replaced with an athena query
-        resp_data = FAKE_TEMPLATE_DATA
-
-        # assume the best will happen and set our output up for success
-        resp_status = 200
-        resp_headers = {
-            "Content-Type": "application/json",
-            # TODO: ISSUE #141 CORS bypass. We do not want this long term.
-            #       When we get all the api and web resources on the same
-            #       domain, this may not matter too much. But we may
-            #       eventually end up with needing to handle requests from
-            #       one domain served up by another domain in a lambda
-            #       handler. In that case we'd need to be able to handle
-            #       CORS, and would want to look into allowing
-            #       configuration of the lambda (via pulumi config that
-            #       turns into env vars for the lambda) that set the
-            #       origins allowed for CORS.
-            "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "OPTIONS,GET",
-        }
-
-        # And return our response however it ended up
-        return {
-            "statusCode": resp_status,
-            "headers": resp_headers,
-            "body": json.dumps(resp_data),
-        }
-    except ClientError as err:
-        code, message = decode_error(err)
-
-        msg = (
-            f"Error during fetch of bactopia single sample analysis report "
-            f"data. {code} "
-            f"{message}"
-        )
-
-        return {
-            "statusCode": 500,
-            "body": msg,
-        }
+    # unlike the api lambda functions, there isn't really a need to return a
+    # dict representing an http response. just send the data back (the caller
+    # will get a response object with this data being the value of the
+    # "Payload" key
+    return FAKE_TEMPLATE_DATA
