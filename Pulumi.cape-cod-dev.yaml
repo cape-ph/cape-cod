@@ -51,7 +51,7 @@ config:
         #         pip-installing a requirements file
         #       - `gh-release` - Layer is pre-built and provided as a release asset at a
         #         github release URI of the format
-        #         https://github.com/[repo]/releases/tag/[tagname]/[asset]
+        #         https://github.com/[repo]/releases/download/[tagname]/[asset]
         #   * reqs (string, optional)
         #     This key is optional across all layer types, but is *required*
         #     for layers of type "python". It's a path to the python
