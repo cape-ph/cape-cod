@@ -1395,3 +1395,10 @@ config:
                             suffixes:
                                 - gz
                             max_concurrent_runs: 5
+                          - name: bactopia-results
+                            script: glue/etl/etl_bactopia_results.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: pipeline-output/bactopia-runs
+                            suffixes:
+                                - tsv
