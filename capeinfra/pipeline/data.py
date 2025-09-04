@@ -44,7 +44,7 @@ class DataCrawler(CapeComponentResource):
             # https://docs.aws.amazon.com/glue/latest/dg/monitor-data-warehouse-schedule.html
             "schedule": "0 2 * * ? *",
             # A list of custom classifiers for the crawler, if any.
-            "classifiers": [],
+            "classifiers": ["cape-csv-standard-classifier"],
             # a list of exclude paths for the crawler. see here for more:
             # https://docs.aws.amazon.com/glue/latest/dg/define-crawler.html#define-crawler-choose-data-sources
             # NOTE: at this time, all given exclusions apply to all buckets the

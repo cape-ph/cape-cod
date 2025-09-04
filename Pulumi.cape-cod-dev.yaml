@@ -1289,10 +1289,6 @@ config:
                       name:
                       crawler:
                           prefix: input # prefixes for tables in the database
-                          excludes:
-                          classifiers:
-                              - cape-csv-standard-classifier
-                          schedule: "0 2 * * ? *"
                   result-raw:
                       name:
                   result-clean:
@@ -1338,7 +1334,6 @@ config:
                   input-clean:
                       name:
                       crawler:
-                          classifiers:
                           prefix: input # prefixes for tables in the database
                   result-raw:
                       name:
@@ -1368,6 +1363,9 @@ config:
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
+                                - yml
+                            pymodules:
+                                - pyyaml==6.0.2
             - name: seqauto
               buckets:
                   input-raw:
@@ -1376,7 +1374,6 @@ config:
                   input-clean:
                       name:
                       crawler:
-                          classifiers:
                           prefix: input # prefixes for tables in the database
                   result-raw:
                       name:
@@ -1402,3 +1399,6 @@ config:
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
+                                - yml
+                            pymodules:
+                                - pyyaml==6.0.2
