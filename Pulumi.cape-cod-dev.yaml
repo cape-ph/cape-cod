@@ -245,6 +245,9 @@ config:
                 - name: etl-bactopia-results
                   key: glue/etl/etl_bactopia_results.py
                   srcpth: ./assets/etl/etl_bactopia_results.py
+                - name: etl-bactopia-samples
+                  key: glue/etl/etl_bactopia_samples.py
+                  srcpth: ./assets/etl/etl_bactopia_samples.py
                 - name: etl-seqreadarch
                   key: glue/etl/etl_seqarchive.py
                   srcpth: ./assets/etl/etl_seqarchive.py
@@ -1402,3 +1405,11 @@ config:
                                 - yml
                             pymodules:
                                 - pyyaml==6.0.2
+                          - name: bactopia-samples
+                            script: glue/etl/etl_bactopia_samples.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: pipeline-output
+                            suffixes:
+                                - tsv
+                                - txt
