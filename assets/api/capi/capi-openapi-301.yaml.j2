@@ -40,31 +40,6 @@ security:
     {% endfor %}
 {% endif %}
 
-# NOTE: AWS only supports using reusable component (in the open api sense) 
-#       integration definitions for HTTP apis. we have a REST API here. So in 
-#       order to get something that acts like a reusable component we're using 
-#       YAML anchors and aliases. If in the future AWS fixes their openapi spec
-#       stuff for REST apis so that we can define reusable integrations, this 
-#       set of definitions can be moved to the normal openapi components 
-#       pattern.
-x-cape-api-anchors:
-    {# 
-        TODO: our options integration mock bypasses COORS. this needs to be 
-        fixed 
-    #}
-    AwsapigwOptionsMock: &AwsapigwOptionsMock
-        responses:
-            default:
-                statusCode: "200"
-                responseParameters:
-                    method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-                    method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                    method.response.header.Access-Control-Allow-Origin: "'*'"
-            requestTemplates:
-                application/json: "{'statusCode':200}"
-            passthroughBehavior: "when_no_match"
-            timeoutInMillis: 29000
-            type: "mock"
 paths:
     {#
         TODO: The object storage URI paths should be formalized to match other
@@ -110,7 +85,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objuploadurl:
         get:
             parameters:
@@ -156,7 +147,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /user/attributes:
         get:
             parameters:
@@ -210,7 +217,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /user/attribute:
         get:
             parameters:
@@ -259,7 +282,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objstorage/contents:
         get:
             parameters:
@@ -320,7 +359,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objstorage/etls:
         get:
             parameters:
@@ -367,7 +422,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objstorage/crawler:
         get:
             parameters:
@@ -403,7 +474,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objstorage/creatempu:
     {# TODO: responses (endpoint and integration) for 4xx/5xx #}
         post:
@@ -462,7 +549,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objstorage/parturls:
         get:
             parameters:
@@ -522,7 +625,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objstorage/completempu:
     {# TODO: responses (endpoint and integration) for 4xx/5xx #}
         post:
@@ -625,7 +744,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /objstorage/abortmpu:
     {# TODO: responses (endpoint and integration) for 4xx/5xx #}
         delete:
@@ -669,7 +804,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /report/create:
         get:
             parameters:
@@ -707,7 +858,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /dap/pipelines:
         get:
             responses:
@@ -763,7 +930,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /dap/pipelineprofiles:
         get:
             parameters:
@@ -809,7 +992,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /dap/status:
         get:
             parameters:
@@ -895,7 +1094,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /dap/logs:
         get:
             parameters:
@@ -963,7 +1178,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /dap/submit:
         post:
             requestBody:
@@ -1021,7 +1252,23 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: *AwsapigwOptionsMock
+        options: 
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
 # resusable components that follow OpenApi 3.0.1 spec
 components:
     responses:
