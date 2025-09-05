@@ -861,15 +861,8 @@ config:
             #   assets for the static app exist. This will be fully copied, so
             #   ensure there are no items in the hierarchy that should not end
             #   up in S3
-            # TODO: ISSUE #128
             # TODO: ISSUE #166
-            # TODO: ISSUE #192
-            static-apps:
-                - name: "dap-ui"
-                  short_name: "dap"
-                  fqdn: "analysis-pipelines.cape-dev.org"
-                  dir: "./assets/web/static/dap-ui"
-            # `instance_apps` (mapping, optional)
+            #
             # Contains configuration for all swimlane apps that are deployed to
             # EC2 instances.
             # A list of applications for the swimlane that are deployed as EC2
@@ -1051,6 +1044,32 @@ config:
                           #       here we would care about specifying which
                           #       bucket we want to read from
                           - s3
+                    - name: "cape-frontend"
+                      short_name: "cfe"
+                      image: "ami-0aece993d25081e95"
+                      public_ip: False
+                      instance_type: "t3a.medium"
+                      subnet_types:
+                          - compute
+                      subdomain: "analysis-pipelines"
+                      cognito_client:
+                          callback_urls:
+                              - "https://{{ domain }}"
+                          logout_urls:
+                              - "https://{{ domain }}"
+                          allowed_oauth_scopes: ["openid", "email"]
+                      port: 3000
+                      protocol: "HTTP"
+                      healthcheck:
+                          path: "/"
+                          port: 3000
+                          protocol: "HTTP"
+                          matcher: "302"
+                      user_data:
+                          template: assets/instance/user-data/templates/cape-frontend.j2
+                          rebuild_on_change: True
+                      services:
+                          - cognito
             # `vpn` (mapping, required)
             # Contains configuration for the vpn for the swimlane.
             # NOTE: At this time, we roll the VPN in with each swimlane. This
