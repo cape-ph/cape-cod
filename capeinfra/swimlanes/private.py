@@ -386,7 +386,11 @@ class PrivateSwimlane(ScopedSwimlane):
         """Creates resources related to private swimlane web resources."""
 
         sa_cfgs = self.config.get("static-apps", default=None)
-        if sa_cfgs is None:
+
+        # sa_cfgs could come back None (if the key is not in the config), an
+        # empty string (if the key is there but nothing is defined for it), or
+        # an actual mapping. if the value is Falsy, we're going to bail
+        if sa_cfgs:
             warn(f"No static apps configured for swimlane {self.basename}")
             return
 
@@ -417,6 +421,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # Now that we have the static app buckets created, lock them down to
         # read only
+        # (only make the endpoint policy if we actually have apps being deployed)
         # TODO: ISSUE #134
         aws.ec2.VpcEndpointPolicy(
             f"{self.basename}-sas3vpcepplcy",
