@@ -980,6 +980,7 @@ config:
                 #   only supported value is "athena"
                 instances:
                     - name: "cape-frontend"
+                      short_name: "capefe"
                       image: "ami-0aece993d25081e95"
                       public_ip: False
                       instance_type: "t3a.medium"
