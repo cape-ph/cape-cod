@@ -40,6 +40,49 @@ def get_service_assume_role(srvc: str | List[str]) -> str:
     )
 
 
+# TODO: need to lock this down to CAPE buckets, our account, etc
+def get_s3_api_proxy_policy(
+    principal: str | None = None,
+) -> str:
+    """Get a role policy statement for Get/List perms on s3 buckets.
+
+    Args:
+
+    Returns:
+        The policy statement as a json encoded string.
+    """
+    policy_dict = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    # api for MPU
+                    "s3:AbortMultipartUpload",
+                    "s3:CreateMultipartUpload",
+                    "s3:UploadPart",
+                    "s3:CompleteMultipartUpload",
+                    "s3:ListParts",
+                    "s3:ListMultipartUploads",
+                    # general s3 actions needed by api
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::*/*",
+                    f"arn:aws:s3:::*",
+                ],
+            }
+        ],
+    }
+
+    if principal is not None:
+        for stmnt in policy_dict["Statement"]:
+            stmnt.setdefault("Principal", principal)
+
+    return json.dumps(policy_dict)
+
+
 def get_bucket_reader_policy(
     buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
     principal: str | None = None,
@@ -444,8 +487,9 @@ def get_sqs_notifier_policy(
 #       we do a little more design and have another API using this, not going to
 #       spend too long getting it perfect. Also, we should restrict the EC2
 #       instance describing
+# TODO: ISSUE 245 - TOO MANY PERMS HERE
 def get_api_policy(grants: dict[str, list[Output]]):
-    """Get a role policy statement for the an API.
+    """Get a role policy statement for the API.
 
     The entire API (all functions) will be given access as configured in
     `grants`. Lambda logging will be enabled without configuration as will the
@@ -472,6 +516,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
                 "logs:PutLogEvents",
                 "logs:CreateLogGroup",
                 "logs:CreateLogStream",
+                "logs:GetLogEvents",
             ],
             "Resource": "arn:aws:logs:*:*:*",
         },
@@ -480,6 +525,33 @@ def get_api_policy(grants: dict[str, list[Output]]):
             "Action": [
                 "ec2:DescribeInstances",
             ],
+            "Resource": [
+                "*",
+            ],
+        },
+        {
+            # TODO: make this policy more strict once we organize our queues/resources
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:ListAllMyBuckets",
+                "s3:PutObject",
+                "s3:GetObject",
+            ],
+            "Resource": [
+                "*",
+            ],
+        },
+        {  # TODO: make this policy more strict once we organize our queues/resources
+            "Effect": "Allow",
+            "Action": ["batch:SubmitJob", "batch:DescribeJobs"],
+            "Resource": [
+                "*",
+            ],
+        },
+        {  # TODO: make this policy more strict once we organize our queues/resources
+            "Effect": "Allow",
+            "Action": ["lambda:InvokeFunction"],
             "Resource": [
                 "*",
             ],
@@ -508,6 +580,7 @@ def get_api_policy(grants: dict[str, list[Output]]):
                 "Effect": "Allow",
                 "Action": [
                     "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
                     "dynamodb:Scan",
                 ],
                 "Resource": [
@@ -593,43 +666,51 @@ def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
         The policy statement as a dictionary json encoded string.
     """
 
+    statements = [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+            ],
+            "Resource": "arn:aws:logs:*:*:*",
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                # This is the bare minimum required for an SQS notified
+                # lambda to do its job.
+                "sqs:GetQueueAttributes",
+                "sqs:ReceiveMessage",
+                "sqs:DeleteMessage",
+            ],
+            "Resource": [
+                f"arn:aws:sqs:*:*:{queue_name}",
+            ],
+        },
+    ]
+
+    # generally we will have job names here (otherwise whey put in a job queue)
+    # but if they have not been defined at the time of the tributary deployemnt,
+    # we may not. so only add the policy for them if we have some listed.
+    if job_names:
+        statements.append(
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "glue:StartJobRun",
+                    "glue:GetJobRun",
+                ],
+                "Resource": [
+                    f"arn:aws:glue:*:*:job/{job}" for job in job_names
+                ],
+            }
+        )
     return json.dumps(
         {
             "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "logs:PutLogEvents",
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                    ],
-                    "Resource": "arn:aws:logs:*:*:*",
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        # This is the bare minimum required for an SQS notified
-                        # lambda to do its job.
-                        "sqs:GetQueueAttributes",
-                        "sqs:ReceiveMessage",
-                        "sqs:DeleteMessage",
-                    ],
-                    "Resource": [
-                        f"arn:aws:sqs:*:*:{queue_name}",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "glue:StartJobRun",
-                        "glue:GetJobRun",
-                    ],
-                    "Resource": [
-                        f"arn:aws:glue:*:*:job/{job}" for job in job_names
-                    ],
-                },
-            ],
+            "Statement": statements,
         },
     )
 
@@ -653,6 +734,8 @@ def get_inline_role(
                    will be used as-is, so it needs to be fully rendered
         srvc_prfx: the service prefix to use in the name (e.g. `lmbd` for aws
                    lambda)
+        assume_role_srvc: The name of the service assuming the role (e.g.
+                          "glue.amazonaws.com") or a list of such service names.
         role_policy: The policy to attach to the role.
         srvc_policy_attach: Optional identifier (e.g. ARN for aws) or list of
                             identifiers for a service or services role policy

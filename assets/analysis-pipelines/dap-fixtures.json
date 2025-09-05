@@ -1,0 +1,33 @@
+[
+    {
+        "type": "nextflow",
+        "pipelines": [
+            {
+                "display_name": "Bactopia",
+                "pipeline_name": "bactopia/bactopia",
+                "profile_root": "profiles/bactopia",
+                "repo": null,
+                "versions": [
+                    {
+                        "version": "v3.0.1",
+                        "profiles": [
+                            {
+                                "display_name": "Default Bactopia 3.0.1 Profile",
+                                "file": "default-bactopia-3.0.1.json"
+                            }
+                        ]
+                    },
+                    {
+                        "version": "dev",
+                        "profiles": [
+                            {
+                                "display_name": "Default Bactopia dev Profile",
+                                "file": "default-bactopia-dev.json"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

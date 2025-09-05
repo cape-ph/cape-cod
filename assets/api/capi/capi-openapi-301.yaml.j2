@@ -1,0 +1,1093 @@
+openapi: "3.0.1"
+{#
+    TODO:
+    - ensure domain comes into here as a template variable and not hard coded
+    - ensure default stage name comes into here as a template variable and not
+      hard coded (replace capi-dev in here)
+    - lots of DRY violate. figure out things that can be injected as template
+      snippets, OAPI reusable components, etc
+    - consider overriding authorizers at the method level to allow fine-grained
+      scoping and to have different authorizers for different endpoints.
+    - sit down and write out the paths for the API. everything right now is just
+      to get things rolling for the few endpoints we need to test with
+    - CORS lockdown/response headers
+    - add GET for object metadata (info about files in s3)
+#}
+{#
+    NOTE:
+        we do not provide x-amazon-apigateway-endpoint-configuration here (
+        setting up the vpc endpoint) as we expect that to be set in the pulumi
+        code setting up the RestApi. Don't want AWS ids in the repo
+#}
+info:
+    title: "CAPE common API"
+    description:
+        "CAPE common API (***TODO: add more comment***)"
+    version: "2025-06-04T17:31:46.429617Z"
+servers:
+    - url: "https://{{ domain }}/{basePath}"
+      variables:
+          basePath:
+              # This value needs to map to the stage name exposed via the ALB
+              default: "capi-dev"
+
+{% if authorizers %}
+security:
+    {% for authorizer_name, _ in authorizers.items() %}
+    # NOTE: some authorizer types (e.g. oauth2) require scopes be defined which
+    #      would be done in place of the `[]` below
+    - {{ authorizer_name }}: []
+    {% endfor %}
+{% endif %}
+
+# NOTE: AWS only supports using reusable component (in the open api sense) 
+#       integration definitions for HTTP apis. we have a REST API here. So in 
+#       order to get something that acts like a reusable component we're using 
+#       YAML anchors and aliases. If in the future AWS fixes their openapi spec
+#       stuff for REST apis so that we can define reusable integrations, this 
+#       set of definitions can be moved to the normal openapi components 
+#       pattern.
+x-cape-api-anchors:
+    {# 
+        TODO: our options integration mock bypasses COORS. this needs to be 
+        fixed 
+    #}
+    AwsapigwOptionsMock: &AwsapigwOptionsMock
+        responses:
+            default:
+                statusCode: "200"
+                responseParameters:
+                    method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                    method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                    method.response.header.Access-Control-Allow-Origin: "'*'"
+            requestTemplates:
+                application/json: "{'statusCode':200}"
+            passthroughBehavior: "when_no_match"
+            timeoutInMillis: 29000
+            type: "mock"
+paths:
+    {#
+        TODO: The object storage URI paths should be formalized to match other
+              api things
+    #}
+    /rawobjstorage:
+        get:
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of raw object storage info subject
+                                    to the calling user's authz setup."
+                                items:
+                                    type: object
+                                    properties:
+                                        objstore_name:
+                                            type: string
+                                            description: An object store name
+                                        prefixes:
+                                            type: array
+                                            description:
+                                                Array of names of prefixes in
+                                                the object store
+                                            items:
+                                               type: string
+                                               description:
+                                                    A name of a prefix the user can write
+                                                    to for the outer-scoped
+                                                    object store.
+                "500":
+                    description:
+                        "Server Error - Unable to query object storage API (error occurred)."
+            x-amazon-apigateway-integration:
+               # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_raw_objstore_authz_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /objuploadurl:
+        get:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket to get a POST URL for"
+                - in: query
+                  name: prefix
+                  schema:
+                    type: string
+                    description: "The object key prefix the POST URL will be
+                    limited to"
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the POST URL and form
+                                    fields required for the POST."
+                                properties:
+                                    url:
+                                        type: string
+                                        description: The POST URL
+                                    fields:
+                                        type: object
+                                        description:
+                                            "An object containing form fields
+                                            required when submitting the POST"
+                "500":
+                    description:
+                        "Server Error - Unable to generate pre-signed raw upload
+                        POST URL."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_raw_obj_upload_url_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /user/attributes:
+        get:
+            parameters:
+                - in: query
+                  name: userId
+                  schema:
+                    type: string
+                    description: "The id of the user to get attributes for"
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the public attributes
+                                    and their values for the given user id."
+                                properties:
+                                    message:
+                                        type: string
+                                        description:
+                                            "Informational message"
+                                    attributes:
+                                        type: object
+                                        description:
+                                            "An object containing public user
+                                            attributes"
+                "500":
+                    description:
+                        "Server Error - Unable to fetch user attributes"
+                "default":
+                    description: "Client Error"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the public attributes
+                                    and their values for the given user id."
+                                properties:
+                                    message:
+                                        type: string
+                                        description:
+                                            "Error message"
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{handlers['get_user_attributes_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /user/attribute:
+        get:
+            parameters:
+                - in: query
+                  name: userId
+                  schema:
+                    type: string
+                    description: "The id of the user to get attributes for"
+                - in: query
+                  name: attrName
+                  schema:
+                    type: string
+                    description: "The name of the attribute to get the value for"
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing the requested
+                                    attribute and its value."
+                "500":
+                    description:
+                        "Server Error - Unable to fetch user attributes"
+                "default":
+                    description: "Client Error"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing information about the
+                                    error."
+                                properties:
+                                    message:
+                                        type: string
+                                        description:
+                                            "Error message"
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{handlers['get_user_attribute_val_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /objstorage/contents:
+        get:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket to get contents of"
+                  required: true
+                - in: query
+                  name: prefix
+                  schema:
+                    type: string
+                    description: "The optional object key prefix to limit
+                    results to"
+                  required: false
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+
+                                type: array
+                                description:
+                                    "An array of objects containing information
+                                    about objects in the desired object storage
+                                    location."
+                                items:
+                                    type: object
+
+                                    {# TODO: don't know yet
+                                    properties:
+                                        objstore_name:
+                                            type: string
+                                            description: An object store name
+                                        prefixes:
+                                            type: array
+                                            description:
+                                                Array of names of prefixes in
+                                                the object store
+                                            items:
+                                               type: string
+                                               description:
+                                                    A name of a prefix the user can write
+                                                    to for the outer-scoped
+                                                    object store.
+                                    #}
+                {# TODO: default response (for 4xx) #}
+                "500":
+                    description:
+                        "Server Error - Unable to query object storage API (error occurred)."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_s3_contents_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /objstorage/etls:
+        get:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket where the object is
+                    stored"
+                  required: true
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: "The object key to query for ETLs"
+                  required: false
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of ETLs that relate to the object"
+                                items:
+                                    type: object
+
+                                    {# TODO: don't know yet
+                                    properties:
+                                        etl_name:
+                                            type: string
+                                            description: An ETL name
+                                    #}
+                {# TODO: default response (for 4xx) #}
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_object_etls_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /objstorage/crawler:
+        get:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket where the object is
+                    stored"
+                  required: true
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing information about the crawler that relates to the bucket"
+                                properties:
+                                    crawler_name:
+                                        type: string
+                                        description: "A Glue Crawler name"
+                {# TODO: default response (for 4xx) #}
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_bucket_crawler_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /objstorage/creatempu:
+    {# TODO: responses (endpoint and integration) for 4xx/5xx #}
+        post:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket the MPU will be created for"
+                  required: true
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: "The key the object will be reconstructed as"
+                  required: true
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        # NOTE: response body comes back in XML
+                        application/xml:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing information about the MPU"
+                                properties:
+                                    bucket:
+                                        type: string
+                                        description: "The name of the bucket the MPU is created for"
+                                    key:
+                                        type: string
+                                        description: "The object key the MPU will result in"
+                                    uploadId:
+                                        type: string
+                                        description: "The ID for the new multipart upload"
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                credentials: "{{ aws_proxy_roles['s3'] }}"
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}?uploads"
+                responses: 
+                    default: 
+                        statusCode: "200"
+                requestParameters: 
+                    integration.request.path.bucket: method.request.querystring.bucket
+                    integration.request.path.key: method.request.querystring.key
+                responseParameters: 
+                    method.response.body.bucket: integration.response.body.Bucket
+                    method.response.body.key: integration.response.body.Key
+                    method.response.body.uploadId: integration.response.body.UploadId
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws"
+        options: *AwsapigwOptionsMock
+    /objstorage/parturls:
+        get:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket to get an array of PUT URLs for"
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: 
+                        "The object key the reassembled parts will yield
+                        limited to"
+                - in: query
+                  name: uploadId
+                  schema:
+                    type: string
+                    description: "The id of the previously created multipart upload"
+                  required: true
+                - in: query
+                  name: numParts 
+                  schema:
+                    type: integer
+                    description: "The number of parts the MPU will consist of"
+                  required: true
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description: An array of objects describing PUT urls for parts
+                                items:
+                                    type: object
+                                    description:
+                                        "An object containing the PUT URL and 
+                                        part number associated with it."
+                                    properties:
+                                        url:
+                                            type: string
+                                            description: A PUT URL
+                                        partNumber:
+                                            type: integer
+                                            description:
+                                                "The part number specific to the URL"
+                "500":
+                    description:
+                        "Server Error - Unable to generate pre-signed part upload PUT URLs."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_mpu_part_upload_urls_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /objstorage/completempu:
+    {# TODO: responses (endpoint and integration) for 4xx/5xx #}
+        post:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket the MPU will be created for"
+                  required: true
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: "The key the object will be reconstructed as"
+                - in: query
+                  name: uploadId
+                  schema:
+                    type: string
+                    description: "The id of the previously created multipart upload"
+                  required: true
+            requestBody:
+                application/xml:
+                    schema:
+                        type: array
+                        description: Array of objects about previously uploaded part for the MPU being completed
+                        items:
+                            type: object
+                            properties:
+                                PartNumber:
+                                    type: string 
+                                    description: Part number of a previously uploaded part
+                                ETag:
+                                    type: string
+                                    description: ETag of a previously uploaded part
+                            xml:
+                                name: Part
+                        xml: 
+                            name: CompleteMultipartUpload
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        # NOTE: response body comes back in XML
+                        application/xml:
+                            schema:
+                                type: object
+                                description : >
+                                    An object containing information about the MPU. 
+                                    Fields are the same as AWS documentation, which can be found here: 
+                                    https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
+                                properties:
+                                    location:
+                                        type: string
+                                    bucket:
+                                        type: string
+                                    key:
+                                        type: string
+                                    eTag:
+                                        type: string
+                                    checksumCRC32:
+                                        type: string
+                                    checksumCRC32C:
+                                        type: string
+                                    checksumCRC64NVME:
+                                        type: string
+                                    checksumSHA1:
+                                        type: string
+                                    checksumSHA256:
+                                        type: string
+                                    checksumType:
+                                        type: string
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                credentials: "{{ aws_proxy_roles['s3'] }}"
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
+                responses: 
+                    default: 
+                        statusCode: "200"
+                requestParameters: 
+                    integration.request.path.bucket: method.request.querystring.bucket
+                    integration.request.path.key: method.request.querystring.key
+                    integration.request.querystring.uploadId: method.request.querystring.uploadId
+                responseParameters: 
+                    method.response.body.bucket: integration.response.body.Bucket
+                    method.response.body.key: integration.response.body.Key
+                    method.response.body.location: integration.response.body.Location
+                    method.response.body.eTag: integration.response.body.ETag
+                    method.response.body.checksumCRC32: integration.response.body.ChecksumCRC32
+                    method.response.body.checksumCRC32C: integration.response.body.ChecksumCRC32C
+                    method.response.body.checksumCRC64NVME: integration.response.body.ChecksumCRC64NVME
+                    method.response.body.checksumSHA1: integration.response.body.ChecksumSHA1
+                    method.response.body.checksumSHA256: integration.response.body.ChecksumSHA256
+                    method.response.body.checksumCRCType: integration.response.body.ChecksumType
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws"
+        options: *AwsapigwOptionsMock
+    /objstorage/abortmpu:
+    {# TODO: responses (endpoint and integration) for 4xx/5xx #}
+        delete:
+            parameters:
+                - in: query
+                  name: bucket
+                  schema:
+                    type: string
+                    description: "The name of the bucket the MPU will be created for"
+                  required: true
+                - in: query
+                  name: key
+                  schema:
+                    type: string
+                    description: "The key the object will be reconstructed as"
+                - in: query
+                  name: uploadId
+                  schema:
+                    type: string
+                    description: "The id of the previously created multipart upload"
+                  required: true
+            responses:
+                "204":
+                    description: "Success"
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                credentials: "{{ aws_proxy_roles['s3'] }}"
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
+                responses: 
+                    default: 
+                        statusCode: "204"
+                requestParameters: 
+                    integration.request.path.bucket: method.request.querystring.bucket
+                    integration.request.path.key: method.request.querystring.key
+                    integration.request.querystring.uploadId: method.request.querystring.uploadId
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws"
+        options: *AwsapigwOptionsMock
+    /report/create:
+        get:
+            parameters:
+                - in: query
+                  name: reportId
+                  schema:
+                    type: string
+                    description: "The ID of the report to get"
+                  required: true
+                - in: query
+                  name: format
+                  schema:
+                    type: string
+                    description: 
+                        "The requested report format. Defaults to `html` if not provided"
+            responses:
+                "200":
+                    content:
+                        application/octet-stream:
+                            schema:
+                                type: string
+                                description: 
+                                    The report contents as a binary octet 
+                                    stream. The bytes will be for the requested
+                                    format or HTML if no format was requested.
+                                format: binary
+                "500":
+                    description:
+                        "Server Error - Unable to generate pre-signed part upload PUT URLs."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_canned_report_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /dap/pipelines:
+        get:
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of available pipelines to run."
+                                items:
+                                    type: object
+                                    properties:
+                                        display_name:
+                                            type: string
+                                            description: The pipeline name for display
+                                        pipeline_name:
+                                            type: string
+                                            description: The pipeline name
+                                        pipeline_type:
+                                            type: string
+                                            description:
+                                                The type of pipeline execution
+                                                environment (e.g. 'nextflow')
+                                        version:
+                                            type: string
+                                            description: The pipeline version
+                                        profiles:
+                                            type: array
+                                            description: array of profiles available for a pipeline
+                                            items:
+                                                type: object
+                                                properties:
+                                                    key:
+                                                        type: string
+                                                        description: The key for the profile in object storage
+                                                    profile_name:
+                                                        type: string
+                                                        description: A display name for the profile
+
+                "500":
+                    description:
+                        "Server Error - Unable to read the pipeline registry."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_daps_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /dap/pipelineprofiles:
+        get:
+            parameters:
+                - in: query
+                  name: pipeline
+                  schema:
+                    type: string
+                    description: "The name of the pipeline profiles are being fetched for"
+                  required: true
+                - in: query
+                  name: version
+                  schema:
+                    type: string
+                    description: "The version of the pipeline profiles are being fetched for"
+                  required: true
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "An array of available profiles for the pipeline/version pair"
+                                items:
+                                    type: object
+                                    properties:
+                                        key:
+                                            type: string
+                                            description: The key for the profile in object storage
+                                        profileName:
+                                            type: string
+                                            description: A display name for the profile
+                {# TODO: default response (for 4xx) #}
+                "500":
+                    description:
+                        "Server Error - Unable to query object API (error occurred)."
+            x-amazon-apigateway-integration:
+                # this is the integration http method, not the endpoint http method. all lambda backed
+                # integrations are post
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_dap_profiles_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /dap/status:
+        get:
+            parameters:
+                - in: query
+                  name: jobIds
+                  schema:
+                    type: string
+                    description: "A comma delineated list of job ids to check the status of"
+                  required: true
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                description:
+                                    "A list of requests job statuses"
+                                items:
+                                    type: object
+                                    properties:
+                                        jobName:
+                                            type: string
+                                            description:
+                                                The name of the job
+                                        jobId:
+                                            type: string
+                                            description:
+                                                The ID of the job
+                                        status:
+                                            type: string
+                                            enum:
+                                                - SUBMITTED
+                                                - PENDING
+                                                - RUNNABLE
+                                                - STARTING
+                                                - RUNNING
+                                                - SUCCEEDED
+                                                - FAILED
+                                            description:
+                                                The current status of the job
+                                        statusReason:
+                                            type: string
+                                            description:
+                                                The reason of the status
+                                        isCancelled:
+                                            type: boolean
+                                            description:
+                                                Whether the job has been cancelled or not
+                                        isTerminated:
+                                            type: boolean
+                                            description:
+                                                Whether the job has been terminated or not
+                                        createdAt:
+                                            type: integer
+                                            description:
+                                                The time the job was submitted
+                                        startedAt:
+                                            type: integer
+                                            description:
+                                                The time the job started running
+                                        stoppedAt:
+                                            type: integer
+                                            description:
+                                                The time the job stopped running
+                                        environment:
+                                            type: object
+                                            description:
+                                                The environment variables passed to the job
+                                        logStreamName:
+                                            type: string
+                                            description:
+                                                The log stream name for retrieving execution logs
+                "500":
+                    description:
+                        "Server error while getting DAP job status."
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_dap_status_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /dap/logs:
+        get:
+            parameters:
+                - in: query
+                  name: logStreamName
+                  schema:
+                    type: string
+                    description: "The log stream to fetch events for"
+                  required: true
+                - in: query
+                  name: limit
+                  schema:
+                    type: integer
+                    description: "The number of events to fetch per page"
+                  required: false
+                - in: query
+                  name: nextToken
+                  schema:
+                    type: string
+                    description: "The token for fetching another page of log events"
+                  required: false
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object of log events"
+                                properties:
+                                    nextForwardToken:
+                                        type: string
+                                        description:
+                                            The token for the next page of events
+                                    nextBackwardToken:
+                                        type: string
+                                        description:
+                                            The token for the next page of events
+                                    events:
+                                        type: array
+                                        description:
+                                            The list of log events
+                                        items:
+                                            type: object
+                                            properties:
+                                                message:
+                                                    type: string
+                                                    description: The log message
+                                                timestamp:
+                                                    type: integer
+                                                    description: The time of the message
+                                                ingestionTime:
+                                                    type: integer
+                                                    description: The time the message was ingested
+                "500":
+                    description:
+                        "Server error while getting job logs."
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_dap_logs_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+    /dap/submit:
+        post:
+            requestBody:
+                description: Submit a data analysis pipeline for execution.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                pipelineName:
+                                    type: string
+                                    description: The name of the pipeline to run
+                                pipelineVersion:
+                                    type: string
+                                    description:
+                                        The version of the pipeline to run
+                                outputPath:
+                                    type: string
+                                    description: >
+                                        The S3 location to put pipeline output.
+                                        Assumes permissions are set correctly.
+{#
+    TODO: ISSUE #TBD all below fields are specific to bactopia right now. also, the
+          descriptions are bunk if we keep using these params
+#}
+                                nextflowOptions:
+                                    type: string
+                                    description: The command line flags to pass to Nextflow
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success submitting pipeline for execution."
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    "An object containing information about the successfully submitted job"
+                                properties:
+                                    jobArn:
+                                        type: string
+                                        description: "The submitted job ARN"
+                                    jobId:
+                                        type: string
+                                        description: "The submitted job ID"
+                                    jobName:
+                                        type: string
+                                        description: "The submitted job name"
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['submit_dap_run_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options: *AwsapigwOptionsMock
+# resusable components that follow OpenApi 3.0.1 spec
+components:
+    responses:
+        200OptionsCors:
+            description: "200 response"
+            headers:
+                Access-Control-Allow-Origin:
+                    schema:
+                        type: "string"
+                Access-Control-Allow-Methods:
+                    schema:
+                        type: "string"
+                Access-Control-Allow-Headers:
+                    schema:
+                        type: "string"
+            content: {}
+{#
+    TODO: This securityScheme stuff was setup for the DAP API that did no
+          authorizers or anything. We have a lambda authorizer now and it wants
+          JWTs in headers. so need to re-assess this for that purpose.
+#}
+
+    # if we have one or more authorizers defined, we need to render them here
+    {% if authorizers %}
+    securitySchemes:
+        {% for authorizer_name, authorizer_def in authorizers.items() %}
+        {{ authorizer_name }}:
+{#
+    TODO: this will only work for `request` type authorizers right now that have
+          identity sources as query string params and or header vals to check.
+          will need some work to support oauth2, oidc, single header, jwt, etc
+          setups
+#}
+{#
+    TODO: this block (type/name/in) should not be changed for AWS
+          `request` lambda authorizers that use query params. when we
+           change to token or whatever this stuff will change
+#}
+            type: apiKey
+            name: Unused
+            in: header
+{#
+    TODO: assumes custom (i.e. lambda) authtype currently
+#}
+            x-amazon-apigateway-authtype: "custom"
+            x-amazon-apigateway-authorizer:
+                type : "{{ authorizer_def['type'] }}"
+                {#
+                    identity source is not required, but specifying one will
+                    fail the API calls if that source is not present in the
+                    request. ao until we know what will always be there, we'll
+                    allow an empty value here and will just not set an identity
+                    source unless told to.
+                #}
+                {% if authorizer_def["identity_sources"] %}
+                identitySource: "{{ authorizer_def['identity_sources'] }}"
+                {% endif %}
+                authorizerCredentials: "{{ authorizer_def['role'] }}"
+                authorizerUri: "{{ authorizer_def['uri'] }}"
+                authorizerResultTtlInSeconds: {{ authorizer_def['result_cached_sec'] }}
+        {% endfor %}
+    {% endif %}
+
+{#
+    NOTE:
+        we do not provide x-amazon-apigateway-policy here (setting up the
+        policy for using the API) as we expect that to be set in the pulumi
+        code setting up the RestApi. Don't want AWS ids and perms in the repo
+#}

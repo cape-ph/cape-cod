@@ -9,15 +9,17 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
+from pulumi import AssetArchive, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import (
     get_api_lambda_authorizer_policy,
     get_api_policy,
     get_inline_role,
+    get_s3_api_proxy_policy,
     get_vpce_api_invoke_policy,
 )
+from capeinfra.resources.compute import CapePythonLambdaLayer
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
@@ -77,6 +79,7 @@ class CapeRestApi(CapeComponentResource):
         self.env_vars = env_vars
         self.spec_path = spec_path
         self.api_vpcendpoint = vpc_endpoint
+        self.domain_name = domain_name
 
         # this will map the ids (string ids) from the config to a tuple of
         # (function name, Lambda Function Resource) so we can fill in the
@@ -88,9 +91,10 @@ class CapeRestApi(CapeComponentResource):
         self._configure_logging()
         self._create_api_ep_lambdas(resource_grants)
         self._create_api_authorizer_lambdas()
+        self._create_aws_proxy_roles()
         self._render_spec()
         self._create_rest_api()
-        self._deploy_stage(domain_name)
+        self._deploy_stage(self.domain_name)
 
     def _configure_logging(self):
         """Configure logging for the API.
@@ -140,7 +144,10 @@ class CapeRestApi(CapeComponentResource):
             "responseLength": "$context.responseLength",
         }
 
-    def _create_api_ep_lambdas(self, res_grants: dict[str, list[Output]]):
+    def _create_api_ep_lambdas(
+        self,
+        res_grants: dict[str, list[Output]],
+    ):
         """Create the Lambda functions acting as endpoint handlers for the API.
 
         Args:
@@ -156,6 +163,7 @@ class CapeRestApi(CapeComponentResource):
         #       the API (e.g. if it needs to write to SQS in one function and
         #       read from DynamoDB in another, this role's policy must have both
         #       those grants). This may not be the long term implementation.
+        # TODO: ISSUE 245
         self._api_lambda_role = get_inline_role(
             f"{self.name}-lmbd-role",
             f"{self.desc_name} {self.config.get('desc')} lambda role",
@@ -178,14 +186,30 @@ class CapeRestApi(CapeComponentResource):
             # needed for a few args below. if not given or if there are missing
             # keys, we'll get default values
             funct_args = hcfg.get("funct_args", {})
+            layer_names = hcfg.get("layers", [])
+
+            layer_arns = [
+                v.lambda_layer.arn
+                for k, v in capeinfra.meta._function_layers.items()
+                if k in layer_names
+            ]
+
+            # TODO: we also build lambdas elsewhere (e.g. capemeta) and they
+            #       don't allow additional env vars. need to get that the same.
+            vars = funct_args.get("environment", {"variables": {}}).get(
+                "variables"
+            )
+            vars.update(self.env_vars)
 
             handler_lambda = aws.lambda_.Function(
                 f"{self.name}-{hcfg['name']}-lmbdfn",
                 role=self._api_lambda_role.arn,
-                layers=[capeinfra.meta.capepy.lambda_layer.arn],
+                layers=layer_arns,
                 code=AssetArchive({"index.py": FileAsset(hcfg["code"])}),
-                environment={"variables": self.env_vars},
-                opts=ResourceOptions(parent=self),
+                environment={"variables": vars},
+                opts=ResourceOptions(
+                    parent=self,
+                ),
                 # below are allowed to be configured externally and if not given
                 # will be defaulted to values in pulumi docs (except description
                 # which is given a sensible default)
@@ -203,6 +227,29 @@ class CapeRestApi(CapeComponentResource):
             # lambda function created
             self._ids_to_lambdas[hcfg["id"]] = (hcfg["name"], handler_lambda)
 
+    def _create_aws_proxy_roles(self):
+        """Create roles that allow the API to directly proxy AWS services.
+
+        NOTE: These are used for API integrations that are of type "aws" (as
+        opposed to types like "aws_proxy" used for lambdas). OpenAPI specs with
+        these integrations require role arns to be in the yml. So here we are.
+
+        We're going with a single role per service for now (instead of a role
+        per endpoint or something like that).
+        """
+        # TODO: ISSUE 245
+        self._aws_proxy_roles = {}
+
+        self._aws_proxy_roles["s3"] = self._api_lambda_role = get_inline_role(
+            f"{self.name}-awsprxys3-role",
+            (
+                f"{self.desc_name} {self.config.get('desc')} AWS S3 api integration proxy role"
+            ),
+            "apigw",
+            "apigateway.amazonaws.com",
+            get_s3_api_proxy_policy(),
+        ).arn
+
     def _render_spec(self):
         """Render the configured open api spec as a jijna2 template."""
         template = get_j2_template_from_path(self.spec_path)
@@ -212,8 +259,10 @@ class CapeRestApi(CapeComponentResource):
         # Outputs in the dict (e.g. arn's)
         spec_kwargs = {
             "api_name": self.api_name,
+            "domain": self.domain_name,
             "authorizers": {},
             "handlers": {},
+            "aws_proxy_roles": self._aws_proxy_roles,
         }
         spec_kwargs["handlers"].update(
             {k: lf.arn for k, (_, lf) in self._ids_to_lambdas.items()}

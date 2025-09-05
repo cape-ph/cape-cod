@@ -127,6 +127,28 @@ class DatalakeHouse(CapeComponentResource):
             },
         )
 
+        self.crawler_attrs_ddb_table = aws.dynamodb.Table(
+            f"{self.name}-crawlerattrs-ddb",
+            name=f"{self.name}-CrawlerAttributes",
+            billing_mode="PAY_PER_REQUEST",
+            hash_key="bucket_name",
+            attributes=[
+                # NOTE: we do not need to define any part of the "schema" here
+                #       that isn't needed in an index.
+                # TODO: ISSUE #49
+                {
+                    "name": "bucket_name",
+                    "type": "S",
+                },
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (
+                    f"{self.desc_name} Glue Crawler attributes DynamoDB Table"
+                ),
+            },
+        )
+
         # create the parts of the datalake from the tributary configuration
         # (e.g. hai, genomics, etc)
         self.tributaries = []
@@ -137,6 +159,7 @@ class DatalakeHouse(CapeComponentResource):
                     f"{self.name}-T-{trib_name}",
                     self.catalog_bucket,
                     self.etl_attr_ddb_table,
+                    self.crawler_attrs_ddb_table,
                     self.aws_region,
                     config=trib_config,
                     opts=ResourceOptions(parent=self),
@@ -194,6 +217,7 @@ class Tributary(CapeComponentResource):
         name: str,
         catalog_bucket: aws.s3.BucketV2,
         etl_attrs_ddb_table: aws.dynamodb.Table,
+        crawler_attrs_ddb_table: aws.dynamodb.Table,
         aws_region: str,
         *args,
         **kwargs,
@@ -215,8 +239,9 @@ class Tributary(CapeComponentResource):
         # configure the buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
         self.buckets = {}
+        self.crawlers = {}
         for bucket_id in self.config.get("buckets", default={}):
-            self.configure_bucket(bucket_id)
+            self.configure_bucket(bucket_id, crawler_attrs_ddb_table)
 
         # this queue is where all notifications of new objects added to any
         # buckets which are source locations for pipelines
@@ -245,7 +270,9 @@ class Tributary(CapeComponentResource):
         # resource that will get returned by default.
         self.register_outputs({"tributary_name": self.name})
 
-    def configure_bucket(self, bucket_id: str):
+    def configure_bucket(
+        self, bucket_id: str, crawler_attrs_ddb_table: aws.dynamodb.Table
+    ):
         """Creates/configures a bucket based on config values.
 
         If a crawler is configured for the bucket, this will be added as well.
@@ -266,13 +293,28 @@ class Tributary(CapeComponentResource):
 
         crawler_config = bucket_config.get("crawler")
         if crawler_config:
-            DataCrawler(
+            self.crawlers[bucket_id] = DataCrawler(
                 f"{bucket_name}-crwl",
                 self.buckets[bucket_id].bucket,
                 self.catalog.catalog_database,
                 opts=ResourceOptions(parent=self),
                 desc_name=f"{self.desc_name} {bucket_id} data crawler",
                 config=crawler_config,
+            )
+
+            aws.dynamodb.TableItem(
+                f"{self.name}-{bucket_id}-crawler-ddbitem",
+                table_name=crawler_attrs_ddb_table.name,
+                hash_key=crawler_attrs_ddb_table.hash_key,
+                item=Output.json_dumps(
+                    {
+                        "bucket_name": {"S": self.buckets[bucket_id].bucket.id},
+                        "crawler_name": {
+                            "S": self.crawlers[bucket_id].crawler.name
+                        },
+                    }
+                ),
+                opts=ResourceOptions(parent=self),
             )
 
     def configure_etl(self, etl_attrs_ddb_table: aws.dynamodb.Table):
@@ -316,6 +358,9 @@ class Tributary(CapeComponentResource):
                         },
                         "prefix": {"S": job.config["prefix"]},
                         "etl_job": {"S": job.job.id},
+                        "sink_bucket_name": {
+                            "S": self.buckets[cfg["sink"]].bucket.id
+                        },
                         "suffixes": {
                             "L": [
                                 {"S": suf}

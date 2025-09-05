@@ -5,12 +5,13 @@ from enum import Enum
 from typing import Any
 
 import pulumi_aws as aws
-from pulumi import ResourceOptions, warn
+from pulumi import ResourceOptions, log
 
 # TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
 #       it should not be here after 145.
 from capeinfra.datalake.datalake import CatalogDatabase
-from capeinfra.pipeline.batch import BatchCompute
+from capeinfra.pipeline.batch import BatchCompute, BatchJobDefinition
+from capeinfra.pipeline.ecr import ContainerRepository
 from capeinfra.resources.certs import BYOCert
 from capeinfra.resources.loadbalancer import AppLoadBalancer
 from capeinfra.util.naming import disemvowel
@@ -80,8 +81,10 @@ class ScopedSwimlane(CapeComponentResource):
         # facing nat gateway for az "us=east-2b"
         self.az_assets = dict[str, dict[str, Any]]()
         self.compute_environments = dict[str, BatchCompute]()
+        self.job_definitions = dict[str, BatchJobDefinition]()
         self.albs = {}
         self.domain_name = self.config.get("domain")
+        self.container_repository = ContainerRepository(self.basename)
 
         # we require a domain name for swimlanes.
         if self.domain_name is None:
@@ -99,6 +102,8 @@ class ScopedSwimlane(CapeComponentResource):
         self.create_domain_cert()
         self.create_vpc()
         self.create_subnets()
+        self.create_container_images()
+        self.create_job_definitions()
         self.create_compute_environments()
         self.register_outputs({f"{self.basename}-vpc-id": self.vpc.id})
 
@@ -333,10 +338,11 @@ class ScopedSwimlane(CapeComponentResource):
 
         for rte, rcfg in rte_cfgs.items():
             if rcfg is None:
-                warn(
+                log.warn(
                     f"Subnet {sn_name} is configured to have a route to "
                     f"a subnet ({rte}) that is not found. This route will "
-                    "be ignored."
+                    "be ignored.",
+                    self,
                 )
                 continue
             # NOTE: special handling for the NAT routes. we
@@ -490,6 +496,34 @@ class ScopedSwimlane(CapeComponentResource):
 
             self.subnets[sn_name] = (sn_cfg["type"], subnet)
 
+    def create_container_images(self):
+        """Default implementation of container images creation for a swimlane.
+
+        The default implementation builds the container images and stores them
+        in the swimlane's container registry
+        """
+
+        for container_name, container_image in self.config.get(
+            "compute", "container_images", default={}
+        ).items():
+            self.container_repository.add_image(container_name, container_image)
+
+    def create_job_definitions(self):
+        """Default implementation of job definitions creation for a swimlane.
+
+        The default implementation builds the container images and stores them
+        in the swimlane's container registry
+        """
+
+        for job_name, job_properties in self.config.get(
+            "compute", "jobs", default={}
+        ).items():
+            self.job_definitions[job_name] = BatchJobDefinition(
+                f"{self.basename}-{job_name}-jobdef",
+                job_properties,
+                repository=self.container_repository,
+            )
+
     def create_compute_environments(self):
         """Default implementation of compute environment creation for a swimlane.
 
@@ -501,7 +535,7 @@ class ScopedSwimlane(CapeComponentResource):
             name = env.get("name")
             for sn_type in env.get("subnet_types"):
                 self.compute_environments[name] = BatchCompute(
-                    name,
+                    f"{self.basename}-{name}-btch",
                     vpc=self.vpc,
                     subnets=self.get_subnets_by_type(sn_type),
                     config=env,

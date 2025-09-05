@@ -17,6 +17,7 @@ from pulumi import (
 from pulumi_synced_folder import S3BucketFolder
 
 import capeinfra
+from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
@@ -26,6 +27,7 @@ from capeinfra.iam import (
     get_sqs_lambda_dap_submit_policy,
     get_vpce_api_invoke_policy,
 )
+from capeinfra.pipeline.dapregistry import DAPRegistry
 
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
@@ -77,7 +79,7 @@ class PrivateSwimlane(ScopedSwimlane):
                         "stage-suffix": "dev",
                     },
                 },
-                "apis": {},
+                "apis": [],
             },
             "compute": {},
             "vpn": {
@@ -86,7 +88,7 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         }
 
-    def __init__(self, name, *args, **kwargs):
+    def __init__(self, name, data_lake_house: DatalakeHouse, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
         # TODO: ISSUE #153 is there a better way to expose the auto assets
@@ -96,6 +98,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
+        self.data_lake_house = data_lake_house
 
         # will contain a mapping of env var labels to resource names and types.
         # these may be used in api configuration to state the need for a
@@ -115,8 +118,40 @@ class PrivateSwimlane(ScopedSwimlane):
         #       not hard coding the env var label in this class.
         self._exposed_env_vars = {}
 
+        self._exposed_env_vars.setdefault(
+            "DDB_REGION",
+            {
+                "resource_name": self.aws_region,
+                "type": "metadata",
+            },
+        )
+
+        self._exposed_env_vars.setdefault(
+            "ETL_ATTRS_DDB_TABLE",
+            {
+                "resource_name": self.data_lake_house.etl_attr_ddb_table.name,
+                "type": "table",
+            },
+        )
+
+        self._exposed_env_vars.setdefault(
+            "CRAWLER_ATTRS_DDB_TABLE",
+            {
+                "resource_name": self.data_lake_house.crawler_attrs_ddb_table.name,
+                "type": "table",
+            },
+        )
+
+        # TODO: better way to register these things. this one comes from
+        #       capemeta and totally breaks the "encapsulation" we had here
+        self._exposed_env_vars.setdefault(
+            "CANNED_REPORT_DDB_TABLE",
+            {
+                "resource_name": capeinfra.meta.canned_reports.canned_report_ddb_table.name,
+                "type": "table",
+            },
+        )
         self.create_analysis_pipeline_registry()
-        self.create_dap_submission_queue()
         self.create_static_web_resources()
         self.create_application_instances()
         # static and instance apps share an alb
@@ -194,114 +229,11 @@ class PrivateSwimlane(ScopedSwimlane):
 
     def create_analysis_pipeline_registry(self):
         """Sets up an analysis pipeline registry database."""
-        # setup a DynamoDB table to hold a mapping of pipeline names (user
-        # facing names) to various config info for the running of the analysis
-        # pipelines. E.g. a nextflow pipeline may have a default nextflow config
-        # in the value object of its entry whereas a snakemake pipeline may have
-        # a default snakemake config.
-        # NOTE: DynamoDB stuff lives outside a VPC and is managed by AWS. This
-        #       is in the private swimlane as it fits there logically. we may
-        #       want to consider moving all AWS managed items into CapeMeta
-        #       eventually.
-        # NOTE: we can set up our Dynamo connections to go through a VPC
-        #       endpoint instead of the way we're currently doing (using the
-        #       fact that we have a NAT and egress requests to go through the
-        #       boto3 dynamo client, which makes the requests go through the
-        #       public internet). This is arguably more secure and performant as
-        #       it's a direct connection to Dynamo from our clients.
-        self.analysis_pipeline_registry_ddb_table = aws.dynamodb.Table(
-            f"{self.basename}-anlysppln-rgstry-ddb",
-            name=f"{self.basename}-AnalysisPipelineRegistry",
-            # NOTE: this table will be accessed as needed to do submit analysis
-            #       pipeline jobs. it'll be pretty hard (at least till this is
-            #       in use for a while) to come up with read/write metrics to
-            #       set this table up as PROVISIONED with those values. We'd
-            #       probably be much cheaper to go that route if we have a
-            #       really solid idea of how many reads/writes this table needs
-            billing_mode="PAY_PER_REQUEST",
-            hash_key="pipeline_name",
-            range_key="version",
-            attributes=[
-                # NOTE: we do not need to define any part of the "schema" here
-                #       that isn't needed in an index.
-                {
-                    "name": "pipeline_name",
-                    "type": "S",
-                },
-                {
-                    "name": "version",
-                    "type": "S",
-                },
-            ],
+        self.analysis_pipeline_registry = DAPRegistry(
+            "cape-dap-registry",
             opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Analysis Pipeline Registry DynamoDB Table"
-                ),
-            },
+            desc_name=(f"{self.desc_name} Analysis Pipeline Registry"),
         )
-
-        # TODO: long term it is not tenable for us to have all the
-        #       config stuff for all the pipeline frameworks
-        #       specified in this manner. we should consider keeping
-        #       the default config in common files or something
-        #       like that and then point to the file in this table
-        nextflow_config = {
-            "M": {
-                "aws": {
-                    "M": {
-                        "accessKey": {"S": "<YOUR S3 ACCESS KEY>"},
-                        "secretKey": {"S": "<YOUR S3 SECRET KEY>"},
-                        "region": {"S": "us-east-2"},
-                        "client": {
-                            "M": {
-                                "maxConnections": {"N": "20"},
-                                "connectionTimeout": {"N": "10000"},
-                                "uploadStorageClass": {
-                                    "S": "INTELLIGENT_TIERING"
-                                },
-                                "storageEncryption": {"S": "AES256"},
-                            }
-                        },
-                        "batch": {
-                            "M": {
-                                "cliPath": {"S": "/usr/bin/aws"},
-                                "maxTransferAttempts": {"N": "3"},
-                                "delayBetweenAttempts": {"S": "5 sec"},
-                            }
-                        },
-                    }
-                }
-            }
-        }
-        nextflow_pipelines = {
-            "bactopia/bactopia": ["v3.0.1", "dev"],
-        }
-        for pipeline in nextflow_pipelines:
-            for version in nextflow_pipelines[pipeline]:
-                # TODO: we're hard coding this table for now. longer term we really
-                #       probably want an initial canned setup (for initial deploy) and
-                #       the ability to add these records at runtime so users can extend
-                #       when they need to. right now we're only adding the bactopia
-                #       tutorial as a pipeline
-                # TODO: ISSUE #84
-                aws.dynamodb.TableItem(
-                    f"{self.basename}-{disemvowel(pipeline)}-{version}-ddbitem",
-                    table_name=self.analysis_pipeline_registry_ddb_table.name,
-                    hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
-                    range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
-                        lambda rk: f"{rk}"
-                    ),
-                    item=Output.json_dumps(
-                        {
-                            "pipeline_name": {"S": pipeline},
-                            "version": {"S": version},
-                            "pipeline_type": {"S": "nextflow"},
-                            "nextflow_config": nextflow_config,
-                        }
-                    ),
-                    opts=ResourceOptions(parent=self),
-                )
 
         # read access to this this resource can be configured via the deployment
         # config (for api lambdas), so add it to the bookkeeping structure for
@@ -309,100 +241,8 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "DAP_REG_DDB_TABLE",
             {
-                "resource_name": self.analysis_pipeline_registry_ddb_table.name,
+                "resource_name": self.analysis_pipeline_registry.analysis_pipeline_registry_ddb_table.name,
                 "type": "table",
-            },
-        )
-
-    def create_dap_submission_queue(self):
-        """Creates and configures the SQS queue where DAP submissions will go.
-
-        Configuration of this queue also involves configuring the Lambda that is
-        triggered on messages being added to the queue.
-        """
-        # this queue is where all data analysis pipeline submission messages
-        # will go
-        self.dap_submit_queue = aws.sqs.Queue(
-            # TODO: ISSUE #68
-            f"{self.basename}-dapq",
-            name=f"{self.basename}-dapq.fifo",
-            content_based_deduplication=True,
-            fifo_queue=True,
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} data analysis pipeline submission queue"
-                )
-            },
-        )
-
-        # get a role for the raw bucket trigger
-        self.dap_submit_sqs_trigger_role = get_inline_role(
-            f"{self.basename}-dapq-sqstrgrole",
-            f"{self.desc_name} DAP submission SQS trigger role",
-            "lmbd",
-            "lambda.amazonaws.com",
-            Output.all(
-                qname=self.dap_submit_queue.name,
-                table_name=self.analysis_pipeline_registry_ddb_table.name,
-            ).apply(
-                lambda args: get_sqs_lambda_dap_submit_policy(
-                    args["qname"], args["table_name"]
-                )
-            ),
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-            opts=ResourceOptions(parent=self),
-        )
-
-        # Create our Lambda function that triggers the given glue job
-        self.dap_submit_qmsg_handler = aws.lambda_.Function(
-            f"{self.basename}-dapq-sqslmbdtrgfnct",
-            role=self.dap_submit_sqs_trigger_role.arn,
-            layers=[capeinfra.meta.capepy.lambda_layer.arn],
-            code=AssetArchive(
-                {
-                    "index.py": FileAsset(
-                        "./assets/lambda/sqs_dap_submit_lambda.py"
-                    )
-                }
-            ),
-            runtime="python3.10",
-            timeout=30,
-            # in this case, the zip file for the lambda deployment is
-            # being created by this code. and the zip file will be
-            # called index. so the handler must be start with `index`
-            # and the actual function in the script must be named
-            # the same as the value here
-            handler="index.index_handler",
-            environment={
-                "variables": {
-                    "DAP_REG_DDB_TABLE": self.analysis_pipeline_registry_ddb_table.name,
-                    "DDB_REGION": self.aws_region,
-                }
-            },
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} DAP submission sqs message lambda trigger "
-                    "function"
-                )
-            },
-        )
-
-        aws.lambda_.EventSourceMapping(
-            f"{self.basename}-dapq-sqslmbdatrgr",
-            event_source_arn=self.dap_submit_queue.arn,
-            function_name=self.dap_submit_qmsg_handler.arn,
-            function_response_types=["ReportBatchItemFailures"],
-        )
-
-        # read access to this this resource can be configured via the deployment
-        # config (for api lambdas), so add it to the bookkeeping structure for
-        # that
-        self._exposed_env_vars.setdefault(
-            "DAP_QUEUE_NAME",
-            {
-                "resource_name": self.dap_submit_queue.name,
-                "type": "queue",
             },
         )
 
@@ -417,15 +257,16 @@ class PrivateSwimlane(ScopedSwimlane):
         # Grab the config values of interest so we can check if we should
         # proceed
         sa_name = sa_cfg.get("name", default=None)
+        sa_short_name = sa_cfg.get("short_name", default=None)
         sa_fqdn = sa_cfg.get("fqdn", default=None)
         sa_dir = sa_cfg.get("dir", default=None)
 
-        if None in (sa_name, sa_fqdn, sa_dir):
+        if None in (sa_name, sa_short_name, sa_fqdn, sa_dir):
             msg = (
                 f"Static App {sa_name or 'UNNAMED'} contains one or more "
                 "invalid configuration values that are required. The "
-                "application will not be deployed. Check the app name, fqdn, "
-                "and repo directory."
+                "application will not be deployed. Check the app name, app "
+                "short name, fqdn, and repo directory."
             )
 
             warn(msg)
@@ -440,6 +281,8 @@ class PrivateSwimlane(ScopedSwimlane):
         #   }
         # }
         self.static_apps.setdefault(sa_name, {})
+
+        self.static_apps[sa_name]["short_name"] = sa_short_name
 
         # bucket for hosting static web application
         # TODO: ISSUE #127
@@ -493,6 +336,7 @@ class PrivateSwimlane(ScopedSwimlane):
             self.albs[self.APPLICATION_ALB].add_instance_app_target(
                 ia_info["instance"],
                 ia_name,
+                ia_info["short_name"],
                 ia_info["fqdn"],
                 port=443,
                 proto="HTTPS",
@@ -509,6 +353,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 sa_info["bucket"].bucket,
                 self.static_app_vpcendpoint,
                 sa_name,
+                sa_info["short_name"],
                 port=443,
                 proto="HTTPS",
             )
@@ -531,6 +376,7 @@ class PrivateSwimlane(ScopedSwimlane):
             self.albs[self.API_ALB].add_api_target(
                 self.api_vpcendpoint,
                 api_info["deploy"].stage_name,
+                api_info["spec"]["short_name"],
                 port=443,
                 proto="HTTPS",
             )
@@ -613,8 +459,8 @@ class PrivateSwimlane(ScopedSwimlane):
         # deployment info in "deploy" key
         self.apis = {}
 
-        for name, spec in self.config.get("api", "apis").items():
-            self.apis.setdefault(name, {"spec": spec})
+        for spec in self.config.get("api", "apis"):
+            self.apis.setdefault(spec["name"], {"spec": spec})
 
         # NOTE: our private DNS will send *all* api gateway traffic through
         #       this endpoint. at the time of this comment, this means we would
@@ -652,6 +498,17 @@ class PrivateSwimlane(ScopedSwimlane):
             regional_certificate_arn=(self.domain_cert.acmcert.arn),
             endpoint_configuration={
                 "types": "REGIONAL",
+            },
+        )
+
+        # read access to this this resource can be configured via the deployment
+        # config (for api lambdas), so add it to the bookkeeping structure for
+        # that
+        self._exposed_env_vars.setdefault(
+            "USER_ATTRS_DDB_TABLE",
+            {
+                "resource_name": capeinfra.meta.principals.user_attrs_ddb_table.name,
+                "type": "table",
             },
         )
 
@@ -809,6 +666,7 @@ class PrivateSwimlane(ScopedSwimlane):
                             ),
                             opts=ResourceOptions(parent=self),
                         ),
+                        "short_name": aicfg["short_name"],
                         "fqdn": domain,
                         "port": aicfg.get("port", None),
                         "proto": aicfg.get("protocol", None),
