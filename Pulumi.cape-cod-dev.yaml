@@ -245,6 +245,9 @@ config:
                 - name: etl-bactopia-results
                   key: glue/etl/etl_bactopia_results.py
                   srcpth: ./assets/etl/etl_bactopia_results.py
+                - name: etl-bactopia-samples
+                  key: glue/etl/etl_bactopia_samples.py
+                  srcpth: ./assets/etl/etl_bactopia_samples.py
                 - name: etl-seqreadarch
                   key: glue/etl/etl_seqarchive.py
                   srcpth: ./assets/etl/etl_seqarchive.py
@@ -1289,10 +1292,6 @@ config:
                       name:
                       crawler:
                           prefix: input # prefixes for tables in the database
-                          excludes:
-                          classifiers:
-                              - cape-csv-standard-classifier
-                          schedule: "0 2 * * ? *"
                   result-raw:
                       name:
                   result-clean:
@@ -1338,7 +1337,6 @@ config:
                   input-clean:
                       name:
                       crawler:
-                          classifiers:
                           prefix: input # prefixes for tables in the database
                   result-raw:
                       name:
@@ -1368,6 +1366,9 @@ config:
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
+                                - yml
+                            pymodules:
+                                - pyyaml==6.0.2
             - name: seqauto
               buckets:
                   input-raw:
@@ -1376,7 +1377,6 @@ config:
                   input-clean:
                       name:
                       crawler:
-                          classifiers:
                           prefix: input # prefixes for tables in the database
                   result-raw:
                       name:
@@ -1395,3 +1395,21 @@ config:
                             suffixes:
                                 - gz
                             max_concurrent_runs: 5
+                          - name: bactopia-results
+                            script: glue/etl/etl_bactopia_results.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: pipeline-output/bactopia-runs
+                            suffixes:
+                                - tsv
+                                - yml
+                            pymodules:
+                                - pyyaml==6.0.2
+                          - name: bactopia-samples
+                            script: glue/etl/etl_bactopia_samples.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: pipeline-output
+                            suffixes:
+                                - tsv
+                                - txt

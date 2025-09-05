@@ -26,3 +26,5 @@ pypdf>=6.0.0,<7.0.0
 multipart>=1.2.1,<2.0.0
 # report-gen requirements
 weasyprint==66.0
+# bactopia results requirements
+pyyaml>=6.0.0,<7.0.0
