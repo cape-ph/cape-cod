@@ -94,7 +94,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -156,7 +156,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -195,6 +195,10 @@ paths:
                 "500":
                     description:
                         "Server Error - Unable to fetch user attributes"
+                # TODO: This default isn't supported by AWS API Gateway. It's 
+                #       not breaking anything, but will not do anything. We 
+                #       need to specify all expected/known status codes 
+                #       explicitly
                 "default":
                     description: "Client Error"
                     content:
@@ -226,7 +230,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -260,6 +264,10 @@ paths:
                 "500":
                     description:
                         "Server Error - Unable to fetch user attributes"
+                # TODO: This default isn't supported by AWS API Gateway. It's 
+                #       not breaking anything, but will not do anything. We 
+                #       need to specify all expected/known status codes 
+                #       explicitly
                 "default":
                     description: "Client Error"
                     content:
@@ -291,7 +299,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -368,7 +376,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -431,7 +439,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -483,7 +491,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -510,6 +518,10 @@ paths:
             responses:
                 "200":
                     description: "Success"
+                    headers:
+                        Access-Control-Allow-Origin:
+                            schema:
+                                type: "string"
                     content:
                         # NOTE: response body comes back in XML
                         application/xml:
@@ -536,16 +548,14 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}?uploads"
-                responses: 
-                    default: 
-                        statusCode: "200"
                 requestParameters: 
                     integration.request.path.bucket: method.request.querystring.bucket
                     integration.request.path.key: method.request.querystring.key
-                responseParameters: 
-                    method.response.body.bucket: integration.response.body.Bucket
-                    method.response.body.key: integration.response.body.Key
-                    method.response.body.uploadId: integration.response.body.UploadId
+                responses: 
+                    default: 
+                        statusCode: "200"
+                        responseParameters: 
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
@@ -634,7 +644,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -664,26 +674,33 @@ paths:
                     description: "The id of the previously created multipart upload"
                   required: true
             requestBody:
-                application/xml:
-                    schema:
-                        type: array
-                        description: Array of objects about previously uploaded part for the MPU being completed
-                        items:
-                            type: object
-                            properties:
-                                PartNumber:
-                                    type: string 
-                                    description: Part number of a previously uploaded part
-                                ETag:
-                                    type: string
-                                    description: ETag of a previously uploaded part
-                            xml:
-                                name: Part
-                        xml: 
-                            name: CompleteMultipartUpload
+                description: Submit a notification that an MPU is complete.
+                required: true
+                content:
+                    application/xml:
+                        schema:
+                            type: array
+                            description: Array of objects about previously uploaded part for the MPU being completed
+                            items:
+                                type: object
+                                properties:
+                                    PartNumber:
+                                        type: string 
+                                        description: Part number of a previously uploaded part
+                                    ETag:
+                                        type: string
+                                        description: ETag of a previously uploaded part
+                                xml:
+                                    name: Part
+                            xml: 
+                                name: CompleteMultipartUpload
             responses:
                 "200":
                     description: "Success"
+                    headers:
+                        Access-Control-Allow-Origin:
+                            schema:
+                                type: "string"
                     content:
                         # NOTE: response body comes back in XML
                         application/xml:
@@ -723,24 +740,15 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
-                responses: 
-                    default: 
-                        statusCode: "200"
                 requestParameters: 
                     integration.request.path.bucket: method.request.querystring.bucket
                     integration.request.path.key: method.request.querystring.key
                     integration.request.querystring.uploadId: method.request.querystring.uploadId
-                responseParameters: 
-                    method.response.body.bucket: integration.response.body.Bucket
-                    method.response.body.key: integration.response.body.Key
-                    method.response.body.location: integration.response.body.Location
-                    method.response.body.eTag: integration.response.body.ETag
-                    method.response.body.checksumCRC32: integration.response.body.ChecksumCRC32
-                    method.response.body.checksumCRC32C: integration.response.body.ChecksumCRC32C
-                    method.response.body.checksumCRC64NVME: integration.response.body.ChecksumCRC64NVME
-                    method.response.body.checksumSHA1: integration.response.body.ChecksumSHA1
-                    method.response.body.checksumSHA256: integration.response.body.ChecksumSHA256
-                    method.response.body.checksumCRCType: integration.response.body.ChecksumType
+                responses: 
+                    default: 
+                        statusCode: "200"
+                        responseParameters: 
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
@@ -785,6 +793,10 @@ paths:
             responses:
                 "204":
                     description: "Success"
+                    headers:
+                        Access-Control-Allow-Origin:
+                            schema:
+                                type: "string"
                 "500":
                     description:
                         "Server Error - Unable to query object API (error occurred)."
@@ -794,13 +806,15 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
-                responses: 
-                    default: 
-                        statusCode: "204"
                 requestParameters: 
                     integration.request.path.bucket: method.request.querystring.bucket
                     integration.request.path.key: method.request.querystring.key
                     integration.request.querystring.uploadId: method.request.querystring.uploadId
+                responses: 
+                    default: 
+                        statusCode: "204"
+                        responseParameters: 
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
@@ -813,7 +827,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,DELETE'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -838,6 +852,7 @@ paths:
                         "The requested report format. Defaults to `html` if not provided"
             responses:
                 "200":
+                    description: Success response containing the requested report.
                     content:
                         application/octet-stream:
                             schema:
@@ -867,7 +882,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -939,7 +954,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -1001,7 +1016,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -1103,7 +1118,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
@@ -1187,7 +1202,7 @@ paths:
                     default:
                         statusCode: "200"
                         responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
                             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 requestTemplates:
