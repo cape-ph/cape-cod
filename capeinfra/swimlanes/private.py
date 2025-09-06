@@ -385,12 +385,13 @@ class PrivateSwimlane(ScopedSwimlane):
     def create_static_web_resources(self):
         """Creates resources related to private swimlane web resources."""
 
+        self.static_apps = {}
         sa_cfgs = self.config.get("static-apps", default=None)
 
         # sa_cfgs could come back None (if the key is not in the config), an
         # empty string (if the key is there but nothing is defined for it), or
         # an actual mapping. if the value is Falsy, we're going to bail
-        if sa_cfgs:
+        if not sa_cfgs:
             warn(f"No static apps configured for swimlane {self.basename}")
             return
 
@@ -409,7 +410,6 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         )
 
-        self.static_apps = {}
         for sa_cfg in sa_cfgs:
             try:
                 self._deploy_static_app(CapeConfig(sa_cfg))

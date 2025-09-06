@@ -1207,9 +1207,26 @@ config:
     # data pipelines that define transformations on data places in the raw
     # bucket. This is all described in more detail below.
     cape-cod:datalakehouse:
+        # `bucket_cors_policies` (mapping, optional)
+        # Contains named cors policies that can be reused in buckets of
+        # tributaries. Each submapping consists of a name and cors
+        # setting specific submappings.
+        # TODO: we should have a way for a tributary to define its own
+        #       additions/overrides to this liswccollection. right now
+        #       we only support DLH global definitions
+        bucket_cors_policies:
+            mpu_policy:
+                allowed_methods:
+                    - put
+                allowed_headers:
+                    - content-type
+                expose_headers:
+                    - etag
+                allowed_origins:
+                    - "*"
+
         # NOTE: unless specified otherwise in here, all crawlers will run at
         #       0200 daily
-
         # `tributaries` (mapping[], optional)
         # Contains a list of mappings defining specific domains in the data
         # lake house (e.g. HAI, genomics). Each tributary has its own raw/clean
@@ -1393,6 +1410,8 @@ config:
                   input-raw:
                       name:
                       crawler:
+                      cors_policies:
+                          - mpu_policy
                   input-clean:
                       name:
                       crawler:

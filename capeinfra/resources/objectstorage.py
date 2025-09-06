@@ -12,7 +12,7 @@ from capepulumi import CapeComponentResource
 class VersionedBucket(CapeComponentResource):
     """An object storage location with versioning turned on."""
 
-    def __init__(self, name, bucket_name=None, **kwargs):
+    def __init__(self, name, bucket_name=None, cors_rules=None, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
             "capeinfra:resources:objectstorage:S3VersionedBucket",
@@ -37,6 +37,15 @@ class VersionedBucket(CapeComponentResource):
             ),
             opts=ResourceOptions(parent=self),
         )
+
+        self.cors_policy = None
+        if cors_rules:
+            self.cors_policy = aws.s3.BucketCorsConfigurationV2(
+                f"{self.name}-cors",
+                bucket=self.bucket.id,
+                cors_rules=cors_rules,
+                opts=ResourceOptions(parent=self),
+            )
 
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
