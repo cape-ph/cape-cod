@@ -1,7 +1,7 @@
 """Contains data lake related declaratiohs."""
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions
+from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import (
@@ -154,6 +154,7 @@ class DatalakeHouse(CapeComponentResource):
         self.tributaries = []
         for trib_config in self.config.get("tributaries", default=[]):
             trib_name = trib_config.get("name")
+
             self.tributaries.append(
                 Tributary(
                     f"{self.name}-T-{trib_name}",
@@ -162,6 +163,18 @@ class DatalakeHouse(CapeComponentResource):
                     self.crawler_attrs_ddb_table,
                     self.aws_region,
                     config=trib_config,
+                    # TODO: much like passing around lambda function layers
+                    #       (which generally exist in capemeta but are needed
+                    #       elsewhere), we need a different way to pass the
+                    #       cors_policies around (or make a registry to fetch
+                    #       them from). We also want the tributary configuration
+                    #       to be able to add to/override anmed cors config in
+                    #       their own scopes, so when we attack that it would
+                    #       make sense to look into how to make accessing them
+                    #       better.
+                    cors_policies=(
+                        self.config.get("bucket_cors_policies", default=None)
+                    ),
                     opts=ResourceOptions(parent=self),
                     desc_name=f"{self.desc_name} {trib_name} tributary",
                 )
@@ -220,6 +233,16 @@ class Tributary(CapeComponentResource):
         crawler_attrs_ddb_table: aws.dynamodb.Table,
         aws_region: str,
         *args,
+        # TODO: much like passing around lambda function layers
+        #       (which generally exist in capemeta but are needed
+        #       elsewhere), we need a different way to pass the
+        #       cors_policies around (or make a registry to fetch
+        #       them from). We also want the tributary configuration
+        #       to be able to add to/override anmed cors config in
+        #       their own scopes, so when we attack that it would
+        #       make sense to look into how to make accessing them
+        #       better.
+        cors_policies: dict | None = None,
         **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
@@ -235,6 +258,7 @@ class Tributary(CapeComponentResource):
             desc_name=f"{self.desc_name} data catalog database",
         )
         self.aws_region = aws_region
+        self.cors_policies = cors_policies
 
         # configure the buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
@@ -284,9 +308,38 @@ class Tributary(CapeComponentResource):
         bucket_name = bucket_config.get(
             "name", default=f"{self.name}-{bucket_id}-vbkt"
         )
-        print(f"Bucket: {bucket_name}")
+
+        # deal with cors policy if we have one named in the bucket config *and*
+        # we have a top level definition matching the name
+        cors_policy_names = bucket_config.get("cors_policies", default=None)
+        cors_rules = None
+
+        if self.cors_policies is None:
+            if cors_policy_names is not None:
+                msg = (
+                    f"Tributary {self.name} bucket {bucket_name} specifies cors "
+                    f"policies ({cors_policy_names}) that do not match any "
+                    f"specified in the data lake configuration."
+                )
+                log.error(msg)
+                raise ValueError(msg)
+        else:
+            if cors_policy_names is not None:
+                cors_rules = [
+                    self.cors_policies.get(n) for n in cors_policy_names
+                ]
+                if None in cors_rules:
+                    msg = (
+                        f"Tributary {self.name} bucket {bucket_name} specifies cors "
+                        f"policies ({cors_policy_names}) that do not match any "
+                        f"specified in the data lake configuration."
+                    )
+                    log.error(msg)
+                    raise ValueError(msg)
+
         self.buckets[bucket_id] = VersionedBucket(
             bucket_name,
+            cors_rules=cors_rules,
             desc_name=f"{self.desc_name} {bucket_id}",
             opts=ResourceOptions(parent=self),
         )
