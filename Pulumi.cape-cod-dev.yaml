@@ -1217,7 +1217,7 @@ config:
         bucket_cors_policies:
             mpu_policy:
                 allowed_methods:
-                    - put
+                    - PUT
                 allowed_headers:
                     - content-type
                 expose_headers:
