@@ -9,6 +9,8 @@ import datetime
 import json
 import logging
 
+import awswrangler as wr
+import boto3
 from botocore.exceptions import ClientError
 from capepy.aws.utils import decode_error
 
@@ -157,13 +159,54 @@ def data_function(event, context):
     # propagate to the data function
     payload = event.get("Payload")
 
-    # TODO: put in athena query to get data of interest. this lambda
-    #       function could end up being a more utilitarian "run some athena
-    #       query" generalization where the payload from the caller has some
-    #       named athena query to run along with values to apply to the
-    #       query before running (such as a sample id, etc). unclear at this
-    #       time if data functions will be super specialized for one task or
-    #       if we can have one function serve many needs
+    # TODO: this lambda function could end up being a more utilitarian "run
+    #       some athena query" generalization where the payload from the caller
+    #       has some named athena query to run along with values to apply to
+    #       the query before running (such as a sample id, etc). unclear at
+    #       this time if data functions will be super specialized for one task
+    #       or if we can have one function serve many needs
+
+    # TODO: this is very hard coded for a single demo use case right not. deal
+    #       with it...
+
+    athena = boto3.client("athena")
+
+    catalog = next(
+        catalog["CatalogName"]
+        for catalog in athena.list_data_catalogs()["DataCatalogsSummary"]
+    )
+
+    databases = athena.list_databases(CatalogName=catalog)["DatabaseList"]
+    database = next(
+        (db["Name"] for db in databases if "seqauto-catalog" in db["Name"]),
+        None,
+    )
+
+    if database is not None:
+        input_meta_sql = """
+            SELECT
+                bactopia_run,
+                parameter_name,
+                input_file,
+                substr(input_file, 1, length(input_file) - strpos(reverse(input_file), '/') + 1) || 'meta.json' AS "meta_file"
+            FROM
+                "ccd-dlh-t-seqauto-catalog_mczhqmdk"."result_software_versions"
+            WHERE
+                parameter_name = '--ont';
+        """
+
+        print(
+            f"{wr.athena.read_sql_query(sql=input_meta_sql,database=database,)}"
+        )
+
+    else:
+        msg = (
+            f"Could not find Glue catalog database {database}. Data function "
+            "cannot continue"
+        )
+        logger.error(msg)
+        # TODO: what's the right exception for a missing database?
+        raise Exception(msg)
 
     # unlike the api lambda functions, there isn't really a need to return a
     # dict representing an http response. just send the data back (the caller
