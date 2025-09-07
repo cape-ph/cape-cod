@@ -107,6 +107,7 @@ def get_athena_data_function_policy(
                 "Action": [
                     "s3:GetObject",
                     "s3:PutObject",
+                    "s3:GetBucketLocation",
                 ],
                 "Resource": [
                     f"arn:aws:s3:::*/*",
@@ -154,6 +155,7 @@ def get_athena_data_function_policy(
                 "Effect": "Allow",
                 "Action": [
                     "glue:GetDatabases",
+                    "glue:GetDatabase",
                     "glue:DeleteTable",
                 ],
                 "Resource": [
