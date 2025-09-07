@@ -106,7 +106,11 @@ config:
                       generators.
                   compatible_runtimes:
                       - python3.13
-
+            - name: aws-sdk-pandas
+              # this layer is where one gets aws wrangler.
+              type_args:
+                  type: aws
+                  arn: arn:aws:lambda:us-east-2:336392948345:layer:AWSSDKPandas-Python310:25
             - name: kotify-cpu
               cleanup_tmp: False
               type_args:
@@ -313,6 +317,7 @@ config:
                       code: "./assets/report/bactopia-single-sample-analysis/data_function.py"
                       layers:
                           - capi-all
+                          - aws-sdk-pandas
                       funct_args:
                           handler: "index.data_function"
                           runtime: "python3.10"
@@ -321,8 +326,8 @@ config:
                           description:
                               "Bactopia Single Sample Report Data Lambda
                               Function"
-                          memory_size: 128
-                          timeout: 3
+                          memory_size: 512
+                          timeout: 30
     # `cape-cod:swimlanes` (mapping, required)
     # Contains the configuration for all swimlanes. Swimlanes define logical
     # separations of public, protected and private resources in CAPE. Each
