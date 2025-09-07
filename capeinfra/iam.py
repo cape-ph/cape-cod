@@ -83,6 +83,93 @@ def get_s3_api_proxy_policy(
     return json.dumps(policy_dict)
 
 
+# TODO: as with most of our policies and such right now, this is far too
+#       permissive.
+def get_athena_data_function_policy(
+    principal: str | None = None,
+) -> str:
+    """Get a policy statement for general report data function permissions.
+
+     Gets basic permissions for running athena queries and getting using
+     tables.
+
+    Args:
+        principal: The optional principal to limit this policy statement to.
+
+    Returns:
+        The policy statement as a json encoded string.
+    """
+    policy_dict = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::*/*",
+                    f"arn:aws:s3:::*",
+                ],
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "athena:GetWorkGroup",
+                    "athena:GetTableMetadata",
+                    "athena:StartQueryExecution",
+                    "athena:GetQueryResultsStream",
+                    "athena:ListDatabases",
+                    "athena:GetQueryExecution",
+                    "athena:GetQueryResults",
+                    "athena:GetDatabase",
+                    "athena:ListTableMetadata",
+                    "athena:GetDataCatalog",
+                    "athena:CreatePreparedStatement",
+                    "athena:DeletePreparedStatement",
+                ],
+                "Resource": [
+                    "arn:aws:athena:*:*:workgroup/*",
+                    "arn:aws:athena:*:*:datacatalog/*",
+                ],
+            },
+            {
+                "Effect": "Allow",
+                "Action": ["athena:ListDataCatalogs", "athena:ListWorkGroups"],
+                "Resource": "*",
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "glue:GetDatabase",
+                    "glue:GetTable",
+                ],
+                "Resource": [
+                    f"arn:aws:glue:::*/*",
+                    f"arn:aws:glue:::*",
+                ],
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "glue:GetDatabases",
+                    "glue:DeleteTable",
+                ],
+                "Resource": [
+                    f"*",
+                ],
+            },
+        ],
+    }
+
+    if principal is not None:
+        for stmnt in policy_dict["Statement"]:
+            stmnt.setdefault("Principal", principal)
+
+    return json.dumps(policy_dict)
+
+
 def get_bucket_reader_policy(
     buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
     principal: str | None = None,
