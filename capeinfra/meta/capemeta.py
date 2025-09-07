@@ -17,8 +17,9 @@ from pulumi import (
 )
 
 import capeinfra
-from capeinfra.iam import get_inline_role
+from capeinfra.iam import get_athena_data_function_policy, get_inline_role
 from capeinfra.resources.compute import (
+    CapeAwsManagedLambdaLayer,
     CapeGHReleaseLambdaLayer,
     CapePythonLambdaLayer,
 )
@@ -91,6 +92,13 @@ class CapeMeta(CapeComponentResource):
             match layer_type_args["type"]:
                 # Any key used in a case below are required for those cases and
                 # any KeyError is allowed to propagate should keys be missing
+                case "aws":
+                    arn = layer_type_args["arn"]
+                    layer = CapeAwsManagedLambdaLayer(
+                        layer_name,
+                        arn,
+                    )
+                    self._function_layers[layer.layer_name] = layer
                 case "python":
                     reqs = layer_type_args["reqs"]
                     layer = CapePythonLambdaLayer(
@@ -853,7 +861,7 @@ class CapeCannedReports(CapeComponentResource):
             ),
             "lmbd",
             "lambda.amazonaws.com",
-            None,
+            get_athena_data_function_policy(),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
