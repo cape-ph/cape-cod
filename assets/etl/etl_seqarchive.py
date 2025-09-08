@@ -1,3 +1,4 @@
+import csv
 import datetime
 import io
 import json
@@ -51,10 +52,12 @@ processed_dt = datetime.datetime.now(datetime.timezone.utc)
 
 # construct the prefix for all files written here
 sink_prefix = (
-    f"{sample_id}/year={processed_dt.year}/month={processed_dt.month}/"
+    f"sample_id={sample_id}/year={processed_dt.year}/month={processed_dt.month}/"
     f"day={processed_dt.day}/hour={processed_dt.hour}/"
     f"minute={processed_dt.minute}/second={processed_dt.second}"
 )
+
+reads_key = "/".join(["sequencing-reads", sink_prefix, "sequencing-reads.gz"])
 
 # start with the gzip files
 with io.BytesIO() as gzbuff:
@@ -76,22 +79,32 @@ with io.BytesIO() as gzbuff:
     # write out the new clean uber sequencing file
     gzbuff.seek(0)
     etl_job.write_sink_file(
-        gzbuff, "/".join([sink_prefix, "sequencing-reads.gz"])
+        gzbuff,
+        reads_key,
     )
 
 # add the s3 path to the concatenated sequencing file into meta
 concat_gz_s3loc = "/".join(
     [
-        f"s3://{etl_job.parameters['SRC_BUCKET_NAME']}/",
-        sink_prefix,
-        "sequencing-reads.gz",
+        f"s3://{etl_job.parameters['SINK_BUCKET_NAME']}",
+        reads_key,
     ]
 )
 meta["sequencing_reads"] = concat_gz_s3loc
+# meta/sampleid=/year
+# sequencing-reads/sampleid=/year
+
+# convert json to csv for queryability
+strbuf = io.StringIO()
+writer = csv.DictWriter(strbuf, fieldnames=list(meta.keys()))
+writer.writeheader()
+writer.writerow(meta)
 
 # the write meta into clean as well
-with io.BytesIO(json.dumps(meta).encode("utf-8")) as metabuff:
+with io.BytesIO(strbuf.getvalue().encode("utf-8")) as metabuff:
     metabuff.seek(0)
-    etl_job.write_sink_file(metabuff, "/".join([sink_prefix, "meta.json"]))
+    etl_job.write_sink_file(
+        metabuff, "/".join(["meta", sink_prefix, "meta.csv"])
+    )
 
 # TODO: delete raw file?
