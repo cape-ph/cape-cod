@@ -134,16 +134,30 @@ with io.StringIO() as sio_buff:
 
     elif objfull == SOFTWARE_VERSION_OBJ:
         print(f"Processing software versions file (raw key: {alert_obj_key})")
-        writer.writerow(["id", "input_file", "parameter_name"])
+        writer.writerow(
+            [
+                "id",
+                "bactopia_version",
+                "run_date",
+                "input_file",
+                "parameter_name",
+            ]
+        )
         software_version = yaml.safe_load(etl_job.get_src_file())
+        bactopia_version = software_version.get("Workflow", {}).get(
+            "bactopia", None
+        )
         command = software_version.get("Workflow", {}).get("command", None)
+        run_date = software_version.get("Workflow", {}).get("date", None)
         if command:
             parts = shlex.split(command)
             id = 1
             for i, part in enumerate(parts):
                 parameter_name = parts[i - 1] if i > 0 else None
                 if part.startswith("s3://") and parameter_name != "-work-dir":
-                    writer.writerow([id, part, parameter_name])
+                    writer.writerow(
+                        [id, bactopia_version, run_date, part, parameter_name]
+                    )
                     id += 1
 
     etl_job.write_sink_file(sio_buff.getvalue(), clean_obj_key)
