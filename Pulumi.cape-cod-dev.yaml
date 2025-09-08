@@ -327,7 +327,7 @@ config:
                               "Bactopia Single Sample Report Data Lambda
                               Function"
                           memory_size: 512
-                          timeout: 30
+                          timeout: 45
     # `cape-cod:swimlanes` (mapping, required)
     # Contains the configuration for all swimlanes. Swimlanes define logical
     # separations of public, protected and private resources in CAPE. Each
@@ -833,7 +833,10 @@ config:
                                     - "x86_64"
                                 description: "getcannedreport Lambda Function"
                                 memory_size: 128
-                                timeout: 10
+                                # TODO: this calls a long running function.
+                                # we'll want to address how we handle
+                                # configuration of such things
+                                timeout: 60
                                 environment:
                                     variables:
                                         LD_LIBRARY_PATH: "/opt/lib"
