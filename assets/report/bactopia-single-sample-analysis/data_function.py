@@ -17,133 +17,55 @@ from capepy.aws.utils import decode_error
 logger = logging.getLogger()
 logger.setLevel("INFO")
 
-# TODO: this is to be replaced with a call to an athena query eventually. format
-#       is speculative (though tied to the report template using this data, so
-#       if this changes that needs to as well.
-FAKE_TEMPLATE_DATA = {
-    "sample_id": "0123456789",
-    "sample_type": "Environmental",
-    "sample_matrix": "Soil",
-    "sample_collection_date": (
-        datetime.datetime.fromisoformat(
-            "2025-08-15T14:36:28.024649+00:00"
-        ).strftime("%Y-%m-%d %H:%M %Z")
-    ),
-    "sample_collection_location": "Back yard",
-    "pipeline_meta": {
-        "name": "Bactopia",
-        "version": "3.0.2",
-        "run_date": (
-            datetime.datetime.fromisoformat(
-                "2025-08-15T16:22:33.024649+00:00"
-            ).strftime("%Y-%m-%d %H:%M %Z")
-        ),
-    },
-    "organisms_identified": [
-        {
-            "family": "Simpson",
-            "genus": "Bart",
-            "species": "Shorts",
-            "strain": "Eat My",
-        },
-        {
-            "family": "Griffin",
-            "genus": "Meg",
-            "species": "Hat",
-            "strain": "Fungus",
-        },
-        {
-            "family": "Smith",
-            "genus": "Morty",
-            "species": "Plumbus",
-            "strain": "Schmeckles",
-        },
-    ],
-    "virulence_info": {
-        "exact_protein_match": [
-            {
-                "element_symbol": "Pu",
-                "element_name": "Plutonium",
-                "scope": "micro",
-                "subtype": "sure?",
-                "class": "IO",
-                "subclass": "BytesIO",
-            },
-            {
-                "element_symbol": "Es",
-                "element_name": "Einsteinium",
-                "scope": "ortho",
-                "subtype": "no, thank you",
-                "class": "Exception",
-                "subclass": "OSError",
-            },
-        ],
-        "similarity_based_protein_match": [
-            {
-                "element_symbol": "Sr",
-                "element_name": "Strontium",
-                "scope": "stetho",
-                "subtype": "dr giggles",
-                "class": "List",
-                "subclass": "DoublyLinked",
-                "reference_coverage": "23",
-                "reference_identity": "10",
-            },
-            {
-                "element_symbol": "Fl",
-                "element_name": "Flerovium",
-                "scope": "oscillo",
-                "subtype": "yes",
-                "class": "object",
-                "subclass": "myobject",
-                "reference_coverage": "54",
-                "reference_identity": "41",
-            },
-        ],
-    },
-    "amr_info": {
-        "exact_protein_match": [
-            {
-                "element_symbol": "Sb",
-                "element_name": "Antimony",
-                "scope": "mouthwash",
-                "subtype": "non-alcoholic",
-                "class": "collection",
-                "subclass": "OrderedDict",
-            },
-            {
-                "element_symbol": "Fr",
-                "element_name": "Francium",
-                "scope": "endo",
-                "subtype": "tube",
-                "class": "Reader",
-                "subclass": "CsvReader",
-            },
-        ],
-        "similarity_based_protein_match": [
-            {
-                "element_symbol": "Xe",
-                "element_name": "Xenon",
-                "scope": "roto",
-                "subtype": "tolkien",
-                "class": "Head of the",
-                "subclass": "Arvid",
-                "reference_coverage": "90",
-                "reference_identity": "70",
-            },
-            {
-                "element_symbol": "Nh",
-                "element_name": "Nihonium",
-                "scope": "kaleido",
-                "subtype": "fractal",
-                "class": "stream",
-                "subclass": "iostream",
-                "reference_coverage": "87",
-                "reference_identity": "34",
-            },
-        ],
-    },
-}
+METADATA_QRY_TEMPLATE = """
+select
+    -- collection metadata
+    m.sample_id, m.sampletype, m.samplematrix, m.samplecollectiondate, 
+    m.samplecollectionlocation,
+    -- pipeline information
+    rsv.run_date, rsv.bactopia_version, 'bactopia' AS pipeline_name
+from
+    "{database}"."input_meta" as m
+join
+    "{database}"."result_software_versions" as rsv on
+    rsv.input_file=m.sequencing_reads
+where
+    m.sampleid='{sample_id}' and
+    rsv.parameter_name='--ont';
+"""
+
+SPECIES_INFO_QRY_TEMPLATE = """
+select
+    -- organism identitifaction
+    rsrmsh.family, rsrmsh.genus, rsrmsh.species, rsrmsh.strain
+from
+    "{database}"."result_sourmash_gtdb_rs207_k31" as rsrmsh
+where
+    rsrmsh.id='{sample_id}'
+"""
+
+VIRULENCE_INFO_QRY_TEMPLATE = """
+select
+    -- virulence information
+    ramrfp.element_symbol, ramrfp.element_name, 
+    ramrfp.scope, 
+    ramrfp.subtype, 
+    ramrfp.class, ramrfp.subclass,
+    ramrfp."%_coverage_of_reference", ramrfp."%_identity_to_reference",
+    -- needed for filtering of results
+    ramrfp.type, ramrfp.method
+from
+    "{database}"."input_meta" as m
+join
+    "{database}"."result_software_versions" as rsv on
+    rsv.input_file=m.sequencing_reads
+join
+    "{database}"."result_amrfinderplus" as ramrfp on
+    ramrfp.bactopia_run=rsv.bactopia_run
+where
+    m.sampleid='{sample_id}' and
+    rsv.parameter_name='--ont';
+"""
 
 
 def data_function(event, context):
@@ -157,7 +79,12 @@ def data_function(event, context):
 
     # payload will contain any data from the calling lambda that needs to
     # propagate to the data function
-    payload = event.get("Payload")
+    payload = event.get("Payload", {})
+
+    if not payload or not payload.get("sample_id", None):
+        msg = f"No sample id given for report. Data function cannot continue"
+        logger.error(msg)
+        raise ValueError(msg)
 
     # TODO: this lambda function could end up being a more utilitarian "run
     #       some athena query" generalization where the payload from the caller
@@ -182,22 +109,110 @@ def data_function(event, context):
         None,
     )
 
-    if database is not None:
-        input_meta_sql = """
-            SELECT
-                bactopia_run,
-                parameter_name,
-                input_file,
-                substr(input_file, 1, length(input_file) - strpos(reverse(input_file), '/') + 1) || 'meta.json' AS "meta_file"
-            FROM
-                "ccd-dlh-t-seqauto-catalog_mczhqmdk"."result_software_versions"
-            WHERE
-                parameter_name = '--ont';
-        """
+    sample_id = payload.get("sample_id")
+    report_data = {}
 
-        print(
-            f"{wr.athena.read_sql_query(sql=input_meta_sql,database=database,)}"
+    if database is not None:
+
+        meta_df = wr.athena.read_sql_query(
+            sql=METADATA_QRY_TEMPLATE.format(
+                database=database, sample_id=sample_id
+            ),
+            database=database,
         )
+
+        species_df = wr.athena.read_sql_query(
+            sql=SPECIES_INFO_QRY_TEMPLATE.format(
+                database=database, sample_id=sample_id
+            ),
+            database=database,
+        )
+
+        virulence_df = wr.athena.read_sql_query(
+            sql=VIRULENCE_INFO_QRY_TEMPLATE.format(
+                database=database, sample_id=sample_id
+            ),
+            database=database,
+        )
+
+        row = meta_df.iloc[0]
+
+        run_dt = datetime.datetime.strptime(
+            row["run_date"], "%Y-%m-%d %H:%M:%S.%f"
+        )
+
+        run_dt_aware = run_dt.replace(tzinfo=datetime.timezone.utc)
+        report_data = {
+            "sample_id": row["sample_id"],
+            "sample_type": row["sampletype"],
+            "sample_matrix": row["samplematrix"],
+            "sample_collection_date": (
+                datetime.datetime.fromisoformat(
+                    row["samplecollectiondate"]
+                ).strftime("%Y-%m-%d %H:%M %Z")
+            ),
+            "sample_collection_location": row["samplecollectionlocation"],
+            "pipeline_meta": {
+                "name": row["pipeline_name"],
+                "version": row["bactopia_version"],
+                "run_date": (run_dt_aware.strftime("%Y-%m-%d %H:%M %Z")),
+            },
+        }
+
+        report_data["organisms_identified"] = species_df.to_dict(
+            orient="records"
+        )
+
+        report_data.setdefault(
+            "virulence_info",
+            {"exact_protein_match": [], "similarity_based_protein_match": []},
+        )
+
+        report_data.setdefault(
+            "amr_info",
+            {"exact_protein_match": [], "similarity_based_protein_match": []},
+        )
+
+        for index, row in virulence_df.iterrows():
+            type_key = None
+            match_key = None
+            if row["type"] == "VIRULENCE":
+                # goes in virulence info
+                type_key = "virulence_info"
+                if row["method"] == "EXACTP":
+                    match_key = "exact_protein_match"
+                else:
+                    match_key = "similarity_based_protein_match"
+            elif row["type"] == "AMR":
+                # goes in amr_info
+                type_key = "amr_info"
+                if row["method"] == "EXACTP":
+                    match_key = "exact_protein_match"
+                else:
+                    match_key = "similarity_based_protein_match"
+            else:
+                # wtf?
+                print(f"Unknown type found in virulence info: {row['type']}")
+                continue
+
+            d = {
+                "element_symbol": row["element_symbol"],
+                "element_name": row["element_name"],
+                "scope": row["scope"],
+                "subtype": row["subtype"],
+                "class": row["class"],
+                "subclass": row["subclass"],
+            }
+
+            if match_key == "similarity_based_protein_match":
+                d.update(
+                    {
+                        "reference_coverage": row["%_coverage_of_reference"],
+                        "reference_identity": row["%_identity_to_reference"],
+                    }
+                )
+
+            report_data[type_key][match_key].append(d)
 
     else:
         msg = (
@@ -212,4 +227,4 @@ def data_function(event, context):
     # dict representing an http response. just send the data back (the caller
     # will get a response object with this data being the value of the
     # "Payload" key
-    return FAKE_TEMPLATE_DATA
+    return report_data
