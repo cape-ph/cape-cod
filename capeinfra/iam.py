@@ -83,7 +83,7 @@ def get_s3_api_proxy_policy(
     return json.dumps(policy_dict)
 
 
-# TODO: this is what's needed in addtion to at least some of the 
+# TODO: this is what's needed in addition to at least some of the
 #       AthenaFullAccess aws managed policy attachment. we may want to pair down
 #       from the full access thing if we find it grants too much
 def get_athena_data_function_policy(
