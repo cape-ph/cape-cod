@@ -83,8 +83,9 @@ def get_s3_api_proxy_policy(
     return json.dumps(policy_dict)
 
 
-# TODO: as with most of our policies and such right now, this is far too
-#       permissive.
+# TODO: this is what's needed in addtion to at least some of the 
+#       AthenaFullAccess aws managed policy attachment. we may want to pair down
+#       from the full access thing if we find it grants too much
 def get_athena_data_function_policy(
     principal: str | None = None,
 ) -> str:
@@ -112,54 +113,6 @@ def get_athena_data_function_policy(
                 "Resource": [
                     f"arn:aws:s3:::*/*",
                     f"arn:aws:s3:::*",
-                ],
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "athena:GetWorkGroup",
-                    "athena:GetTableMetadata",
-                    "athena:StartQueryExecution",
-                    "athena:GetQueryResultsStream",
-                    "athena:ListDatabases",
-                    "athena:GetQueryExecution",
-                    "athena:GetQueryResults",
-                    "athena:GetDatabase",
-                    "athena:ListTableMetadata",
-                    "athena:GetDataCatalog",
-                    "athena:CreatePreparedStatement",
-                    "athena:DeletePreparedStatement",
-                ],
-                "Resource": [
-                    "arn:aws:athena:*:*:workgroup/*",
-                    "arn:aws:athena:*:*:datacatalog/*",
-                ],
-            },
-            {
-                "Effect": "Allow",
-                "Action": ["athena:ListDataCatalogs", "athena:ListWorkGroups"],
-                "Resource": "*",
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "glue:GetDatabase",
-                    "glue:GetTable",
-                ],
-                "Resource": [
-                    f"arn:aws:glue:::*/*",
-                    f"arn:aws:glue:::*",
-                ],
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "glue:GetDatabases",
-                    "glue:GetDatabase",
-                    "glue:DeleteTable",
-                ],
-                "Resource": [
-                    f"*",
                 ],
             },
         ],

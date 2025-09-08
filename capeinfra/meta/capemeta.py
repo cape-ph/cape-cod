@@ -862,7 +862,10 @@ class CapeCannedReports(CapeComponentResource):
             "lmbd",
             "lambda.amazonaws.com",
             get_athena_data_function_policy(),
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            [
+                "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
+            ],
         )
 
         # we should not get here unless we have a configured report, and if we
