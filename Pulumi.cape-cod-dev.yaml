@@ -1437,6 +1437,7 @@ config:
                             prefix: unprocessed
                             suffixes:
                                 - gz
+                                - tar
                             max_concurrent_runs: 5
                           - name: bactopia-results
                             script: glue/etl/etl_bactopia_results.py
