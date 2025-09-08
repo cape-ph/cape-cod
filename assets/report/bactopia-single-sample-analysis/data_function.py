@@ -75,13 +75,11 @@ def data_function(event, context):
     :param context: Context object.
     """
 
-    headers = event.get("headers", {})
-
-    # payload will contain any data from the calling lambda that needs to
+    # event will contain any data from the calling lambda that needs to
     # propagate to the data function
-    payload = event.get("Payload", {})
+    sample_id = event.get("sample_id", None)
 
-    if not payload or not payload.get("sample_id", None):
+    if not sample_id:
         msg = f"No sample id given for report. Data function cannot continue"
         logger.error(msg)
         raise ValueError(msg)
@@ -109,7 +107,6 @@ def data_function(event, context):
         None,
     )
 
-    sample_id = payload.get("sample_id")
     report_data = {}
 
     if database is not None:
