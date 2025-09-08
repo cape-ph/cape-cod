@@ -9,6 +9,15 @@
                 "repo": null,
                 "versions": [
                     {
+                        "version": "v3.2.0",
+                        "profiles": [
+                            {
+                                "display_name": "Default Bactopia 3.2.0 Profile",
+                                "file": "default-bactopia-3.2.0.json"
+                            }
+                        ]
+                    },
+                    {
                         "version": "v3.0.1",
                         "profiles": [
                             {
