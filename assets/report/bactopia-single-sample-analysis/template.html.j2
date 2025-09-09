@@ -4,8 +4,177 @@
   <head>
     <meta charset="utf-8">
     <title>CAPE Bactopia Single Sample Analysis Report</title>
+    <style>
+        /* Page & typography */
+        html,
+        body {
+          height: 100%;
+        }
+        
+        body {
+          margin: 0;
+          padding: 24px;
+          max-width: 980px;
+          margin-inline: auto;
+          font: 14px/1.6 system-ui, sans-serif;
+          color: #0f172a;
+          /* slate-900-ish */
+          background: #fff;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+        }
+        
+        h1,
+        h2,
+        h3 {
+          line-height: 1.25;
+          margin: 1.25rem 0 .5rem;
+        }
+        
+        h1 {
+          font-size: 1.75rem;
+          color: oklch(0.3967 0.14 18.05);
+        }
+        
+        h2 {
+          font-size: 1.25rem;
+          margin-top: 2rem;
+          padding-bottom: .35rem;
+          border-bottom: 1px solid #e2e8f0;
+          color: oklch(0.3967 0.14 18.05);
+        }
+        
+        h3 {
+          font-size: 1.05rem;
+          margin-top: 1.25rem;
+          color: #334155;
+        }
+        
+        /* slate-700 */
+        p {
+          margin: .25rem 0;
+        }
+        
+        body>div {
+          display: grid;
+          grid-template-columns: 220px 1fr;
+          gap: 8px 16px;
+          padding: 12px 16px;
+          margin-top: 12px;
+          background: oklch(99.087% 0.00442 33.09);
+          /* slate-50 */
+          border: 1px solid #e2e8f0;
+          /* slate-200 */
+          border-radius: 12px;
+        }
+        
+        @media (max-width: 640px) {
+          body>div {
+            grid-template-columns: 1fr;
+          }
+        }
+        
+        /* Label cells are the odd children; values are the even ones */
+        body>div>div:nth-child(odd) p {
+          font-weight: 600;
+          color: #334155;
+          /* slate-700 */
+          margin-right: 8px;
+        }
+        
+        body>div>div:nth-child(odd) {
+          text-align: right;
+        }
+        
+        @media (max-width: 640px) {
+          body>div>div:nth-child(odd) {
+            text-align: left;
+          }
+        }
+        
+        /* Tables */
+        table {
+          width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+          margin-top: 12px;
+          font-size: .95rem;
+          background: #fff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          overflow: hidden;
+        }
+        
+        thead th {
+          text-align: left;
+          font-weight: 600;
+          background: oklch(95.979% 0.00643 16.336);
+          border-bottom: 1px solid #e2e8f0;
+          padding: .6rem .75rem;
+        }
+        
+        tbody td {
+          padding: .55rem .75rem;
+          border-bottom: 1px solid oklch(97.478% 0.0064 16.315);
+          vertical-align: top;
+          word-break: break-word;
+        }
+        
+        tbody tr:last-child td {
+          border-bottom: 0;
+        }
+        
+        /* Zebra rows for readability */
+        tbody tr:nth-child(odd) td {
+          background: oklch(99.087% 0.00442 33.09);
+        }
+        
+        /* Make the last 1–2 columns right-aligned if they look numeric */
+        tbody td:last-child,
+        tbody td:nth-last-child(2) {
+          text-align: right;
+        }
+        
+        /* Headings near tables */
+        h2+table,
+        h3+table {
+          margin-top: 8px;
+        }
+        
+        /* Links (if any) */
+        a {
+          color: #2563eb;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+        }
+        
+        a:hover {
+          opacity: .9;
+        }
+        
+        /* Print friendliness */
+        @media print {
+          body {
+            background: #fff;
+            color: #000;
+          }
+        
+          h2 {
+            border-color: #ddd;
+          }
+        
+          table {
+            page-break-inside: avoid;
+          }
+        
+          body>div {
+            break-inside: avoid;
+          }
+        }
+    </style>
   </head>
   <body>
+    <h1>Bactopia Single Sample Analysis</h1>
     <div>
         <div><p><b>Sample ID:</b></p></div>
         <div><p>{{ sample_id }}</p></div>
