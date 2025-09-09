@@ -20,12 +20,12 @@ logger.setLevel("INFO")
 METADATA_QRY_TEMPLATE = """
 select
     -- collection metadata
-    m.sample_id, m.sampletype, m.samplematrix, m.samplecollectiondate, 
+    m.sample_id, m.sampletype, m.samplematrix, m.samplecollectiondate,
     m.samplecollectionlocation,
     -- pipeline information
     rsv.run_date, rsv.bactopia_version, 'bactopia' AS pipeline_name
 from
-    "{database}"."input_meta" as m
+    "{database}"."input_ccd_dlh_t_seqauto_input_clean_vbkt_s3_b1f75c7" as m
 join
     "{database}"."result_software_versions" as rsv on
     rsv.input_file=m.sequencing_reads
@@ -47,15 +47,15 @@ where
 VIRULENCE_INFO_QRY_TEMPLATE = """
 select
     -- virulence information
-    ramrfp.element_symbol, ramrfp.element_name, 
-    ramrfp.scope, 
-    ramrfp.subtype, 
+    ramrfp.element_symbol, ramrfp.element_name,
+    ramrfp.scope,
+    ramrfp.subtype,
     ramrfp.class, ramrfp.subclass,
     ramrfp."%_coverage_of_reference", ramrfp."%_identity_to_reference",
     -- needed for filtering of results
     ramrfp.type, ramrfp.method
 from
-    "{database}"."input_meta" as m
+    "{database}"."input_ccd_dlh_t_seqauto_input_clean_vbkt_s3_b1f75c7" as m
 join
     "{database}"."result_software_versions" as rsv on
     rsv.input_file=m.sequencing_reads
