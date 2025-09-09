@@ -1424,6 +1424,7 @@ config:
                       name:
                       crawler:
                           prefix: input # prefixes for tables in the database
+                          excludes: ["sequencing-reads/**"]
                   result-raw:
                       name:
                   result-clean:
