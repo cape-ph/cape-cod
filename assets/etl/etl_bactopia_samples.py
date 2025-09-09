@@ -38,14 +38,17 @@ SAMPLE_FILETYPES = [
     {
         "pattern": r".*(.*)/main/assembler/\1.tsv$",
         "parser": parse_sample_tsv,
+        "table_name": "assembler",
     },
     {
         "pattern": r".*(.*)/main/sketcher/\1-mash-refseq88-k21.txt$",
         "parser": parse_mash_txt,
+        "table_name": "mash-refseq88-k21",
     },
     {
         "pattern": r".*(.*)/main/sketcher/\1-sourmash-gtdb-rs207-k31.txt$",
         "parser": parse_sourmash_txt,
+        "table_name": "sourmash-gtdb-rs207-k31",
     },
 ]
 
@@ -60,6 +63,7 @@ SAMPLE_FILETYPES = [
 sample_id = None
 obj_path = None
 parser = None
+table_name = None
 
 alert_obj_key = etl_job.parameters["OBJECT_KEY"]
 for filetype in SAMPLE_FILETYPES:
@@ -68,11 +72,12 @@ for filetype in SAMPLE_FILETYPES:
         sample_id = matches.group(1)
         obj_path = Path(alert_obj_key)
         parser = filetype["parser"]
+        table_name = filetype["table_name"]
         break
 
 
 # we should have no missing values here
-if not all([sample_id, obj_path, parser]):
+if not all([sample_id, obj_path, parser, table_name]):
     print(f"Bactopia output ETL ignoring {alert_obj_key} per configuration.")
     os._exit(0)
 
@@ -82,7 +87,7 @@ print(
 )
 
 clean_obj_key = os.path.join(
-    f"{obj_path.stem}",
+    f"{table_name}",
     f"sample_id={sample_id}",
     f"{obj_path.stem}.csv",
 )

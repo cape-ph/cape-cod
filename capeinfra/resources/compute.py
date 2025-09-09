@@ -25,8 +25,49 @@ from capeinfra.resources.objectstorage import (
 from capepulumi import CapeComponentResource
 
 
-class CapeLambdaLayer(CapeComponentResource):
-    """CapeComponentResource wrapping a LambdaLayer.
+class CapeLambdaLayer:
+    """Abstraction for a Lambda Layer.
+
+    Args:
+        name: The short name for the layer resource.
+        reqs: The path to the requirements file for the layer.
+        description: An optional description for the layer resource.
+    """
+
+    def __init__(self, name: str):
+        self.layer_name = name
+        self._lambda_layer = None
+
+    @property
+    def lambda_layer(self):
+        """Accessor for the _lambda_layer member.
+
+        Causes the _make_layer method to be called if it has not been already.
+
+        Returns:
+            The _lambda_layer member.
+        """
+        if self._lambda_layer is None:
+            self._make_layer()
+        return self._lambda_layer
+
+    @abstractmethod
+    def _make_layer(self):
+        """Construct the layer we are wrapping."""
+        pass
+
+
+class CapeManagedLambdaLayer(CapeComponentResource, CapeLambdaLayer):
+    """CapeComponentResource wrapping a LambdaLayer that is managed CAPE.
+
+    Layers of this type are typically built locally (e.g. a layer built from a
+    python requirements file) or are pulled locally from a  third party source
+    (e.g. a layer provided as a release asset in a hosted repo like github) and
+    are published by this deployment. Pulumi manages updating assets as required
+    based on changes.
+
+    This class should not be instantiated, but should be used as a base class
+    for other extensions.
 
     Args:
         name: The short name for the layer resource.
@@ -60,14 +101,19 @@ class CapeLambdaLayer(CapeComponentResource):
         compatible_runtimes: list[str] | None = None,
         **kwargs,
     ):
-        super().__init__(
-            self.type_name,
-            name,
+        # TODO: we'll need to rearch a little for multiple inheritance to "just
+        #       work" via `super().__init__(blah)`. For now we'll call
+        #       explicitly.
+
+        CapeComponentResource.__init__(
+            self,
+            t=self.type_name,
+            name=name,
             *args,
             **kwargs,
         )
-        self.layer_name = name
-        self._lambda_layer = None
+        CapeLambdaLayer.__init__(self, name)
+
         self.layer_args = {
             "description": description,
             "license_info": license_info,
@@ -90,19 +136,6 @@ class CapeLambdaLayer(CapeComponentResource):
             prefix=f"{self.layer_name}-lambda-layer-"
         )
         self._local_zip_pth = os.path.join(self._prefix_dir, self.LAYER_ZNAME)
-
-    @property
-    def lambda_layer(self):
-        """Accessor for the _lambda_layer member.
-
-        Causes the layer to be created if it has not been already.
-
-        Returns:
-            The _lambda_layer member.
-        """
-        if self._lambda_layer is None:
-            self._make_layer()
-        return self._lambda_layer
 
     def should_deploy_local_layer(self):
         """Determine if the layer should be deployed or imported.
@@ -145,16 +178,6 @@ class CapeLambdaLayer(CapeComponentResource):
 
         if self._cleanup_tmp:
             shutil.rmtree(self._prefix_dir)
-
-    # TODO: this property should really go into CapeComponentResource. it's in
-    #       use in the Swimlane hierarchy aids in inheritance. we would need to
-    #       get all resources defining this and potentially require
-    #       re-deployment of some resources, so it's not a simple fix.
-    @property
-    @abstractmethod
-    def type_name(self) -> str:
-        """Abstract property to get the type_name (pulumi namespacing)."""
-        pass
 
     @property
     def remote_zip_key(self):
@@ -247,8 +270,18 @@ class CapeLambdaLayer(CapeComponentResource):
         """
         pass
 
+    # TODO: this property should really go into CapeComponentResource. it's in
+    #       use in the Swimlane hierarchy aids in inheritance. we would need to
+    #       get all resources defining this and potentially require
+    #       re-deployment of some resources, so it's not a simple fix.
+    @property
+    @abstractmethod
+    def type_name(self) -> str:
+        """Abstract property to get the type_name (pulumi namespacing)."""
+        pass
 
-class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
+
+class CapeGHReleaseLambdaLayer(CapeManagedLambdaLayer):
     """CapeComponentResource wrapping a github release LambdaLayer.
 
     Args:
@@ -276,8 +309,8 @@ class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
         **kwargs,
     ):
         super().__init__(
-            name,
-            objstore,
+            name=name,
+            objstore=objstore,
             *args,
             desc_name=(f"{name} pre-built GitHub release Lambda layer."),
             **kwargs,
@@ -340,7 +373,7 @@ class CapeGHReleaseLambdaLayer(CapeLambdaLayer):
         return [layer_obj]
 
 
-class CapePythonLambdaLayer(CapeLambdaLayer):
+class CapePythonLambdaLayer(CapeManagedLambdaLayer):
     """CapeComponentResource wrapping a python LambdaLayer.
 
     Args:
@@ -369,8 +402,8 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         **kwargs,
     ):
         super().__init__(
-            name,
-            objstore,
+            name=name,
+            objstore=objstore,
             *args,
             desc_name=f"{name} Python Lambda layer.",
             **kwargs,
@@ -598,3 +631,55 @@ class CapePythonLambdaLayer(CapeLambdaLayer):
         )
 
         return [layer_obj, manifest_obj]
+
+
+class CapeAwsManagedLambdaLayer(CapeLambdaLayer):
+    """CapeComponentResource wrapping an AWS managed lambda layer.
+
+    This layer type is significantly different ones based on
+    CapeManagedLambdaLayer. In this case the layer already exists in AWS and we
+    are just referencing it.
+
+    We build nothing (e.g. assets) locally and make no use of any pulumi
+    LayerVersion resources (as we don't need pulumi to manage anything).
+
+    We do want these to be treated the same from a deployer perspective. We want
+    deployers to make a config change and get on with it. So this class largely
+    overrides CapeLambdaLayer methods with no-ops. We also add a shim class to
+    preted to be a LayerVersion just so we can access the ARN in the same way
+    other lambda layers are treated.
+
+    Args:
+        name: The short name for the layer resource.
+        arn: The arn of the lambda managed layer.
+    """
+
+    class LambdaLayerShim:
+        """Shim that allows this class to be treated like a LayerVersion.
+
+        During the deployment, we expect all CapeLambdaLayer resources to have a
+        _lambda_layer member with an arn. For AWS managed layers, we don't have
+        a LayerVersion object, so this class is a shim that lets us pretend we
+        do.
+        """
+
+        def __init__(self, arn):
+            self.arn = arn
+
+    def __init__(
+        self,
+        name: str,
+        arn: str,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            name=name,
+            *args,
+            **kwargs,
+        )
+
+        self.arn = arn
+
+    def _make_layer(self):
+        self._lambda_layer = self.LambdaLayerShim(self.arn)

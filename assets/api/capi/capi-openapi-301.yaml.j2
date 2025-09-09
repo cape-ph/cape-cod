@@ -839,6 +839,12 @@ paths:
         get:
             parameters:
                 - in: query
+                  name: sampleId
+                  schema:
+                    type: string
+                    description: "The ID of the sample to get the report for."
+                  required: true
+                - in: query
                   name: reportId
                   schema:
                     type: string
@@ -864,7 +870,7 @@ paths:
                                 format: binary
                 "500":
                     description:
-                        "Server Error - Unable to generate pre-signed part upload PUT URLs."
+                        "Server Error - Unable to generate report."
             x-amazon-apigateway-integration:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post

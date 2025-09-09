@@ -289,12 +289,16 @@ def index_handler(event, context):
             resp_status = 400
         else:
             report_id = qsp.get("reportId")
+            sample_id = qsp.get("sampleId")
             format = qsp.get("format", "html")
 
-            if report_id is None:
+            if None in (sample_id, report_id):
                 resp_data = json.dumps(
                     {
-                        "message": "Missing required query string parameters: reportId"
+                        "message": (
+                            "Missing required query string parameters: "
+                            "reportId and/or sampleId"
+                        )
                     }
                 )
                 additional_headers["Content-Type"] = "application/json"
@@ -332,10 +336,10 @@ def index_handler(event, context):
                     template = jinja_env.get_template(template)
 
                     report_data = get_report_data(
-                        # right now we are passing an empty args dict to the
-                        # data function. this will change eventually
                         report_item.get("data_function"),
-                        {},
+                        # the only data needed by this data function is the
+                        # sample id
+                        {"sample_id": sample_id},
                     )
 
                     report_html = template.render(report_data)

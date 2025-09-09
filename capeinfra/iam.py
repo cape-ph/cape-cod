@@ -83,6 +83,48 @@ def get_s3_api_proxy_policy(
     return json.dumps(policy_dict)
 
 
+# TODO: this is what's needed in addition to at least some of the
+#       AthenaFullAccess aws managed policy attachment. we may want to pair down
+#       from the full access thing if we find it grants too much
+def get_athena_data_function_policy(
+    principal: str | None = None,
+) -> str:
+    """Get a policy statement for general report data function permissions.
+
+     Gets basic permissions for running athena queries and getting using
+     tables.
+
+    Args:
+        principal: The optional principal to limit this policy statement to.
+
+    Returns:
+        The policy statement as a json encoded string.
+    """
+    policy_dict = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:GetBucketLocation",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::*/*",
+                    f"arn:aws:s3:::*",
+                ],
+            },
+        ],
+    }
+
+    if principal is not None:
+        for stmnt in policy_dict["Statement"]:
+            stmnt.setdefault("Principal", principal)
+
+    return json.dumps(policy_dict)
+
+
 def get_bucket_reader_policy(
     buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
     principal: str | None = None,
