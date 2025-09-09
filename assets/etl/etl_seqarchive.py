@@ -1,5 +1,6 @@
 import csv
 import datetime
+import gzip
 import io
 import json
 import tarfile
@@ -73,8 +74,23 @@ with io.BytesIO() as gzbuff:
     for mn in sorted(
         [mn for mn in tf.getnames() if mn.startswith("sequencing/")]
     ):
+        # we are not really doing much validation here. if a filename ends in
+        # fasta/fastq we'll gzip it inplace and the add it to the concat file.
+        # otherwise we'll assume it's already a gzipped file and move on.
+        # TODO: this could be a bit more robust and specifically check other
+        #       files for being valid gzips and stuff like that. when we get out
+        #       of this being for a demo, we will need to rearchitect this a bit
+        #       anyway and should address better handling at that time
         with tf.extractfile(mn) as br:
-            gzbuff.write(br.read())
+            bytes_for_concat = None
+            if mn.endswith(("fasta", "fastq")):
+                etl_job.logger.info(
+                    f"input archive member is not gzipped. gzipping."
+                )
+                bytes_for_concat = gzip.compress(br.read())
+            else:
+                bytes_for_concat = br.read()
+            gzbuff.write(bytes_for_concat)
 
     # write out the new clean uber sequencing file
     gzbuff.seek(0)
