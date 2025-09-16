@@ -818,7 +818,11 @@ config:
                                 description:
                                     "getrawobjuploadurl Lambda Function"
                                 memory_size: 128
-                                timeout: 10
+                                # This endpoint makes N AWS API calls where N
+                                # is the number of parts that URLs are
+                                # requested for. So it can take a while. 300 is
+                                # probably way more than needed tho.
+                                timeout: 300
                           - id: "get_canned_report_handler"
                             name: "getcannedreport"
                             code: "assets/api/capi/handlers/get_canned_report.py"
@@ -1054,7 +1058,7 @@ config:
                           - s3
                     - name: "cape-frontend"
                       short_name: "cfe"
-                      image: "ami-0aece993d25081e95"
+                      image: "ami-003d3c77a62cac99c"
                       public_ip: False
                       instance_type: "t3a.medium"
                       subnet_types:
