@@ -699,7 +699,6 @@ class CapePrincipals(CapeComponentResource):
             f"client={name}",
             name=name,
             user_pool_id=self.user_pool.id,
-            generate_secret=True,
             allowed_oauth_flows_user_pool_client=True,
             allowed_oauth_flows=["code"],
             supported_identity_providers=["COGNITO"],
