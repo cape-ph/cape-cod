@@ -3,9 +3,9 @@
 sudo tee /opt/cape-frontend/env <<EOF
 NODE_ENV=production
 HOST=0.0.0.0
-PUBLIC_COGNITO_AUTHORITY = "{{ cognito_domain }}"
+PUBLIC_COGNITO_AUTHORITY = "{{ cognito_pool_endpoint }}"
 PUBLIC_COGNITO_CLIENT_ID = "{{ cognito_client_id }}"
-PUBLIC_COGNITO_REDIRECT_URI = "https://{{ domain }}"
+PUBLIC_COGNITO_REDIRECT_URI = "https://{{ domain }}/auth/callback"
 EOF
 
 sudo systemctl restart cape-frontend.service

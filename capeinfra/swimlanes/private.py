@@ -616,6 +616,11 @@ class PrivateSwimlane(ScopedSwimlane):
                             lambda d: f"https://{d}.auth.{self.aws_region}.amazoncognito.com"
                         )
                     )
+                    template_args["cognito_pool_endpoint"] = (
+                        capeinfra.meta.principals.user_pool.endpoint.apply(
+                            lambda d: f"https://{d}"
+                        )
+                    )
 
                 # TODO: we are passing in the aws region to all instance
                 #       templates. Not really a big deal i don't think,

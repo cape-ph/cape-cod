@@ -993,6 +993,7 @@ config:
                           - compute
                       subdomain: "jupyterhub"
                       cognito_client:
+                          generate_secret: True
                           callback_urls:
                               - "https://{{ domain }}/hub/oauth_callback"
                           logout_urls:
@@ -1065,8 +1066,9 @@ config:
                           - compute
                       subdomain: "analysis-pipelines"
                       cognito_client:
+                          generate_secret: False
                           callback_urls:
-                              - "https://{{ domain }}"
+                              - "https://{{ domain }}/auth/callback"
                           logout_urls:
                               - "https://{{ domain }}"
                           allowed_oauth_scopes: ["openid", "email"]
