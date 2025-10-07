@@ -168,7 +168,7 @@ class DatalakeHouse(CapeComponentResource):
                     #       elsewhere), we need a different way to pass the
                     #       cors_policies around (or make a registry to fetch
                     #       them from). We also want the tributary configuration
-                    #       to be able to add to/override anmed cors config in
+                    #       to be able to add to/override named cors config in
                     #       their own scopes, so when we attack that it would
                     #       make sense to look into how to make accessing them
                     #       better.
@@ -238,7 +238,7 @@ class Tributary(CapeComponentResource):
         #       elsewhere), we need a different way to pass the
         #       cors_policies around (or make a registry to fetch
         #       them from). We also want the tributary configuration
-        #       to be able to add to/override anmed cors config in
+        #       to be able to add to/override named cors config in
         #       their own scopes, so when we attack that it would
         #       make sense to look into how to make accessing them
         #       better.
