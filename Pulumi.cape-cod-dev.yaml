@@ -88,7 +88,7 @@ config:
               cleanup_tmp: False
               type_args:
                   type: python
-                  reqs: ./assets/lambda/layers/capi-all/requirements.txt
+                  reqs: ./assets/lambda-layers/capi-all/requirements.txt
               args:
                   description:
                       CAPI API python pip dependencies layer for all handlers.
@@ -99,7 +99,7 @@ config:
               cleanup_tmp: False
               type_args:
                   type: python
-                  reqs: ./assets/lambda/layers/report-gen/requirements.txt
+                  reqs: ./assets/lambda-layers/report-gen/requirements.txt
               args:
                   description:
                       CAPI API python pip dependencies layer for all report
