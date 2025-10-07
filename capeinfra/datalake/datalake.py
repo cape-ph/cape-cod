@@ -462,7 +462,7 @@ class Tributary(CapeComponentResource):
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
-                        "./assets/lambda/sqs_etl_job_trigger_lambda.py"
+                        "./assets/trigger-functions/sqs/sqs_etl_job_trigger_lambda.py"
                     )
                 }
             ),
@@ -527,7 +527,7 @@ class Tributary(CapeComponentResource):
             code=AssetArchive(
                 {
                     "index.py": FileAsset(
-                        "./assets/lambda/new_s3obj_queue_notifier_lambda.py"
+                        "./assets/trigger-functions/s3/new_s3obj_queue_notifier_lambda.py"
                     )
                 }
             ),
