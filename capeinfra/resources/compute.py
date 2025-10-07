@@ -101,7 +101,7 @@ class CapeManagedLambdaLayer(CapeComponentResource, CapeLambdaLayer):
         compatible_runtimes: list[str] | None = None,
         **kwargs,
     ):
-        # TODO: we'll need to rearchitect a little for multiple inheritance to 
+        # TODO: we'll need to rearchitect a little for multiple inheritance to
         #       "just work" via `super().__init__(blah)`. For now we'll call
         #       explicitly.
 
