@@ -1,1193 +1,1189 @@
 encryptionsalt: v1:AiR3UYhLLnM=:v1:Q0tmuQ+UqDnv2UED:Vaku1iGHx8jIYc6cYUnD9ZFBW5H/Dw==
 config:
-  # `deployment:meta` (mapping, required)
-  # This block is for meta about the deployment itself that may be reused in
-  # later config settings. The `&depmet` anchor is used to refer to this block
-  # later. Any items added to this block will be available to later config
-  # blocks that use the anchor
-  deployment:meta: &depmet
-    # `stage-suffix` (string, required)
-    # This is used anywhere we need the deployment stage name and should
-    # be values like "dev", "prod", etc. There is exact no exact
-    # enumeration of values yet. The value given here will be used in items
-    # like API paths
-    stage-suffix: "dev"
-  # `aws:region` (string, required)
-  # The AWS region the deployment will go into. As of now, CAPE supports a
-  # single requion only
-  aws:region: us-east-2
-  cape-cod:aws:
-    availability-zones:
-      # availability zone 1
-      az1: &az1
-        az: "us-east-2b"
-      # availability zone 2
-      az2: &az2
-        az: "us-east-2c"
-  # `cape-cod:meta` (mapping, required)
-  # Contains configuration that is used by a number of functional areas in
-  # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
-  # functions can be found.
-  cape-cod:meta:
-    # `function_layers` (mapping[], optional)
-    # This is a mapping with a list for a value which defines all function
-    # layer specs (e.g. spec for Lambda layers if in AWS) the will be
-    # build up as part of CAPE's metadata and then can be used by name
-    # in later configured resources. Each list item will have the following
-    # keys:
-    # * name (string, required) - The name of the layer. Must be unique
-    #   across all layers, and when in AWS must conform to bucket object
-    #   key requirements:
-    #   https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
-    # * reqs (string, optional) - A path to the python requirements file
-    #   for the layer. If not provided it will be assumed to be
-    #   `./assets/lambda/layers/<name>` where `name` is the name configured
-    #   for the layer
-    # * args (mapping, optional) - A mapping of function args to use in
-    #   construction of a lambda layer. Keys must match the names of
-    #   keywords args in CapePythonLambdaLayer and values must be as
-    #   expected by that class. If not provided defaults will be used where
-    #   required.
-    function_layers:
-      # TODO: ISSUE #266 add ETL capepy layer.
-      - name: capi-all
-        args:
-          description: CAPI API python pip dependencies layer for all handlers.
-          compatible_runtimes:
-            - python3.10
-    # `principals` (mapping, required)
-    # Contains local users and groups required for any cape deployment.
-    # TODO: any issue specifying princpals at this level? will we need
-    #       differing assets for each swimlane? i don't *think* so as the
-    #       roles attached to the groups should really be the only
-    #       swimlane specific things, right?
-    principals:
-      # `groups`  (mapping[], required)
-      # Contains group specifications that are required for all cape
-      # deployments. Each list item will have the following keys
-      # * `name` (string, required) - The name of the group. Must be
-      #   unique.
-      # * `description` (string, optional) - A description for the group.
-      # * `precedence`: The precedence of the group when determining
-      #   which group to use on authentication. Lower precedence wins.
-      #   Groups may have the same precedence provided they can be
-      #   deconflicted when ambiguous.
-      #   TODO: how to deconflict same precedence doc
-      # TODO: do we need to do role association (e.g. by name) here?
-      groups:
-        Admins:
-          description: CAPE administrators group.
-          precedence: 1
-        DefaultUsers:
-          description: CAPE DefaultUsers (catchall) group.
-          precedence: 65536
-      # `group_extra` (string, optional)
-      # Path to a csv file containing deployment-specific groups to
-      # create. May be a full path or relative to repo root. This file can
-      # be keps out of the repo using something like the assets-untracked
-      # mechanism discussed in the readme.
-      groups_extra: "./assets-untracked/principals/groups.csv"
-      # `users`  (mapping[], required)
-      # Contains user specifications that are required for all cape
-      # deployments. Each list item will have the following keys
-      # * `email` (string, required) - The unique email address for the
-      #   user. This will be the username of any user.
-      # * `groups` (string[], optional) - A list of group names to
-      #   associate the user with. The named group must either be
-      #   created in the `groups` block or in the `group_extra` file
-      #   above
-      # * `attrs_file` (string, optional) - a path to a json file containing
-      #   user attributes to prime the system with for the user
-      users:
-        - email: cape.admin@example.com
-          temporary_password: 1CapeCodUser!
-          groups:
-            - Admins
-          attrs_file: ./assets-untracked/principals/attrs/cape.admin.attrs.json
-        # TODO: this user probably shouldn't actually be in here long
-        #       term. This is the kind of user that the `users_extra`
-        #       file is intended for. THIS IS JUST FOR TESTING IDENTITY
-        #       POOL AND SHOULD BE REMOVED WHEN THAT'S GOOD
-        - email: cape.default@example.com
-          temporary_password: 1CapeCodUser!
-          groups:
-            - DefaultUsers
-      # `user_extra` (string, optional)
-      # Path to a csv file containing deployment-specific users to
-      # create. May be a full path or relative to repo root. This file can
-      # be keps out of the repo using something like the assets-untracked
-      # mechanism discussed in the readme.
-      users_extra: "./assets-untracked/principals/users.csv"
-    # `authz_policy_engine` (mapping, required)
-    #
-    # NOTE: This currently only supports github repositories
-    #
-    # Contains information required to pull a versioned release of a
-    # Policy As Code repo. This repository's schema and policies will be
-    # used to populate a policy engine (store, schema and policies).
-    # Currently, this repo must provide a shcema and policies in the Cedar
-    # json format. This mapping has the following keys:
-    # * `repo_url: the url to the (publicly accessible) hosted
-    #   repository. This should not end in `.git`
-    # * `version`: This is the version of the artifact to get. This
-    #   version will most likely match a repo tag
-    # * `artifact_name`: The name of the release artifact to get. A
-    #   release could contain multiple items for which only a subset is
-    #   needed.
-
-    # `glue` (mapping, optional)
-    # Contains meta configuration related to aws glue.
-    glue:
-      # `etl` (mapping[], optional)
-      # Contains meta configuration related to aws glue etl scripts'
-      # placement in the common s3 bucket. Every item in the list is
-      # required to have:
-      # * `name` (string, required) - The name of the etl script. This
-      #    will be used as part of the object name in storage as well as
-      #    part of the name in the pulumi state.
-      # * `key` (string, required) - The key to use when placing this
-      #   script in object storage. This should include any required
-      #   prefixes.
-      # * `srcpath` (string, required) - The source path of this script
-      #   in the deployment repo. **NOTE** This key may become optional
-      #   or be removed all together in the future. Ideally we will not
-      #   have ETL scripts in this repo in the long run but rather have
-      #   brought in from other repos in dome manner.
-      etl:
-        - name: etl-gphl-cre
-          key: glue/etl/etl_gphl_cre_alert.py
-          srcpth: ./assets/etl/etl_gphl_cre_alert.py
-        - name: etl-tnl
-          key: glue/etl/etl_tnl_alert.py
-          srcpth: ./assets/etl/etl_tnl_alert.py
-        - name: etl-fastx
-          key: glue/etl/etl_fasta_fastq.py
-          srcpth: ./assets/etl/etl_fasta_fastq.py
-        - name: etl-gphl-sequencing
-          key: glue/etl/etl_gphl_sequencing_alert.py
-          srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
-        # TODO: ISSUE #144 this is for the initial bactopia results
-        #       handling. it may not be best to have here long term, and
-        #       we don't know yet how were managing these things. so for
-        #       now it's here (we also need to think about how we handle
-        #       pipelines that may have different etl needs for
-        #       different versions)
-        - name: etl-bactopia-results
-          key: glue/etl/etl_bactopia_results.py
-          srcpth: ./assets/etl/etl_bactopia_results.py
-  # `cape-cod:swimlanes` (mapping, required)
-  # Contains the configuration for all swimlanes. Swimlanes define logical
-  # separations of public, protected and private resources in CAPE. Each
-  # swimlane gets its own VPC.
-  cape-cod:swimlanes:
-    # `private` (mapping, optional)
-    # Contains configuration of the private swimmalne.
-    private:
-      # `domain` (string, optional)
-      # This is the private domain that will be setup in the cloud
-      # provider private VPC. Defaults to "cape-dev.org"
-      # At this time, this does not need to be setup with a domain
-      # registrar unless it is also the domain used in a public facing
-      # resource. The domain will need to be able to be used for creation
-      # of TLS cert/key pairs though (in the development case, these are
-      # self-signed and in all cases need to be managed outside this
-      # repo).
-      domain: cape-dev.org
-      # `tls` (mapping, optional)
-      # The configuration for TLS for the swimlane. At this time we
-      # support a single (wildcard) cert per swimlane for non-vpn
-      # tls/ssl (vpn has its own cert). This may change in the future.
-      # If this mapping is not provided and valid, TLS will not be
-      # configured (or will have an invalid configuration) which will
-      # will lead to failure in deployment.
-      tls:
-        # `dir` (string, required)
-        # Path (relative to repo root) to the directory that contains
-        # the TLS certs and keys. It is recommended to make this a
-        # subdirectory of <repo_root>/assets-untracked which is
-        # explicitly ignored by the git configuration (so that these
-        # files never end up in version control).
-        dir: "./assets-untracked/tls/private-swimlane"
-        # `ca-cert` (string, required)
-        # The name of the cert chain file. At this time, we require this
-        # to be a separate file (cannot be embedded in the cert pem
-        # itself). The file should be in PEM format.
-        ca-cert: "ca.crt"
-        # `server-key` (string, required)
-        # The name of the key file. The file should be in PEM format.
-        server-key: "*.cape-dev.org.key"
-        # `server-cert` (string, required)
-        # The name of the cert file. The file should be in PEM format.
-        server-cert: "*.cape-dev.org.crt"
-      # `cidr-block` (string, optional)
-      # The full cidr block that will be given to the private swimlane.
-      # Defaults to "10.0.0.0/24". Must be between /16 and /28
-      cidr-block: 10.0.0.0/16
-      # `subnets` (mapping[], optional)
-      # A list of configurations for the private subnets of the swimlane.
-      # If not provided, no private subnets will be configured but a
-      # public subnet will be. All list items have the following schema:
-      # * `name` (string, required)
-      #   A short name for the subnet. This should be unique across all
-      #   subnets in the swimlane.
-      # * `cidr-block` (string, required)
-      #   The cidr block given to the subnet
-      # * `type`: (string, required)
-      #   a string representing the type of subnet. some types are
-      #   special and they're strings are reserved. known types are:
-      #   * `nat`: the subnet will be given a nat gateway. at present,
-      #     this gateway will be an internet gateway and the NAT will be
-      #     for internet egress. no other gateways are yet supported
-      #     (meaning no private NAT)
-      #   * `compute`: there is no special handling for this type at this
-      #     time, but the name is reserved for the future
-      #   * `app`: there is no special handling for this type at this
-      #     time, but the name is reserved for the future
-      #   * `service`: there is no special handling for this type at this
-      #     time, but the name is reserved for the future
-      #   * `vpn`: any subnet marks as the VPN type will be configured to
-      #     be a target of the external client VPN setup.
-      # * `public`: (boolean, optional)
-      #   A boolean stating if the subnet should be made public (have an
-      #   associated public IP address). This defaults to False. In the
-      #   CAPE reference architecture, only subnets of type `nat` are
-      #   configured as public. If there is not an explicit need for a
-      #   subnet to be public (and then only if you understand the
-      #   security implications) then the subnet should be kept private
-      # * `routes` (string[], optional)
-      #   A list of subnet names for which this subnet should be able to
-      #   route to (via routing table). The special name "public" may be
-      #   used to allow routing to the public subnet for the swimlane (if
-      #   public is not explicitly specified, the subnet will have no
-      #   internet access).
-      # * `az` (string, required)
-      #   An explicit availability zone for the subnet. If not provided,
-      #   the default availability zone will be used. This is generally
-      #   only needed when setting up redundant private subnets for
-      #   something like VPN
-      subnets:
-        # AZ 1
-        - name: nataz1
-          cidr-block: 10.0.127.0/24
-          type: nat
-          public: True
-          !!merge <<: *az1
-        - name: cmptaz1
-          cidr-block: 10.0.0.0/20
-          type: compute
-          !!merge <<: *az1
-          routes:
-            - "nataz1"
-        - name: appaz1
-          cidr-block: 10.0.16.0/20
-          type: app
-          !!merge <<: *az1
-          routes:
-            - "nataz1"
-        - name: vpnaz1
-          cidr-block: 10.0.120.0/22
-          !!merge <<: *az1
-          type: vpn
-          routes:
-            - "nataz1"
-        - name: srvcaz1
-          cidr-block: 10.0.124.0/23
-          !!merge <<: *az1
-          type: service
-          routes:
-            - "nataz1"
-        # AZ 2
-        - name: nataz2
-          cidr-block: 10.0.255.0/24
-          type: nat
-          public: True
-          !!merge <<: *az2
-        - name: cmptaz2
-          cidr-block: 10.0.128.0/20
-          type: compute
-          !!merge <<: *az2
-          routes:
-            - "nataz2"
-        - name: appaz2
-          cidr-block: 10.0.144.0/20
-          type: app
-          !!merge <<: *az2
-          routes:
-            - "nataz2"
-        - name: vpnaz2
-          cidr-block: 10.0.248.0/22
-          !!merge <<: *az2
-          type: vpn
-          routes:
-            - "nataz2"
-        - name: srvcaz2
-          cidr-block: 10.0.252.0/23
-          !!merge <<: *az2
-          type: service
-          routes:
-            - "nataz1"
-      # `api` (mapping, optional)
-      # Contains the configuration for apis and the API application load
-      # balancer. If this is not included, a default configuration will be
-      # used with a subdomain of `api`, a `dev` stage name and no APIs
-      # deployed.
-      # NOTE: at this time and API ALB will still be created even if not
-      #       configured, as will a VPC Endpoint that routes to the API
-      #       gateway. You will be billed for these resources by AWS.
-      # TODO: ISSUE #191
-      api:
-        # `subdomain` (string, optional)
-        # The name of the subdomain (in the swimlanes configured
-        # domain) where api's will be exposed. All apis will go in the
-        # same subdomain, and will be differentiated based on the path
-        # component of each individual api in the list below. E.g. for
-        # a domain of "cape-dev.org" and a subdomain value of "api",
-        # all apis will be rooted at "api.cape-dev.org". For an api
-        # named "api1" and a stage-name of "dev", that specific api can
-        # be found at "api.cape-dev.org/api1-dev".
-        # If not provided, this defaults to "api"
-        subdomain: "api"
-        # `stage` (mapping, optional)
-        # The stage configuration for all apis. We currently only
-        # support one stage name for all of CAPE.
-        stage:
-          # `meta` (anchor, required)
-          # This item needs to exist as-is. we have a common stage
-          # suffix used for all apis in the deployment at present,
-          # and this is how we access it. This is an anchor reference
-          # to the `deployment:meta` block at the top of the file.
-          meta: *depmet
-        # `apis` (mapping[], optional)
-        # A list of deployable API configurations. If not provided, an
-        # empty list will be used.
-        # Every element in this object will specify an individual api
-        # to be deployed. Each item is a key/mapping pair where the key
-        # is the api name and the mapping contains:
-        # * `desc` (string, required)
-        #    A description for the api. Will be used in description
-        #    tags. The key is required, but the value may be left
-        #    empty.
-        # * `short_name` (string, required)
-        #    A short name for the api. Will be used in resource naming
-        #    and can be a max of 4 characters and must be unique across
-        #    apis.
-        # * `spec_file` (string, required)
-        #   Path to an OpenApi 3.0.1 yaml specification jinja2
-        #   template. This file should include *no* AWS id's, names,
-        #   account info, etc.
-        # * `authorizers` (mapping, optional)
-        #   Configuration for authorizers for the API. In an OpenAPI
-        #   spec, all authorizers must be defined in the component
-        #   section, but may be applied at the API or endpoint levels.
-        #   The authorizer named "default" defined here will be applied
-        #   at the API level currently. Each mapping is keyed on an
-        #   authorizor name (which must conform to AWS resource naming
-        #   rules, and will be used as the base of a resource name, so
-        #   it will be constrained in max length) and should contain:
-        #   * `file` (string, required)
-        #   Path (absolute or relative to repo root) to the file
-        #   containing the code for the authorizer lambda function
-        #   * `type` (string, required)
-        #   Type of lambda authorizer. Allowed values are "request",
-        #   "token", or "cognito_user_pools".
-        #   * `identity_sources` (string[], optional)
-        #   List of strings of required query params or request headers
-        #   where identity information can be found. May be more than
-        #   one item.
-        #   * `result_cached_sec` (int, optional)
-        #   The number of seconds an authorization reqponse is cached
-        #   for. A value of 0 turns off caching (good for dev, bad for
-        #   prod). Defaults to 300.
-        #   * `logging_enabled` (bool, optional)
-        #   True if logging should be enabled for the authorizer, False
-        #   otherwise. The log stream will be in a log group specific to
-        #   the API.
-        # * `env_vars` (string[], optional)
-        #   A list of swimlane-exposed env vars that the API requires
-        #   access to. The env vars will be passed into the
-        #   environment of the lambda and basic permissions will be
-        #   given to the lambda to access the resources referenced by
-        #   the env var. No new environment variables may be defined
-        #   here, the only valid entries are those exposed by the
-        #   swimlane. If not provided, this defaults to an empty list.
-        # * `layer_args` (mapping, optional)
-        #   A mapping of args to use in construction of a lambda layer
-        #   for all functions in the API. Keys must match the names of
+    # `deployment:meta` (mapping, required)
+    # This block is for meta about the deployment itself that may be reused in
+    # later config settings. The `&depmet` anchor is used to refer to this block
+    # later. Any items added to this block will be available to later config
+    # blocks that use the anchor
+    deployment:meta: &depmet
+        # `stage-suffix` (string, required)
+        # This is used anywhere we need the deployment stage name and should
+        # be values like "dev", "prod", etc. There is exact no exact
+        # enumeration of values yet. The value given here will be used in items
+        # like API paths
+        stage-suffix: "dev"
+    # `aws:region` (string, required)
+    # The AWS region the deployment will go into. As of now, CAPE supports a
+    # single requion only
+    aws:region: us-east-2
+    cape-cod:aws:
+        availability-zones:
+            # availability zone 1
+            az1: &az1
+                az: "us-east-2b"
+            # availability zone 2
+            az2: &az2
+                az: "us-east-2c"
+    # `cape-cod:meta` (mapping, required)
+    # Contains configuration that is used by a number of functional areas in
+    # the deployment. E.g. a common s3 bucket where ETL scripts and Lambda
+    # functions can be found.
+    cape-cod:meta:
+        # `function_layers` (mapping[], optional)
+        # This is a mapping with a list for a value which defines all function
+        # layer specs (e.g. spec for Lambda layers if in AWS) the will be
+        # build up as part of CAPE's metadata and then can be used by name
+        # in later configured resources. Each list item will have the following
+        # keys:
+        # * name (string, required) - The name of the layer. Must be unique
+        #   across all layers, and when in AWS must conform to bucket object
+        #   key requirements:
+        #   https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-guidelines
+        # * reqs (string, optional) - A path to the python requirements file
+        #   for the layer. If not provided it will be assumed to be
+        #   `./assets/lambda/layers/<name>` where `name` is the name configured
+        #   for the layer
+        # * args (mapping, optional) - A mapping of function args to use in
+        #   construction of a lambda layer. Keys must match the names of
         #   keywords args in CapePythonLambdaLayer and values must be as
-        #   expected by that class.
-        # * `handlers` (mapping[], optional)
-        #   A list of mappings containing configuration for lambda
-        #   handlers tied to the API's endpoints. Each mapping should
-        #   contain:
-        #   * `id` (string, required)
-        #     The id in the spec file template that will be replaced
-        #     with the arn of the created lambda function.
-        #   * `name` (string, required)
-        #     A short name that will be used in resource creation
-        #     (naming of the resources). As this is used in resource
-        #     names, it should be kept as short as possible, but
-        #     must be unique across handlers for an API.
-        #   * `code` (string, required)
-        #     The path in the repo (from repo root) for the lambda that
-        #     implements the endpoint.
-        #   * `layers` (string[], optional)
-        #     A list of layer names (configured in
-        #     cape-meta:function_layers) that should be applied to the
-        #     function execution environment.
-        #   * `funct_args` (mapping, optional)
-        #     Arguments to pass *as is* to the lambda function
-        #     constructor. The keys used need to map to actual argument
-        #     names of the pulumi lambda function constructor.
-        #     Additionally, most args will be ignored (e.g.
-        #     environment, role) as they are dynamically injected in
-        #     code or not used currently. If not provided, the handler
-        #     will default to  "index.index_handler" and the runtime
-        #     will default to "python3.10". The following arguments are
-        #     optional but supported:
-        #     * architectures (string[], defaults to ["x86_64"])
-        #     * description (string, defaults to "handler_name Lambda
-        #       Function")
-        #     * handler (string, defaults to "index.index_handler")
-        #     * memory_size (int, defaults to 128[unit is MB])
-        #     * runtime (string defaults to "python3.10")
-        #     * timeout (int, defaults to 3[unit is seconds])
-        apis:
-          - name: "capi"
-            desc: "CAPE API"
-            short_name: "capi"
-            spec_file: "assets/api/capi/capi-openapi-301.yaml.j2"
-            # TODO: this is the default authorizer for the whole
-            #       api. give it attrs like file, name, cache
-            #       timeout, etc. probably want this to be a list of
-            #       authorizers with one named default (that will be
-            #       used for the whole api) and then others that
-            #       individual handlers can override
-            authorizers:
-              # `default` is a special name signifying the
-              # authorizer that will be used for the whole api
-              # barring any overrides at the endpoint level
-              default:
-                file: "assets/api/authz/default_apigw_authorizer.py"
-                # allowed request, token, or cognito_user_pools
-                type: "request"
-                identity_sources:
-                # TODO: need to specify headers that are
-                #       identity sources (e.g. the JWT is
-                #       maybe in the `Authorization` header.
-                #       Until a front end is sending this
-                #       we will leave it unspecified as the
-                #       API GW will halt requests without
-                #       that header
-                # This is how long the authz result is cached. 0
-                # turns off caching which is great for debug of
-                # dev
-                result_cached_sec: 0
-                logging_enabled: True
-            env_vars:
-              - "DAP_QUEUE_NAME"
-              - "DAP_REG_DDB_TABLE"
-              - "DDB_REGION"
-              - "USER_ATTRS_DDB_TABLE"
-              - "ETL_ATTRS_DDB_TABLE"
-              - "CRAWLER_ATTRS_DDB_TABLE"
-            # env_vars: TODO: add env vars for this API if needed.
-            # TODO: memory and timeouts for these functions need
-            #       some love
-            handlers:
-              - id: "get_daps_handler"
-                name: "getdaps"
-                code: "assets/api/capi/handlers/get_daps.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getdaps Lambda Funnction"
-                  memory_size: 128
-                  timeout: 3
-              - id: "get_dap_profiles_handler"
-                name: "getdapprofiles"
-                code: "assets/api/capi/handlers/get_dap_profiles.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getdapprofiles Lambda Funnction"
-                  memory_size: 128
-                  timeout: 3
-              - id: "get_dap_executors_handler"
-                name: "getdapexecutors"
-                code: "assets/api/capi/handlers/get_dap_executors.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getdapexecutors Lambda Funnction"
-                  memory_size: 128
-                  timeout: 3
-              - id: "submit_dap_run_handler"
-                name: "submitdaprun"
-                code: "assets/api/capi/handlers/submit_dap_run.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "submitdaprun Lambda Funnction"
-                  memory_size: 128
-                  timeout: 3
-              - id: "get_raw_objstore_authz_handler"
-                name: "getrawobjstoreauthz"
-                code: "assets/api/capi/handlers/get_raw_objstores.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getrawobjstores Lambda Function"
-                  memory_size: 128
-                  timeout: 10
-              - id: "get_raw_obj_upload_url_handler"
-                name: "getrawobjuploadurl"
-                code: "assets/api/capi/handlers/get_raw_obj_post_url.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getrawobjuploadurl Lambda Function"
-                  memory_size: 128
-                  timeout: 10
-              - id: "get_user_attributes_handler"
-                name: "getuserattributes"
-                code: "assets/api/capi/handlers/get_user_attributes.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getuserattributes Lambda Function"
-                  memory_size: 128
-                  timeout: 10
-              - id: "get_user_attribute_val_handler"
-                name: "getuserattributeval"
-                code: "assets/api/capi/handlers/get_user_attribute_val.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getuserattributeval Lambda Function"
-                  memory_size: 128
-                  timeout: 10
-              - id: "get_s3_contents_handler"
-                name: "gets3contents"
-                code: "assets/api/capi/handlers/get_s3_contents.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "gets3contents Lambda Function"
-                  memory_size: 128
-                  timeout: 10
-              - id: "get_object_etls_handler"
-                name: "getobjectetls"
-                code: "assets/api/capi/handlers/get_object_etls.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getobjectetls Lambda Function"
-                  memory_size: 128
-                  timeout: 10
-              - id: "get_bucket_crawler_handler"
-                name: "getbucketcrawler"
-                code: "assets/api/capi/handlers/get_bucket_crawler.py"
-                layers:
-                  - capi-all
-                funct_args:
-                  handler: "index.index_handler"
-                  runtime: "python3.10"
-                  architectures:
-                    - "x86_64"
-                  description: "getbucketcrawler Lambda Function"
-                  memory_size: 128
-                  timeout: 10
-      # `static_apps` (mapping[], optional)
-      # Contains configuration for static apps deployed as part of CAPE.
-      # Static apps are deployed to s3 as html/js/css bundles and are
-      # exposed through an application load balancer. These may hit API
-      # endpoints (assuming the required permissions/roles are available),
-      # but have no server side functions. They are served as-is and only
-      # from S3.
-      # Each mapping in the list has the following schema:
-      # * `name` (string, required)
-      #    The name of the static app. This is used in book keeping and
-      #    resource naming. As it is used in resource naming it should be
-      #    kept as short as possible, but it must be unique across static
-      #    app names in the swimlane.
-      # * `short_name` (string, required)
-      #    A short name for the static app. This is used in book keeping
-      #    and resource naming. This should be kept to 4 characters max
-      #    and should be unique across all static apps.
-      # * `fqdn` (string, required)
-      #   This is the FQDN for the static app. The domain must match the
-      #   swimlane's domain presently. The FQDN becomes the name of the S3
-      #   bucket, and this is a requirement for serving static apps from
-      #   S3.
-      # * `dir` (string, required)
-      #   The path to the directory in the repo (from repo root) where the
-      #   assets for the static app exist. This will be fully copied, so
-      #   ensure there are no items in the hierarchy that should not end
-      #   up in S3
-      # TODO: ISSUE #128
-      # TODO: ISSUE #166
-      # TODO: ISSUE #192
-      static-apps:
-        - name: "dap-ui"
-          short_name: "dap"
-          fqdn: "analysis-pipelines.cape-dev.org"
-          dir: "./assets/web/static/dap-ui"
-      # `instance_apps` (mapping, optional)
-      # Contains configuration for all swimlane apps that are deployed to
-      # EC2 instances.
-      # A list of applications for the swimlane that are deployed as EC2
-      # instances.
-      # TODO: this is ever so slightly different than static apps in
-      #       that we have at least one key that applies to all
-      #       instances and then have a sub list for the actual
-      #       instances (whereas static apps has no common keys and is
-      #       just a top-level list). would be great if the configs were
-      #       more similar
-      instance-apps:
-        # `pub-key` (string, required)
-        # The path to the public key that will be deployed to all
-        # instances for SSH. You must maintain the private key securely
-        # separately. We recommend using a subdirectory of
-        # `assets-untracked` in order to ensure no keys (public or not)
-        # end up in the repository.
-        pub-key: "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
-        # `instances` (mapping[], optional)
-        # A list of instance configurations that will be used to create
-        # the instances and wire them to the ALB.
-        # all instance configs have:
-        # * `name` (string, required)
-        #   Used in resource naming and book keeping. Must be unique
-        #   across instance apps
-        # * `short_name` (string, required)
-        #   Used in resource naming and book keeping. Must be unique
-        #   across instance apps and ideally less than 4 characters due
-        #   to resource naming limits.
-        # * `image` (string, required)
-        #   The id of the AMI to use for the instance. This AMI must
-        #   already exist in AWS
-        # * `public_ip` (bool, optional)
-        #   True if a public ip should be associated with the instance,
-        #   False otherwise (defaults to False)
-        # * `instance_type` (string, required)
-        #   The EC2 instance type to use for the instance. Defaults to
-        #   "t3a.medium".
-        # * `subnet_name` (string, required)
-        #   The name of the subnet to launch the instance in. Must
-        #   match a subnet name in the swimlane's configuration
-        # * `subdomain` (string, required)
-        #   The subdomain to associate with the instance. This is
-        #   paired with the swimlane's domain, so if the `subdomain`
-        #   was "app1" and the swimlane's `domain_name` was
-        #   "cape-dev.org", the instance would be reachable at
-        #   "app1.cape-dev.org".
-        # * `cognito_client` (mapping, optional)
-        #   Configuration of a Cognito User Pool Client for hooking up
-        #   SSO to the instance application. If omitted, then no client
-        #   is added. Possible fields can be found in the Pulumi
-        #   documentation for `aws.cognito.UserPoolClient`. Some fields
-        #   also support Jinja template notation, specifically elements
-        #   in `logout_urls` and `callback_urls` with a parameter passed
-        #   in for `{{ domain }}` to fill in the application's domain.
-        #   Fields you should almost certainly make sure to include are:
-        #       - callback_urls: where to forward the user after login
-        #       - allowed_oauth_scopes: the scopes to get from the SSO
-        #   Fields that will already be set and shouldn't be included are:
-        #     - name - already the name of the instance
-        #     - user_pool_id - already set by the infrastructure
-        #     - generate_secret - always true
-        #     - allowed_oauth_flows_user_pool_client - always true
-        #     - allowed_oauth_flows - always "code"
-        #     - supported_identity_providers - set by the infrastructure
-        # * `port` (int, optional)
-        #   The port the ALB should forward traffic to on the instance.
-        #   In general, we assume the ALB is performing TLS termination
-        #   and thus this value defaults to 80. Note that if 443 is
-        #   desired, the certs will have to be installed on the instance
-        #   manually.
-        # * `protocol` (string, optional)
-        #   The protocol the ALB should forward traffic to the instance
-        #   with. In general, we assume the ALB is performing TLS
-        #   termination and thus this value defaults to "HTTP". Note
-        #   that is "HTTPS" is desired, the certs will have to be
-        #   installed on the instance manually.
-        # * `healthcheck` (mapping, optional)
-        #   This is a mapping of health check arguments that will be
-        #   passed to the target group constructor *as-is*. The keys
-        #   must match those expected in the pulumi docs:
-        #   https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
-        #   This defaults to None and will use the AWS defaults in that
-        #   case.
-        # * `user_data` (mapping, optional)
-        #   This is an optional mapping containing configuration for the
-        #   user data that will be passed into the instance on creation.
-        #   The mapping has the following schema:
-        #   * `template` (string, required)
-        #     The path to a jinja2 template that when rendered will be
-        #     the user data passed to the instance.
-        #   * `vars` (mapping, optional)
-        #     A mapping of vars that will be passed to the template
-        #     rendering. The schema of this mapping is completely
-        #     dependent on the template, and the vars will be passed
-        #     *as-is*. The key names must match the names of template
-        #     variables and the values must be appropriate for rendering
-        #     those variables. If you wish to use the user data template
-        #     without rendering, pass in an empty value for `vars`
-        #   * `rebuild_on_change` (boolean, optional)
-        #     A boolean stating if the instance should be rebuilt (i.e.
-        #     destroyed and recreated) on a detected change in user
-        #     data (defaults to False).
-        # * `services` (string[], optional)
-        #   A list of services that the instance will need access to
-        #   via an instance profile. *THIS IS QUITE SUBJECT TO CHANGE*
-        #   as we get into how we do policies and roles. Currently the
-        #   only supported value is "athena"
-        instances:
-          - name: "jupyterhub"
-            short_name: "jh"
-            image: "ami-0bb505a20b855ef57"
-            public_ip: False
-            instance_type: "t3a.medium"
-            subnet_types:
-              - compute
-            subdomain: "jupyterhub"
-            cognito_client:
-              callback_urls:
-                - "https://{{ domain }}/hub/oauth_callback"
-              logout_urls:
-                - "https://{{ domain }}"
-              allowed_oauth_scopes: ["openid", "email"]
-            port: 8000
-            protocol: "HTTP"
-            healthcheck:
-              path: "/"
-              port: 8000
-              protocol: "HTTP"
-              matcher: "302"
-            user_data:
-              template: assets/instance/user-data/templates/jupyterhub.j2
-              vars:
-                admins:
-                  - admin
-              rebuild_on_change: True
-            services:
-              - cognito
-          - name: "opa"
-            short_name: "opa"
-            image: "ami-05080e4998b881ee0"
-            public_ip: False
-            instance_type: "t3a.medium"
-            subnet_types:
-              - service
-            subdomain: "opa"
-            # TODO: don't think we need a cognito client setup here
-            #       (no SSO needs on this instance) at this time.
-            #       could change if we need to setup userpool queries
-            #       in opa directly i guess...
-            port: 8181
-            protocol: "HTTP"
-            healthcheck:
-              path: "/"
-              port: 8181
-              protocol: "HTTP"
-              matcher: "302"
-            user_data:
-              template: assets/instance/user-data/templates/opa.j2
-              # TODO: define template vars
-              rebuild_on_change: True
-              # NOTE: At this time, the opa instance only needs to
-              #       read from s3 to get policy bundles. This will
-              #       probably change in the future (remain an
-              #       option, but not be the only or preferred
-              #       mechanism.
-              vars:
-                bundle_repo_name: "https://github.com/cape-ph/cape-opa-policy"
-                bundle_version: "2025.05.14"
-                bundle_asset_name: "cape-opa-bundle.tar.gz"
-                meta_bundle_min_dl_delay: 120
-                meta_bundle_max_dl_delay: 300
-            services:
-              # TODO: Issue #186 - It would be awesome if we could
-              #       specify needed actions (e.g. R/W/X type
-              #       stuff) here as well as give some indication of
-              #       *which* service endpoint we care about (e.g.
-              #       here we would care about specifying which
-              #       bucket we want to read from
-              - s3
-      # `vpn` (mapping, required)
-      # Contains configuration for the vpn for the swimlane.
-      # NOTE: At this time, we roll the VPN in with each swimlane. This
-      #       makes sense for development, but may not when actually
-      #       going to deploy somewhere with an established VPN
-      #       environment. This setup is subject to change, but some form
-      #       of VPN will be required to access all swimlanes (though some
-      #       resources in the eventual public swimlane will be exposed
-      #       publicly)
-      vpn:
-        # `cidr-block` (string, optional)
-        # The cidr-block is where vpn client ips will be allocated
-        # from. This is different than the cidr block of the vpn subnet
-        # itself. This CIDR block cannot overlap with the VPC nor with
-        # the subnet being assoociated with the VPN endpoint.
-        # Additionally it must be at least a /22 and no more than /12.
-        # More here:
-        # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
-        # If not specified, this will default to "10.1.0.0/22"
-        cidr-block: "10.254.0.0/22"
-        # `transport-proto` (string, optional)
-        # Valid values are "tcp" and "udp". If not specified this will
-        # default to "udp"
-        transport-proto: "udp"
-        # `tls` (mapping, optional)
-        # The configuration for TLS for the swimlane's VPN.
-        # # If this mapping is not provided and valid, TLS will not be
-        # configured (or will have an invalid configuration) which will
-        # will lead to failure in deployment.
-        # NOTE: The VPN configured here is connected to as specified in
-        #       the AWS client VPN user guide:
-        #       https://docs.aws.amazon.com/vpn/latest/clientvpn-user/client-vpn-user-what-is.html
-        #       The ovpn client config files must be exported as covered
-        #       in the AWS client VPN admin guide:
-        #       https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/cvpn-working-endpoint-export.html
-        #       and given to all users needing to connect to VPN.
-        #       Additionally the ca cert, cert, and private key must all
-        #       be embedded in the ovpn config file. All of this is
-        #       managed externally to the CAPE infrastructure.
-        tls:
-          # `dir` (string, required)
-          # Path (relative to repo root) to the directory that
-          # contains the TLS certs and keys. It is recommended to
-          # make this a subdirectory of <repo_root>/assets-untracked
-          # which is explicitly ignored by the git configuration (so
-          # that these files never end up in version control).
-          dir: ./assets-untracked/tls/vpn
-          # `ca-cert` (string, required)
-          # The name of the cert chain file. At this time, we require
-          # this to be a separate file (cannot be embedded in the
-          # cert pem itself). The file should be in PEM format.
-          ca-cert: ca.crt
-          # `server-key` (string, required)
-          # The name of the key file. The file should be in PEM
-          # format.
-          server-key: server.key
-          # `server-cert` (string, required)
-          # The name of the cert file. The file should be in PEM
-          # format.
-          server-cert: server.crt
-      # `compute` (mapping, optional)
-      # Contains configuration about the available compute environments in
-      # CAPE. If this is not provided, an empty configuration will be used
-      # and no compute environments will be deployed
-      compute:
-        # `environments` (mapping[], optional)
-        # A list of mappings, each containing the configuration of a
-        # specific compute environment. Each mapping in the list has the
-        # following schema:
-        # * `name` (string, required)
-        #   A name for the environment. Used for bookkeeping and must be
-        #   unique across all compute environments.
-        # * `image` (string, required)
-        #   The ID of the AWS AMI to launce the instances with. This
-        #   image must exist in AWS already.
-        # * `subnets` (string[], required)
-        #   A list of subnet names in which compute resources will be
-        #   launched. The subnet names must match the names of swimlane
-        #   subnets in this config file. At least one subnet must be
-        #   defined here.
-        # * `resources` (mapping, required)
-        #   A mapping of compute environment resource arguments to be
-        #   passed *as-is* to the compute environment constructor. The
-        #   key must exist, but the value may be empty if there are no
-        #   arguments to pass. The argument names must match those
-        #   expected in the pulumi docs:
-        #   https://www.pulumi.com/registry/packages/aws/api-docs/batch/computeenvironment/#computeenvironmentcomputeresources
-        #   Any supported argument listed here will be passed on as
-        #   configured.
-        environments:
-          - name: workflows
-            image: ami-0cfe23bad78a802ea
-            subnet_types:
-              - compute
-            resources:
-              instance_types:
-                - m4.large
-                - m5.large
-                - c4.large
-              min_vcpus: 1
-              desired_vcpus: 2
-              max_vcpus: 4
-          - name: analysis
-            image: ami-0cfe23bad78a802ea
-            subnet_types:
-              - compute
-            resources:
-              instance_types:
-                - c4.large
-                - c4.xlarge
-                - c4.2xlarge
-                - c4.4xlarge
-                - c4.8xlarge
-              max_vcpus: 16
-        container_images:
-          nextflow_kickstart:
-            context: ./assets/containers/bactopia-kickstart
-            platform: linux/amd64
-        jobs:
-          nextflow:
-            image: nextflow_kickstart
-            user: root
-            command:
-              - /usr/local/bin/entrypoint.sh
-            resourceRequirements:
-              - type: VCPU
-                value: "1"
-              - type: MEMORY
-                value: "2048"
-  # `cape-cod:datalakehouse` (mapping, required)
-  # Contains configuration specific to the data lake house (DLH). The DLH
-  # contains tributaries, which are compionents that consist of a pair of raw
-  # and clean data buckets (and automation resources for those buckets) and
-  # data pipelines that define transformations on data places in the raw
-  # bucket. This is all described in more detail below.
-  cape-cod:datalakehouse:
-    # NOTE: unless specified otherwise in here, all crawlers will run at
-    #       0200 daily
+        #   expected by that class. If not provided defaults will be used where
+        #   required.
+        function_layers:
+            # TODO: ISSUE #266 add ETL capepy layer.
+            - name: capi-all
+              args:
+                  description:
+                      CAPI API python pip dependencies layer for all handlers.
+                  compatible_runtimes:
+                      - python3.10
+        # `principals` (mapping, required)
+        # Contains local users and groups required for any cape deployment.
+        # TODO: any issue specifying princpals at this level? will we need
+        #       differing assets for each swimlane? i don't *think* so as the
+        #       roles attached to the groups should really be the only
+        #       swimlane specific things, right?
+        principals:
+            # `groups`  (mapping[], required)
+            # Contains group specifications that are required for all cape
+            # deployments. Each list item will have the following keys
+            # * `name` (string, required) - The name of the group. Must be
+            #   unique.
+            # * `description` (string, optional) - A description for the group.
+            # * `precedence`: The precedence of the group when determining
+            #   which group to use on authentication. Lower precedence wins.
+            #   Groups may have the same precedence provided they can be
+            #   deconflicted when ambiguous.
+            #   TODO: how to deconflict same precedence doc
+            # TODO: do we need to do role association (e.g. by name) here?
+            groups:
+                Admins:
+                    description: CAPE administrators group.
+                    precedence: 1
+                DefaultUsers:
+                    description: CAPE DefaultUsers (catchall) group.
+                    precedence: 65536
+            # `group_extra` (string, optional)
+            # Path to a csv file containing deployment-specific groups to
+            # create. May be a full path or relative to repo root. This file can
+            # be keps out of the repo using something like the assets-untracked
+            # mechanism discussed in the readme.
+            groups_extra: "./assets-untracked/principals/groups.csv"
+            # `users`  (mapping[], required)
+            # Contains user specifications that are required for all cape
+            # deployments. Each list item will have the following keys
+            # * `email` (string, required) - The unique email address for the
+            #   user. This will be the username of any user.
+            # * `groups` (string[], optional) - A list of group names to
+            #   associate the user with. The named group must either be
+            #   created in the `groups` block or in the `group_extra` file
+            #   above
+            # * `attrs_file` (string, optional) - a path to a json file containing
+            #   user attributes to prime the system with for the user
+            users:
+                - email: cape.admin@example.com
+                  temporary_password: 1CapeCodUser!
+                  groups:
+                      - Admins
+                  attrs_file: ./assets-untracked/principals/attrs/cape.admin.attrs.json
+                # TODO: this user probably shouldn't actually be in here long
+                #       term. This is the kind of user that the `users_extra`
+                #       file is intended for. THIS IS JUST FOR TESTING IDENTITY
+                #       POOL AND SHOULD BE REMOVED WHEN THAT'S GOOD
+                - email: cape.default@example.com
+                  temporary_password: 1CapeCodUser!
+                  groups:
+                      - DefaultUsers
+            # `user_extra` (string, optional)
+            # Path to a csv file containing deployment-specific users to
+            # create. May be a full path or relative to repo root. This file can
+            # be keps out of the repo using something like the assets-untracked
+            # mechanism discussed in the readme.
+            users_extra: "./assets-untracked/principals/users.csv"
+        # `authz_policy_engine` (mapping, required)
+        #
+        # NOTE: This currently only supports github repositories
+        #
+        # Contains information required to pull a versioned release of a
+        # Policy As Code repo. This repository's schema and policies will be
+        # used to populate a policy engine (store, schema and policies).
+        # Currently, this repo must provide a shcema and policies in the Cedar
+        # json format. This mapping has the following keys:
+        # * `repo_url: the url to the (publicly accessible) hosted
+        #   repository. This should not end in `.git`
+        # * `version`: This is the version of the artifact to get. This
+        #   version will most likely match a repo tag
+        # * `artifact_name`: The name of the release artifact to get. A
+        #   release could contain multiple items for which only a subset is
+        #   needed.
 
-    # `tributaries` (mapping[], optional)
-    # Contains a list of mappings defining specific domains in the data
-    # lake house (e.g. HAI, genomics). Each tributary has its own raw/clean
-    # storage, etl scripts, lambda functions, etc.
-    tributaries:
-      # The schema for each item of this list is:
-      # * `name` (string required)
-      #   The name of this tributary. This name is included in AWS
-      #   resource names, which have a very small character limit. So this
-      #   name should be kept as short as possible, but must be unique
-      #   among all tributaries
-      # * `buckets` (mapping, required)
-      #   This contains the configuration for the raw and clean buckets of
-      #   the tributary, including crawlers
-      #   * `raw` (mapping, required)
-      #     Contains the configuration for the raw bucket
-      #     * `name` (string, optional)
-      #       The name of the raw bucket. Defaults to
-      #       "{tributary_resource_name}-raw-vbkt"
-      #     * `crawler` (mapping, optional)
-      #       Contains the configuration for the bucket crawler. If no
-      #       configuration is given, no crawler will be created for the
-      #       bucket. Generally, we do not define crawlers for raw
-      #       buckets.
-      #       * `excludes` (string[], required)
-      #         A list of exclude patterns for the crawler. Leave the
-      #         empty for no exclusions. The rules for these patterns are
-      #         defined in the official aws docs (under exclude patterns)
-      #         https://docs.aws.amazon.com/glue/latest/dg/define-crawler-choose-data-sources.html
-      #       * `classifiers` (string[], optional)
-      #         A list of custom classifiers for the crawler. If not
-      #         provided the AWS schema detection will be allowed to
-      #         figure out what to use (which may not be possible
-      #         depending on the raw data schema). These classifiers must
-      #         exist either in AWS or as part of this deployment. The
-      #         only currently supported custom classifier is
-      #         cape-csv-standard-classifier
-      #       * `schedule` (string, optional)
-      #         The crontab-formatted schedule for the crawler. Defaults
-      #         to 0200 daily ("0 2 * * ? *"). Format details can be
-      #         found here: https://en.wikipedia.org/wiki/Cron
-      #       * `prefix` (string, optional)
-      #         A prefix to be added to the beginning of table names made
-      #         by the crawler
-      #   * `clean` (mapping, required)
-      #     Contains configuration for the clean bucket. The schema is the
-      #     same as the `raw` bucket section immediately preceding
-      #     `clean`.
-      # * `pipelines` (mapping, optional)
-      #   Contains configuration for the pipelines of the tributary.
-      #   * `data` (mapping, optional)
-      #     Contains configuration for data pipelines in the tributary
-      #     * `etl` (mapping[], optional)
-      #       A list of configurations for ETL data pipelines in the
-      #       tributary. Each list item has the following schema
-      #       * `name` (string, required)
-      #         A short name for the ETL script. Needs to be unique across
-      #         ETL scripts in the tributary. This value is used in AWS
-      #         resource names and thus should be kept as short as
-      #         possible.
-      #       * `src` (string, required)
-      #         The id of the bucket which is operating as the location
-      #         for source files which will be inputted into the pipeline
-      #       * `sink` (string, required)
-      #         The id of the bucket which is operating as the location
-      #         for sink location where files where be outputted from the
-      #         pipeline
-      #       * `script` (string, required)
-      #         The path in the common assets bucket where the ETL script
-      #         will be found. This is the deployed path, *not* the path
-      #         in the repo.
-      #       * `prefix` (string, required)
-      #         The object prefix to limit the ETL script to. If not
-      #         specified, the ETL script will apply to *all* objects
-      #         added to the bucket.
-      #       * `suffixes` (string[], optional)
-      #         A list of object (e.g. file) suffixes the ETL script
-      #         should be limited to. If not specified, the ETL script
-      #         will apply to all suffixes.
-      #       * `pymodules` (string[], optional)
-      #         A list of additional python modules to be passed into the
-      #         ETL script's runtime. These is specified in pip install
-      #         compatible version format (i.e.
-      #         `package_name[version_specifier]`). More information on
-      #         version specifiers van be found here:
-      #         https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
-      #       * `max_concurrent_runs` (int, optional)
-      #         The max number of concurrent runs for the ETL Job. If the
-      #         number of requested ETL runs is greater than this value,
-      #         ETL jobs will be queued until currently running jobs are
-      #         completed and the number of running jobs is < max.
-      #         Defaults to 5.
-      - name: hai
-        buckets:
-          input-raw:
-            name:
-            crawler:
-          input-clean:
-            name:
-            crawler:
-              prefix: input # prefixes for tables in the database
-              excludes:
-              classifiers:
-                - cape-csv-standard-classifier
-              schedule: "0 2 * * ? *"
-          result-raw:
-            name:
-          result-clean:
-            name:
-            crawler:
-              prefix: result # prefixes for tables in the database
-        pipelines:
-          data:
+        # `glue` (mapping, optional)
+        # Contains meta configuration related to aws glue.
+        glue:
+            # `etl` (mapping[], optional)
+            # Contains meta configuration related to aws glue etl scripts'
+            # placement in the common s3 bucket. Every item in the list is
+            # required to have:
+            # * `name` (string, required) - The name of the etl script. This
+            #    will be used as part of the object name in storage as well as
+            #    part of the name in the pulumi state.
+            # * `key` (string, required) - The key to use when placing this
+            #   script in object storage. This should include any required
+            #   prefixes.
+            # * `srcpath` (string, required) - The source path of this script
+            #   in the deployment repo. **NOTE** This key may become optional
+            #   or be removed all together in the future. Ideally we will not
+            #   have ETL scripts in this repo in the long run but rather have
+            #   brought in from other repos in dome manner.
             etl:
-              - name: tnl
-                script: glue/etl/etl_tnl_alert.py
-                src: input-raw
-                sink: input-clean
-                prefix: tnl
-                suffixes:
-                  - xlsx
-                pymodules:
-                  - openpyxl==3.1.2
-              - name: gphl-cre
-                script: glue/etl/etl_gphl_cre_alert.py
-                src: input-raw
-                sink: input-clean
-                prefix: gphl-cre
-                suffixes:
-                  - docx
-                pymodules:
-                  - python-docx==1.1.2
-              - name: gphl-sequencing
-                script: glue/etl/etl_gphl_sequencing_alert.py
-                src: input-raw
-                sink: input-clean
-                prefix: gphl-sequencing
-                suffixes:
-                  - pdf
-                pymodules:
-                  - tabula-py==2.9.3
-                  - pypdf==4.3.1
-      - name: genomics
-        buckets:
-          input-raw:
-            name:
-            crawler:
-          input-clean:
-            name:
-            crawler:
-              classifiers:
-              prefix: input # prefixes for tables in the database
-          result-raw:
-            name:
-          result-clean:
-            name:
-            crawler:
-              prefix: result # prefixes for tables in the database
-        pipelines:
-          data:
-            etl:
-              - name: fastx
-                src: input-raw
-                sink: input-clean
-                script: glue/etl/etl_fasta_fastq.py
-                prefix: fastx
-                suffixes:
-                  - gz
-                  - fasta
-                  - fastq
-                pymodules:
-                  - pyfastx==2.1.0
-                max_concurrent_runs: 5
-              - name: bactopia-results
-                script: glue/etl/etl_bactopia_results.py
-                src: result-raw
-                sink: result-clean
-                prefix: pipeline-output/bactopia-runs
-                suffixes:
-                  - tsv
-      - name: seqauto
-        buckets:
-          input-raw:
-            name:
-            crawler:
-          input-clean:
-            name:
-            crawler:
-              classifiers:
-              prefix: input # prefixes for tables in the database
-          result-raw:
-            name:
-          result-clean:
-            name:
-            crawler:
-              prefix: result # prefixes for tables in the database
-        pipelines:
-          data:
-            etl:
+                - name: etl-gphl-cre
+                  key: glue/etl/etl_gphl_cre_alert.py
+                  srcpth: ./assets/etl/etl_gphl_cre_alert.py
+                - name: etl-tnl
+                  key: glue/etl/etl_tnl_alert.py
+                  srcpth: ./assets/etl/etl_tnl_alert.py
+                - name: etl-fastx
+                  key: glue/etl/etl_fasta_fastq.py
+                  srcpth: ./assets/etl/etl_fasta_fastq.py
+                - name: etl-gphl-sequencing
+                  key: glue/etl/etl_gphl_sequencing_alert.py
+                  srcpth: ./assets/etl/etl_gphl_sequencing_alert.py
+                # TODO: ISSUE #144 this is for the initial bactopia results
+                #       handling. it may not be best to have here long term, and
+                #       we don't know yet how were managing these things. so for
+                #       now it's here (we also need to think about how we handle
+                #       pipelines that may have different etl needs for
+                #       different versions)
+                - name: etl-bactopia-results
+                  key: glue/etl/etl_bactopia_results.py
+                  srcpth: ./assets/etl/etl_bactopia_results.py
+    # `cape-cod:swimlanes` (mapping, required)
+    # Contains the configuration for all swimlanes. Swimlanes define logical
+    # separations of public, protected and private resources in CAPE. Each
+    # swimlane gets its own VPC.
+    cape-cod:swimlanes:
+        # `private` (mapping, optional)
+        # Contains configuration of the private swimmalne.
+        private:
+            # `domain` (string, optional)
+            # This is the private domain that will be setup in the cloud
+            # provider private VPC. Defaults to "cape-dev.org"
+            # At this time, this does not need to be setup with a domain
+            # registrar unless it is also the domain used in a public facing
+            # resource. The domain will need to be able to be used for creation
+            # of TLS cert/key pairs though (in the development case, these are
+            # self-signed and in all cases need to be managed outside this
+            # repo).
+            domain: cape-dev.org
+            # `tls` (mapping, optional)
+            # The configuration for TLS for the swimlane. At this time we
+            # support a single (wildcard) cert per swimlane for non-vpn
+            # tls/ssl (vpn has its own cert). This may change in the future.
+            # If this mapping is not provided and valid, TLS will not be
+            # configured (or will have an invalid configuration) which will
+            # will lead to failure in deployment.
+            tls:
+                # `dir` (string, required)
+                # Path (relative to repo root) to the directory that contains
+                # the TLS certs and keys. It is recommended to make this a
+                # subdirectory of <repo_root>/assets-untracked which is
+                # explicitly ignored by the git configuration (so that these
+                # files never end up in version control).
+                dir: "./assets-untracked/tls/private-swimlane"
+                # `ca-cert` (string, required)
+                # The name of the cert chain file. At this time, we require this
+                # to be a separate file (cannot be embedded in the cert pem
+                # itself). The file should be in PEM format.
+                ca-cert: "ca.crt"
+                # `server-key` (string, required)
+                # The name of the key file. The file should be in PEM format.
+                server-key: "*.cape-dev.org.key"
+                # `server-cert` (string, required)
+                # The name of the cert file. The file should be in PEM format.
+                server-cert: "*.cape-dev.org.crt"
+            # `cidr-block` (string, optional)
+            # The full cidr block that will be given to the private swimlane.
+            # Defaults to "10.0.0.0/24". Must be between /16 and /28
+            cidr-block: 10.0.0.0/16
+            # `subnets` (mapping[], optional)
+            # A list of configurations for the private subnets of the swimlane.
+            # If not provided, no private subnets will be configured but a
+            # public subnet will be. All list items have the following schema:
+            # * `name` (string, required)
+            #   A short name for the subnet. This should be unique across all
+            #   subnets in the swimlane.
+            # * `cidr-block` (string, required)
+            #   The cidr block given to the subnet
+            # * `type`: (string, required)
+            #   a string representing the type of subnet. some types are
+            #   special and they're strings are reserved. known types are:
+            #   * `nat`: the subnet will be given a nat gateway. at present,
+            #     this gateway will be an internet gateway and the NAT will be
+            #     for internet egress. no other gateways are yet supported
+            #     (meaning no private NAT)
+            #   * `compute`: there is no special handling for this type at this
+            #     time, but the name is reserved for the future
+            #   * `app`: there is no special handling for this type at this
+            #     time, but the name is reserved for the future
+            #   * `service`: there is no special handling for this type at this
+            #     time, but the name is reserved for the future
+            #   * `vpn`: any subnet marks as the VPN type will be configured to
+            #     be a target of the external client VPN setup.
+            # * `public`: (boolean, optional)
+            #   A boolean stating if the subnet should be made public (have an
+            #   associated public IP address). This defaults to False. In the
+            #   CAPE reference architecture, only subnets of type `nat` are
+            #   configured as public. If there is not an explicit need for a
+            #   subnet to be public (and then only if you understand the
+            #   security implications) then the subnet should be kept private
+            # * `routes` (string[], optional)
+            #   A list of subnet names for which this subnet should be able to
+            #   route to (via routing table). The special name "public" may be
+            #   used to allow routing to the public subnet for the swimlane (if
+            #   public is not explicitly specified, the subnet will have no
+            #   internet access).
+            # * `az` (string, required)
+            #   An explicit availability zone for the subnet. If not provided,
+            #   the default availability zone will be used. This is generally
+            #   only needed when setting up redundant private subnets for
+            #   something like VPN
+            subnets:
+                # AZ 1
+                - name: nataz1
+                  cidr-block: 10.0.127.0/24
+                  type: nat
+                  public: True
+                  !!merge <<: *az1
+                - name: cmptaz1
+                  cidr-block: 10.0.0.0/20
+                  type: compute
+                  !!merge <<: *az1
+                  routes:
+                      - "nataz1"
+                - name: appaz1
+                  cidr-block: 10.0.16.0/20
+                  type: app
+                  !!merge <<: *az1
+                  routes:
+                      - "nataz1"
+                - name: vpnaz1
+                  cidr-block: 10.0.120.0/22
+                  !!merge <<: *az1
+                  type: vpn
+                  routes:
+                      - "nataz1"
+                - name: srvcaz1
+                  cidr-block: 10.0.124.0/23
+                  !!merge <<: *az1
+                  type: service
+                  routes:
+                      - "nataz1"
+                # AZ 2
+                - name: nataz2
+                  cidr-block: 10.0.255.0/24
+                  type: nat
+                  public: True
+                  !!merge <<: *az2
+                - name: cmptaz2
+                  cidr-block: 10.0.128.0/20
+                  type: compute
+                  !!merge <<: *az2
+                  routes:
+                      - "nataz2"
+                - name: appaz2
+                  cidr-block: 10.0.144.0/20
+                  type: app
+                  !!merge <<: *az2
+                  routes:
+                      - "nataz2"
+                - name: vpnaz2
+                  cidr-block: 10.0.248.0/22
+                  !!merge <<: *az2
+                  type: vpn
+                  routes:
+                      - "nataz2"
+                - name: srvcaz2
+                  cidr-block: 10.0.252.0/23
+                  !!merge <<: *az2
+                  type: service
+                  routes:
+                      - "nataz1"
+            # `api` (mapping, optional)
+            # Contains the configuration for apis and the API application load
+            # balancer. If this is not included, a default configuration will be
+            # used with a subdomain of `api`, a `dev` stage name and no APIs
+            # deployed.
+            # NOTE: at this time and API ALB will still be created even if not
+            #       configured, as will a VPC Endpoint that routes to the API
+            #       gateway. You will be billed for these resources by AWS.
+            # TODO: ISSUE #191
+            api:
+                # `subdomain` (string, optional)
+                # The name of the subdomain (in the swimlanes configured
+                # domain) where api's will be exposed. All apis will go in the
+                # same subdomain, and will be differentiated based on the path
+                # component of each individual api in the list below. E.g. for
+                # a domain of "cape-dev.org" and a subdomain value of "api",
+                # all apis will be rooted at "api.cape-dev.org". For an api
+                # named "api1" and a stage-name of "dev", that specific api can
+                # be found at "api.cape-dev.org/api1-dev".
+                # If not provided, this defaults to "api"
+                subdomain: "api"
+                # `stage` (mapping, optional)
+                # The stage configuration for all apis. We currently only
+                # support one stage name for all of CAPE.
+                stage:
+                    # `meta` (anchor, required)
+                    # This item needs to exist as-is. we have a common stage
+                    # suffix used for all apis in the deployment at present,
+                    # and this is how we access it. This is an anchor reference
+                    # to the `deployment:meta` block at the top of the file.
+                    meta: *depmet
+                # `apis` (mapping[], optional)
+                # A list of deployable API configurations. If not provided, an
+                # empty list will be used.
+                # Every element in this object will specify an individual api
+                # to be deployed. Each item is a key/mapping pair where the key
+                # is the api name and the mapping contains:
+                # * `desc` (string, required)
+                #    A description for the api. Will be used in description
+                #    tags. The key is required, but the value may be left
+                #    empty.
+                # * `short_name` (string, required)
+                #    A short name for the api. Will be used in resource naming
+                #    and can be a max of 4 characters and must be unique across
+                #    apis.
+                # * `spec_file` (string, required)
+                #   Path to an OpenApi 3.0.1 yaml specification jinja2
+                #   template. This file should include *no* AWS id's, names,
+                #   account info, etc.
+                # * `authorizers` (mapping, optional)
+                #   Configuration for authorizers for the API. In an OpenAPI
+                #   spec, all authorizers must be defined in the component
+                #   section, but may be applied at the API or endpoint levels.
+                #   The authorizer named "default" defined here will be applied
+                #   at the API level currently. Each mapping is keyed on an
+                #   authorizor name (which must conform to AWS resource naming
+                #   rules, and will be used as the base of a resource name, so
+                #   it will be constrained in max length) and should contain:
+                #   * `file` (string, required)
+                #   Path (absolute or relative to repo root) to the file
+                #   containing the code for the authorizer lambda function
+                #   * `type` (string, required)
+                #   Type of lambda authorizer. Allowed values are "request",
+                #   "token", or "cognito_user_pools".
+                #   * `identity_sources` (string[], optional)
+                #   List of strings of required query params or request headers
+                #   where identity information can be found. May be more than
+                #   one item.
+                #   * `result_cached_sec` (int, optional)
+                #   The number of seconds an authorization reqponse is cached
+                #   for. A value of 0 turns off caching (good for dev, bad for
+                #   prod). Defaults to 300.
+                #   * `logging_enabled` (bool, optional)
+                #   True if logging should be enabled for the authorizer, False
+                #   otherwise. The log stream will be in a log group specific to
+                #   the API.
+                # * `env_vars` (string[], optional)
+                #   A list of swimlane-exposed env vars that the API requires
+                #   access to. The env vars will be passed into the
+                #   environment of the lambda and basic permissions will be
+                #   given to the lambda to access the resources referenced by
+                #   the env var. No new environment variables may be defined
+                #   here, the only valid entries are those exposed by the
+                #   swimlane. If not provided, this defaults to an empty list.
+                # * `layer_args` (mapping, optional)
+                #   A mapping of args to use in construction of a lambda layer
+                #   for all functions in the API. Keys must match the names of
+                #   keywords args in CapePythonLambdaLayer and values must be as
+                #   expected by that class.
+                # * `handlers` (mapping[], optional)
+                #   A list of mappings containing configuration for lambda
+                #   handlers tied to the API's endpoints. Each mapping should
+                #   contain:
+                #   * `id` (string, required)
+                #     The id in the spec file template that will be replaced
+                #     with the arn of the created lambda function.
+                #   * `name` (string, required)
+                #     A short name that will be used in resource creation
+                #     (naming of the resources). As this is used in resource
+                #     names, it should be kept as short as possible, but
+                #     must be unique across handlers for an API.
+                #   * `code` (string, required)
+                #     The path in the repo (from repo root) for the lambda that
+                #     implements the endpoint.
+                #   * `layers` (string[], optional)
+                #     A list of layer names (configured in
+                #     cape-meta:function_layers) that should be applied to the
+                #     function execution environment.
+                #   * `funct_args` (mapping, optional)
+                #     Arguments to pass *as is* to the lambda function
+                #     constructor. The keys used need to map to actual argument
+                #     names of the pulumi lambda function constructor.
+                #     Additionally, most args will be ignored (e.g.
+                #     environment, role) as they are dynamically injected in
+                #     code or not used currently. If not provided, the handler
+                #     will default to  "index.index_handler" and the runtime
+                #     will default to "python3.10". The following arguments are
+                #     optional but supported:
+                #     * architectures (string[], defaults to ["x86_64"])
+                #     * description (string, defaults to "handler_name Lambda
+                #       Function")
+                #     * handler (string, defaults to "index.index_handler")
+                #     * memory_size (int, defaults to 128[unit is MB])
+                #     * runtime (string defaults to "python3.10")
+                #     * timeout (int, defaults to 3[unit is seconds])
+                apis:
+                    - name: "capi"
+                      desc: "CAPE API"
+                      short_name: "capi"
+                      spec_file: "assets/api/capi/capi-openapi-301.yaml.j2"
+                      # TODO: this is the default authorizer for the whole
+                      #       api. give it attrs like file, name, cache
+                      #       timeout, etc. probably want this to be a list of
+                      #       authorizers with one named default (that will be
+                      #       used for the whole api) and then others that
+                      #       individual handlers can override
+                      authorizers:
+                          # `default` is a special name signifying the
+                          # authorizer that will be used for the whole api
+                          # barring any overrides at the endpoint level
+                          default:
+                              file: "assets/api/authz/default_apigw_authorizer.py"
+                              # allowed request, token, or cognito_user_pools
+                              type: "request"
+                              identity_sources:
+                              # TODO: need to specify headers that are
+                              #       identity sources (e.g. the JWT is
+                              #       maybe in the `Authorization` header.
+                              #       Until a front end is sending this
+                              #       we will leave it unspecified as the
+                              #       API GW will halt requests without
+                              #       that header
+                              # This is how long the authz result is cached. 0
+                              # turns off caching which is great for debug of
+                              # dev
+                              result_cached_sec: 0
+                              logging_enabled: True
+                      env_vars:
+                          - "DAP_QUEUE_NAME"
+                          - "DAP_REG_DDB_TABLE"
+                          - "DDB_REGION"
+                          - "USER_ATTRS_DDB_TABLE"
+                          - "ETL_ATTRS_DDB_TABLE"
+                          - "CRAWLER_ATTRS_DDB_TABLE"
+                      # env_vars: TODO: add env vars for this API if needed.
+                      # TODO: memory and timeouts for these functions need
+                      #       some love
+                      handlers:
+                          - id: "get_daps_handler"
+                            name: "getdaps"
+                            code: "assets/api/capi/handlers/get_daps.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdaps Lambda Funnction"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "get_dap_profiles_handler"
+                            name: "getdapprofiles"
+                            code: "assets/api/capi/handlers/get_dap_profiles.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdapprofiles Lambda Funnction"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "get_dap_executors_handler"
+                            name: "getdapexecutors"
+                            code: "assets/api/capi/handlers/get_dap_executors.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdapexecutors Lambda Funnction"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "submit_dap_run_handler"
+                            name: "submitdaprun"
+                            code: "assets/api/capi/handlers/submit_dap_run.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "submitdaprun Lambda Funnction"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "get_raw_objstore_authz_handler"
+                            name: "getrawobjstoreauthz"
+                            code: "assets/api/capi/handlers/get_raw_objstores.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getrawobjstores Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_raw_obj_upload_url_handler"
+                            name: "getrawobjuploadurl"
+                            code: "assets/api/capi/handlers/get_raw_obj_post_url.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description:
+                                    "getrawobjuploadurl Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_user_attributes_handler"
+                            name: "getuserattributes"
+                            code: "assets/api/capi/handlers/get_user_attributes.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getuserattributes Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_user_attribute_val_handler"
+                            name: "getuserattributeval"
+                            code: "assets/api/capi/handlers/get_user_attribute_val.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description:
+                                    "getuserattributeval Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_s3_contents_handler"
+                            name: "gets3contents"
+                            code: "assets/api/capi/handlers/get_s3_contents.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "gets3contents Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_object_etls_handler"
+                            name: "getobjectetls"
+                            code: "assets/api/capi/handlers/get_object_etls.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getobjectetls Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_bucket_crawler_handler"
+                            name: "getbucketcrawler"
+                            code: "assets/api/capi/handlers/get_bucket_crawler.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getbucketcrawler Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+            # `static_apps` (mapping[], optional)
+            # Contains configuration for static apps deployed as part of CAPE.
+            # Static apps are deployed to s3 as html/js/css bundles and are
+            # exposed through an application load balancer. These may hit API
+            # endpoints (assuming the required permissions/roles are available),
+            # but have no server side functions. They are served as-is and only
+            # from S3.
+            # Each mapping in the list has the following schema:
+            # * `name` (string, required)
+            #    The name of the static app. This is used in book keeping and
+            #    resource naming. As it is used in resource naming it should be
+            #    kept as short as possible, but it must be unique across static
+            #    app names in the swimlane.
+            # * `short_name` (string, required)
+            #    A short name for the static app. This is used in book keeping
+            #    and resource naming. This should be kept to 4 characters max
+            #    and should be unique across all static apps.
+            # * `fqdn` (string, required)
+            #   This is the FQDN for the static app. The domain must match the
+            #   swimlane's domain presently. The FQDN becomes the name of the S3
+            #   bucket, and this is a requirement for serving static apps from
+            #   S3.
+            # * `dir` (string, required)
+            #   The path to the directory in the repo (from repo root) where the
+            #   assets for the static app exist. This will be fully copied, so
+            #   ensure there are no items in the hierarchy that should not end
+            #   up in S3
+            #
+            # `instance_apps` (mapping, optional)
+            # Contains configuration for all swimlane apps that are deployed to
+            # EC2 instances.
+            # A list of applications for the swimlane that are deployed as EC2
+            # instances.
+            # TODO: this is ever so slightly different than static apps in
+            #       that we have at least one key that applies to all
+            #       instances and then have a sub list for the actual
+            #       instances (whereas static apps has no common keys and is
+            #       just a top-level list). would be great if the configs were
+            #       more similar
+            instance-apps:
+                # `pub-key` (string, required)
+                # The path to the public key that will be deployed to all
+                # instances for SSH. You must maintain the private key securely
+                # separately. We recommend using a subdirectory of
+                # `assets-untracked` in order to ensure no keys (public or not)
+                # end up in the repository.
+                pub-key: "./assets-untracked/instance_keys/cape-dev-id_rsa.pub"
+                # `instances` (mapping[], optional)
+                # A list of instance configurations that will be used to create
+                # the instances and wire them to the ALB.
+                # all instance configs have:
+                # * `name` (string, required)
+                #   Used in resource naming and book keeping. Must be unique
+                #   across instance apps
+                # * `short_name` (string, required)
+                #   Used in resource naming and book keeping. Must be unique
+                #   across instance apps and ideally less than 4 characters due
+                #   to resource naming limits.
+                # * `image` (string, required)
+                #   The id of the AMI to use for the instance. This AMI must
+                #   already exist in AWS
+                # * `public_ip` (bool, optional)
+                #   True if a public ip should be associated with the instance,
+                #   False otherwise (defaults to False)
+                # * `instance_type` (string, required)
+                #   The EC2 instance type to use for the instance. Defaults to
+                #   "t3a.medium".
+                # * `subnet_name` (string, required)
+                #   The name of the subnet to launch the instance in. Must
+                #   match a subnet name in the swimlane's configuration
+                # * `subdomain` (string, required)
+                #   The subdomain to associate with the instance. This is
+                #   paired with the swimlane's domain, so if the `subdomain`
+                #   was "app1" and the swimlane's `domain_name` was
+                #   "cape-dev.org", the instance would be reachable at
+                #   "app1.cape-dev.org".
+                # * `cognito_client` (mapping, optional)
+                #   Configuration of a Cognito User Pool Client for hooking up
+                #   SSO to the instance application. If omitted, then no client
+                #   is added. Possible fields can be found in the Pulumi
+                #   documentation for `aws.cognito.UserPoolClient`. Some fields
+                #   also support Jinja template notation, specifically elements
+                #   in `logout_urls` and `callback_urls` with a parameter passed
+                #   in for `{{ domain }}` to fill in the application's domain.
+                #   Fields you should almost certainly make sure to include are:
+                #       - callback_urls: where to forward the user after login
+                #       - allowed_oauth_scopes: the scopes to get from the SSO
+                #   Fields that will already be set and shouldn't be included are:
+                #     - name - already the name of the instance
+                #     - user_pool_id - already set by the infrastructure
+                #     - generate_secret - always true
+                #     - allowed_oauth_flows_user_pool_client - always true
+                #     - allowed_oauth_flows - always "code"
+                #     - supported_identity_providers - set by the infrastructure
+                # * `port` (int, optional)
+                #   The port the ALB should forward traffic to on the instance.
+                #   In general, we assume the ALB is performing TLS termination
+                #   and thus this value defaults to 80. Note that if 443 is
+                #   desired, the certs will have to be installed on the instance
+                #   manually.
+                # * `protocol` (string, optional)
+                #   The protocol the ALB should forward traffic to the instance
+                #   with. In general, we assume the ALB is performing TLS
+                #   termination and thus this value defaults to "HTTP". Note
+                #   that is "HTTPS" is desired, the certs will have to be
+                #   installed on the instance manually.
+                # * `healthcheck` (mapping, optional)
+                #   This is a mapping of health check arguments that will be
+                #   passed to the target group constructor *as-is*. The keys
+                #   must match those expected in the pulumi docs:
+                #   https://www.pulumi.com/registry/packages/aws/api-docs/lb/targetgroup/#targetgrouphealthcheck
+                #   This defaults to None and will use the AWS defaults in that
+                #   case.
+                # * `user_data` (mapping, optional)
+                #   This is an optional mapping containing configuration for the
+                #   user data that will be passed into the instance on creation.
+                #   The mapping has the following schema:
+                #   * `template` (string, required)
+                #     The path to a jinja2 template that when rendered will be
+                #     the user data passed to the instance.
+                #   * `vars` (mapping, optional)
+                #     A mapping of vars that will be passed to the template
+                #     rendering. The schema of this mapping is completely
+                #     dependent on the template, and the vars will be passed
+                #     *as-is*. The key names must match the names of template
+                #     variables and the values must be appropriate for rendering
+                #     those variables. If you wish to use the user data template
+                #     without rendering, pass in an empty value for `vars`
+                #   * `rebuild_on_change` (boolean, optional)
+                #     A boolean stating if the instance should be rebuilt (i.e.
+                #     destroyed and recreated) on a detected change in user
+                #     data (defaults to False).
+                # * `services` (string[], optional)
+                #   A list of services that the instance will need access to
+                #   via an instance profile. *THIS IS QUITE SUBJECT TO CHANGE*
+                #   as we get into how we do policies and roles. Currently the
+                #   only supported value is "athena"
+                instances:
+                    - name: "jupyterhub"
+                      short_name: "jh"
+                      image: "ami-0bb505a20b855ef57"
+                      public_ip: False
+                      instance_type: "t3a.medium"
+                      subnet_types:
+                          - compute
+                      subdomain: "jupyterhub"
+                      cognito_client:
+                          callback_urls:
+                              - "https://{{ domain }}/hub/oauth_callback"
+                          logout_urls:
+                              - "https://{{ domain }}"
+                          allowed_oauth_scopes: ["openid", "email"]
+                      port: 8000
+                      protocol: "HTTP"
+                      healthcheck:
+                          path: "/"
+                          port: 8000
+                          protocol: "HTTP"
+                          matcher: "302"
+                      user_data:
+                          template: assets/instance/user-data/templates/jupyterhub.j2
+                          vars:
+                              admins:
+                                  - admin
+                          rebuild_on_change: True
+                      services:
+                          - cognito
+                    - name: "opa"
+                      short_name: "opa"
+                      image: "ami-05080e4998b881ee0"
+                      public_ip: False
+                      instance_type: "t3a.medium"
+                      subnet_types:
+                          - service
+                      subdomain: "opa"
+                      # TODO: don't think we need a cognito client setup here
+                      #       (no SSO needs on this instance) at this time.
+                      #       could change if we need to setup userpool queries
+                      #       in opa directly i guess...
+                      port: 8181
+                      protocol: "HTTP"
+                      healthcheck:
+                          path: "/"
+                          port: 8181
+                          protocol: "HTTP"
+                          matcher: "302"
+                      user_data:
+                          template: assets/instance/user-data/templates/opa.j2
+                          # TODO: define template vars
+                          rebuild_on_change: True
+                          # NOTE: At this time, the opa instance only needs to
+                          #       read from s3 to get policy bundles. This will
+                          #       probably change in the future (remain an
+                          #       option, but not be the only or preferred
+                          #       mechanism.
+                          vars:
+                              bundle_repo_name: "https://github.com/cape-ph/cape-opa-policy"
+                              bundle_version: "2025.05.14"
+                              bundle_asset_name: "cape-opa-bundle.tar.gz"
+                              meta_bundle_min_dl_delay: 120
+                              meta_bundle_max_dl_delay: 300
+                      services:
+                          # TODO: Issue #186 - It would be awesome if we could
+                          #       specify needed actions (e.g. R/W/X type
+                          #       stuff) here as well as give some indication of
+                          #       *which* service endpoint we care about (e.g.
+                          #       here we would care about specifying which
+                          #       bucket we want to read from
+                          - s3
+            # `vpn` (mapping, required)
+            # Contains configuration for the vpn for the swimlane.
+            # NOTE: At this time, we roll the VPN in with each swimlane. This
+            #       makes sense for development, but may not when actually
+            #       going to deploy somewhere with an established VPN
+            #       environment. This setup is subject to change, but some form
+            #       of VPN will be required to access all swimlanes (though some
+            #       resources in the eventual public swimlane will be exposed
+            #       publicly)
+            vpn:
+                # `cidr-block` (string, optional)
+                # The cidr-block is where vpn client ips will be allocated
+                # from. This is different than the cidr block of the vpn subnet
+                # itself. This CIDR block cannot overlap with the VPC nor with
+                # the subnet being assoociated with the VPN endpoint.
+                # Additionally it must be at least a /22 and no more than /12.
+                # More here:
+                # https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/scaling-considerations.html
+                # If not specified, this will default to "10.1.0.0/22"
+                cidr-block: "10.254.0.0/22"
+                # `transport-proto` (string, optional)
+                # Valid values are "tcp" and "udp". If not specified this will
+                # default to "udp"
+                transport-proto: "udp"
+                # `tls` (mapping, optional)
+                # The configuration for TLS for the swimlane's VPN.
+                # # If this mapping is not provided and valid, TLS will not be
+                # configured (or will have an invalid configuration) which will
+                # will lead to failure in deployment.
+                # NOTE: The VPN configured here is connected to as specified in
+                #       the AWS client VPN user guide:
+                #       https://docs.aws.amazon.com/vpn/latest/clientvpn-user/client-vpn-user-what-is.html
+                #       The ovpn client config files must be exported as covered
+                #       in the AWS client VPN admin guide:
+                #       https://docs.aws.amazon.com/vpn/latest/clientvpn-admin/cvpn-working-endpoint-export.html
+                #       and given to all users needing to connect to VPN.
+                #       Additionally the ca cert, cert, and private key must all
+                #       be embedded in the ovpn config file. All of this is
+                #       managed externally to the CAPE infrastructure.
+                tls:
+                    # `dir` (string, required)
+                    # Path (relative to repo root) to the directory that
+                    # contains the TLS certs and keys. It is recommended to
+                    # make this a subdirectory of <repo_root>/assets-untracked
+                    # which is explicitly ignored by the git configuration (so
+                    # that these files never end up in version control).
+                    dir: ./assets-untracked/tls/vpn
+                    # `ca-cert` (string, required)
+                    # The name of the cert chain file. At this time, we require
+                    # this to be a separate file (cannot be embedded in the
+                    # cert pem itself). The file should be in PEM format.
+                    ca-cert: ca.crt
+                    # `server-key` (string, required)
+                    # The name of the key file. The file should be in PEM
+                    # format.
+                    server-key: server.key
+                    # `server-cert` (string, required)
+                    # The name of the cert file. The file should be in PEM
+                    # format.
+                    server-cert: server.crt
+            # `compute` (mapping, optional)
+            # Contains configuration about the available compute environments in
+            # CAPE. If this is not provided, an empty configuration will be used
+            # and no compute environments will be deployed
+            compute:
+                # `environments` (mapping[], optional)
+                # A list of mappings, each containing the configuration of a
+                # specific compute environment. Each mapping in the list has the
+                # following schema:
+                # * `name` (string, required)
+                #   A name for the environment. Used for bookkeeping and must be
+                #   unique across all compute environments.
+                # * `image` (string, required)
+                #   The ID of the AWS AMI to launce the instances with. This
+                #   image must exist in AWS already.
+                # * `subnets` (string[], required)
+                #   A list of subnet names in which compute resources will be
+                #   launched. The subnet names must match the names of swimlane
+                #   subnets in this config file. At least one subnet must be
+                #   defined here.
+                # * `resources` (mapping, required)
+                #   A mapping of compute environment resource arguments to be
+                #   passed *as-is* to the compute environment constructor. The
+                #   key must exist, but the value may be empty if there are no
+                #   arguments to pass. The argument names must match those
+                #   expected in the pulumi docs:
+                #   https://www.pulumi.com/registry/packages/aws/api-docs/batch/computeenvironment/#computeenvironmentcomputeresources
+                #   Any supported argument listed here will be passed on as
+                #   configured.
+                environments:
+                    - name: workflows
+                      image: ami-0cfe23bad78a802ea
+                      subnet_types:
+                          - compute
+                      resources:
+                          instance_types:
+                              - m4.large
+                              - m5.large
+                              - c4.large
+                          min_vcpus: 1
+                          desired_vcpus: 2
+                          max_vcpus: 4
+                    - name: analysis
+                      image: ami-0cfe23bad78a802ea
+                      subnet_types:
+                          - compute
+                      resources:
+                          instance_types:
+                              - c4.large
+                              - c4.xlarge
+                              - c4.2xlarge
+                              - c4.4xlarge
+                              - c4.8xlarge
+                          max_vcpus: 16
+                container_images:
+                    nextflow_kickstart:
+                        context: ./assets/containers/bactopia-kickstart
+                        platform: linux/amd64
+                jobs:
+                    nextflow:
+                        image: nextflow_kickstart
+                        user: root
+                        command:
+                            - /usr/local/bin/entrypoint.sh
+                        resourceRequirements:
+                            - type: VCPU
+                              value: "1"
+                            - type: MEMORY
+                              value: "2048"
+    # `cape-cod:datalakehouse` (mapping, required)
+    # Contains configuration specific to the data lake house (DLH). The DLH
+    # contains tributaries, which are compionents that consist of a pair of raw
+    # and clean data buckets (and automation resources for those buckets) and
+    # data pipelines that define transformations on data places in the raw
+    # bucket. This is all described in more detail below.
+    cape-cod:datalakehouse:
+        # NOTE: unless specified otherwise in here, all crawlers will run at
+        #       0200 daily
+
+        # `tributaries` (mapping[], optional)
+        # Contains a list of mappings defining specific domains in the data
+        # lake house (e.g. HAI, genomics). Each tributary has its own raw/clean
+        # storage, etl scripts, lambda functions, etc.
+        tributaries:
+            # The schema for each item of this list is:
+            # * `name` (string required)
+            #   The name of this tributary. This name is included in AWS
+            #   resource names, which have a very small character limit. So this
+            #   name should be kept as short as possible, but must be unique
+            #   among all tributaries
+            # * `buckets` (mapping, required)
+            #   This contains the configuration for the raw and clean buckets of
+            #   the tributary, including crawlers
+            #   * `raw` (mapping, required)
+            #     Contains the configuration for the raw bucket
+            #     * `name` (string, optional)
+            #       The name of the raw bucket. Defaults to
+            #       "{tributary_resource_name}-raw-vbkt"
+            #     * `crawler` (mapping, optional)
+            #       Contains the configuration for the bucket crawler. If no
+            #       configuration is given, no crawler will be created for the
+            #       bucket. Generally, we do not define crawlers for raw
+            #       buckets.
+            #       * `excludes` (string[], required)
+            #         A list of exclude patterns for the crawler. Leave the
+            #         empty for no exclusions. The rules for these patterns are
+            #         defined in the official aws docs (under exclude patterns)
+            #         https://docs.aws.amazon.com/glue/latest/dg/define-crawler-choose-data-sources.html
+            #       * `classifiers` (string[], optional)
+            #         A list of custom classifiers for the crawler. If not
+            #         provided the AWS schema detection will be allowed to
+            #         figure out what to use (which may not be possible
+            #         depending on the raw data schema). These classifiers must
+            #         exist either in AWS or as part of this deployment. The
+            #         only currently supported custom classifier is
+            #         cape-csv-standard-classifier
+            #       * `schedule` (string, optional)
+            #         The crontab-formatted schedule for the crawler. Defaults
+            #         to 0200 daily ("0 2 * * ? *"). Format details can be
+            #         found here: https://en.wikipedia.org/wiki/Cron
+            #       * `prefix` (string, optional)
+            #         A prefix to be added to the beginning of table names made
+            #         by the crawler
+            #   * `clean` (mapping, required)
+            #     Contains configuration for the clean bucket. The schema is the
+            #     same as the `raw` bucket section immediately preceding
+            #     `clean`.
+            # * `pipelines` (mapping, optional)
+            #   Contains configuration for the pipelines of the tributary.
+            #   * `data` (mapping, optional)
+            #     Contains configuration for data pipelines in the tributary
+            #     * `etl` (mapping[], optional)
+            #       A list of configurations for ETL data pipelines in the
+            #       tributary. Each list item has the following schema
+            #       * `name` (string, required)
+            #         A short name for the ETL script. Needs to be unique across
+            #         ETL scripts in the tributary. This value is used in AWS
+            #         resource names and thus should be kept as short as
+            #         possible.
+            #       * `src` (string, required)
+            #         The id of the bucket which is operating as the location
+            #         for source files which will be inputted into the pipeline
+            #       * `sink` (string, required)
+            #         The id of the bucket which is operating as the location
+            #         for sink location where files where be outputted from the
+            #         pipeline
+            #       * `script` (string, required)
+            #         The path in the common assets bucket where the ETL script
+            #         will be found. This is the deployed path, *not* the path
+            #         in the repo.
+            #       * `prefix` (string, required)
+            #         The object prefix to limit the ETL script to. If not
+            #         specified, the ETL script will apply to *all* objects
+            #         added to the bucket.
+            #       * `suffixes` (string[], optional)
+            #         A list of object (e.g. file) suffixes the ETL script
+            #         should be limited to. If not specified, the ETL script
+            #         will apply to all suffixes.
+            #       * `pymodules` (string[], optional)
+            #         A list of additional python modules to be passed into the
+            #         ETL script's runtime. These is specified in pip install
+            #         compatible version format (i.e.
+            #         `package_name[version_specifier]`). More information on
+            #         version specifiers van be found here:
+            #         https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
+            #       * `max_concurrent_runs` (int, optional)
+            #         The max number of concurrent runs for the ETL Job. If the
+            #         number of requested ETL runs is greater than this value,
+            #         ETL jobs will be queued until currently running jobs are
+            #         completed and the number of running jobs is < max.
+            #         Defaults to 5.
+            - name: hai
+              buckets:
+                  input-raw:
+                      name:
+                      crawler:
+                  input-clean:
+                      name:
+                      crawler:
+                          prefix: input # prefixes for tables in the database
+                          excludes:
+                          classifiers:
+                              - cape-csv-standard-classifier
+                          schedule: "0 2 * * ? *"
+                  result-raw:
+                      name:
+                  result-clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
+              pipelines:
+                  data:
+                      etl:
+                          - name: tnl
+                            script: glue/etl/etl_tnl_alert.py
+                            src: input-raw
+                            sink: input-clean
+                            prefix: tnl
+                            suffixes:
+                                - xlsx
+                            pymodules:
+                                - openpyxl==3.1.2
+                          - name: gphl-cre
+                            script: glue/etl/etl_gphl_cre_alert.py
+                            src: input-raw
+                            sink: input-clean
+                            prefix: gphl-cre
+                            suffixes:
+                                - docx
+                            pymodules:
+                                - python-docx==1.1.2
+                          - name: gphl-sequencing
+                            script: glue/etl/etl_gphl_sequencing_alert.py
+                            src: input-raw
+                            sink: input-clean
+                            prefix: gphl-sequencing
+                            suffixes:
+                                - pdf
+                            pymodules:
+                                - tabula-py==2.9.3
+                                - pypdf==4.3.1
+            - name: genomics
+              buckets:
+                  input-raw:
+                      name:
+                      crawler:
+                  input-clean:
+                      name:
+                      crawler:
+                          classifiers:
+                          prefix: input # prefixes for tables in the database
+                  result-raw:
+                      name:
+                  result-clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
+              pipelines:
+                  data:
+                      etl:
+                          - name: fastx
+                            src: input-raw
+                            sink: input-clean
+                            script: glue/etl/etl_fasta_fastq.py
+                            prefix: fastx
+                            suffixes:
+                                - gz
+                                - fasta
+                                - fastq
+                            pymodules:
+                                - pyfastx==2.1.0
+                            max_concurrent_runs: 5
+                          - name: bactopia-results
+                            script: glue/etl/etl_bactopia_results.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: pipeline-output/bactopia-runs
+                            suffixes:
+                                - tsv
+            - name: seqauto
+              buckets:
+                  input-raw:
+                      name:
+                      crawler:
+                  input-clean:
+                      name:
+                      crawler:
+                          classifiers:
+                          prefix: input # prefixes for tables in the database
+                  result-raw:
+                      name:
+                  result-clean:
+                      name:
+                      crawler:
+                          prefix: result # prefixes for tables in the database
+              pipelines:
+                  data:
+                      etl:
