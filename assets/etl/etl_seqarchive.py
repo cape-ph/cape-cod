@@ -125,7 +125,7 @@ key_map = {
     #       the end of this dict so as to not mess up already catalogged data
 }
 
-# since this is a small dict we'll just m,ake a new one instead of modifying in
+# since this is a small dict we'll just make a new one instead of modifying in
 # place
 normalized_meta = {v: meta[k] for k, v in key_map.items()}
 
