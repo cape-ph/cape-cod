@@ -346,7 +346,7 @@ class ScopedSwimlane(CapeComponentResource):
                 )
                 continue
             # NOTE: special handling for the NAT routes. we
-            #       assume in this case we're reouting all traffic to the
+            #       assume in this case we're rerouting all traffic to the
             #       NAT. this may be a bad assumption in the future
             if rcfg["type"] == SubnetType.NAT:
                 # in this case, we need to add a route to the nat gateway

@@ -144,7 +144,7 @@ class CapePy(CapeComponentResource):
         self.object = self.bucket.add_object(
             f"{self.name}-object",
             key=capepy_whl,
-            source=FileAsset(f"./assets/capepy/{capepy_whl}"),
+            source=FileAsset(f"./assets/lambda-layers/capepy/{capepy_whl}"),
         )
 
         self.uri = Output.all(
@@ -157,7 +157,7 @@ class CapePy(CapeComponentResource):
             description="This layer provides the capepy Python library",
             license_info=" Apache-2.0",
             compatible_runtimes=["python3.10", "python3.13"],
-            code=FileArchive("./assets/capepy/capepy_layer.zip"),
+            code=FileArchive("./assets/lambda-layers/capepy/capepy_layer.zip"),
             opts=ResourceOptions(parent=self),
         )
 
