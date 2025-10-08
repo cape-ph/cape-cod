@@ -110,9 +110,22 @@ meta["sequencing_reads"] = concat_gz_s3loc
 # meta/sampleid=/year
 # sequencing-reads/sampleid=/year
 
+# header for the csv
+# NOTE: if more fields are added to meta.json, this needs to be updated or they
+#       will never be seen in the csv file. All changes should be added to the
+#       end of this list so as to not mess up already catalogged data
+fn = [
+    "sampleId",
+    "sampleType",
+    "sampleMatrix",
+    "sampleCollectionLocation",
+    "sampleCollectionDate",
+    "sequencing_reads",
+]
+
 # convert json to csv for queryability
 strbuf = io.StringIO()
-writer = csv.DictWriter(strbuf, fieldnames=list(meta.keys()))
+writer = csv.DictWriter(strbuf, fieldnames=fn)
 writer.writeheader()
 writer.writerow(meta)
 
