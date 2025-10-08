@@ -88,7 +88,7 @@ config:
               cleanup_tmp: False
               type_args:
                   type: python
-                  reqs: ./assets/lambda/layers/capi-all/requirements.txt
+                  reqs: ./assets/lambda-layers/capi-all/requirements.txt
               args:
                   description:
                       CAPI API python pip dependencies layer for all handlers.
@@ -99,7 +99,7 @@ config:
               cleanup_tmp: False
               type_args:
                   type: python
-                  reqs: ./assets/lambda/layers/report-gen/requirements.txt
+                  reqs: ./assets/lambda-layers/report-gen/requirements.txt
               args:
                   description:
                       CAPI API python pip dependencies layer for all report
@@ -846,7 +846,7 @@ config:
                                         LD_LIBRARY_PATH: "/opt/lib"
                                         FONTCONFIG_PATH: "/opt/fonts"
 
-            # `static_apps` (mapping[], optional)
+            # `static-apps` (mapping[], optional)
             # Contains configuration for static apps deployed as part of CAPE.
             # Static apps are deployed to s3 as html/js/css bundles and are
             # exposed through an application load balancer. These may hit API
@@ -873,8 +873,9 @@ config:
             #   assets for the static app exist. This will be fully copied, so
             #   ensure there are no items in the hierarchy that should not end
             #   up in S3
-            # TODO: ISSUE #166
+            # TODO: ISSUE #192
             #
+            # `instance-apps` (mapping, optional)
             # Contains configuration for all swimlane apps that are deployed to
             # EC2 instances.
             # A list of applications for the swimlane that are deployed as EC2

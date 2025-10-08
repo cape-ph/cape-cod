@@ -218,7 +218,7 @@ class AppLoadBalancer(CapeComponentResource):
                         * When the type is `lambda`, the first element should be
                           the arns of lambda function.
                     In all cases, the second element of the tuple should be the
-                    availbaility zone identifier
+                    availability zone identifier
             port: Optional port to use in the attachment. This should only be
                   specified for non-lambda targets
         """

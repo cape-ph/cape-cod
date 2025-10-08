@@ -102,8 +102,8 @@ VPN will not continue.
 directories set up and referenced in the configuration not end up in the
 repository._** The repository is currently setup to ignore files in
 `assets-untracked`. We recommend using subdirectories here to manage tls assets
-(and other secrects that should not end up in the repo) being deployed so they
-do not end up in the repo accidentally. If you use other directories, **_BE
+(and other secrets that should not end up in the repo) being deployed so they do
+not end up in the repo accidentally. If you use other directories, **_BE
 CAREFUL_**.
 
 The following configuration block is supported for VPN (within the `private`
