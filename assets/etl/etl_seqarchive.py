@@ -115,7 +115,6 @@ meta["sequencing_reads"] = concat_gz_s3loc
 # python 3.7+ specific, we rely on dict order being insertion order for this to
 # work as is.
 key_map = {
-    "sampleId": "sample_id",
     "sampleType": "sample_type",
     "sampleMatrix": "sample_matrix",
     "sampleCollectionLocation": "sample_collection_location",
