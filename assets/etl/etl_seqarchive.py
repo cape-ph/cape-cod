@@ -47,9 +47,6 @@ archbio.seek(0)
 tf = tarfile.open(fileobj=archbio, mode="r")
 meta = json.load(tf.extractfile("meta.json"))
 
-# meta comes with camel case, cause javascript. get it into snake case since
-# that's what we use everywhere but front ends...
-
 
 # grab things we need for later naming
 sample_id = meta["sampleId"]
@@ -112,6 +109,8 @@ concat_gz_s3loc = "/".join(
 )
 meta["sequencing_reads"] = concat_gz_s3loc
 
+# meta comes with camel case, cause javascript. get it into snake case since
+# that's what we use everywhere but front ends...
 # python 3.7+ specific, we rely on dict order being insertion order for this to
 # work as is.
 key_map = {
