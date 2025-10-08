@@ -6,6 +6,9 @@ RUN chmod +x nextflow
 RUN mv nextflow /usr/local/bin
 
 # Install dependencies
+# NOTE: had some timeout issues here depending on who did the deploy, so
+#       increasing this for that reason.
+RUN sed -i "s|timeout=5|timeout=120|" /etc/yum.conf
 RUN yum install -y git python-pip curl jq
 RUN pip install --upgrade awscli
 
