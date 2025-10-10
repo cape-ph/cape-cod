@@ -47,6 +47,7 @@ archbio.seek(0)
 tf = tarfile.open(fileobj=archbio, mode="r")
 meta = json.load(tf.extractfile("meta.json"))
 
+
 # grab things we need for later naming
 sample_id = meta["sampleId"]
 processed_dt = datetime.datetime.now(datetime.timezone.utc)
@@ -107,29 +108,34 @@ concat_gz_s3loc = "/".join(
     ]
 )
 meta["sequencing_reads"] = concat_gz_s3loc
-# meta/sampleid=/year
-# sequencing-reads/sampleid=/year
 
-# header for the csv
-# NOTE: if more fields are added to meta.json, this needs to be updated or they
-#       will never be seen in the csv file. All changes should be added to the
-#       end of this list so as to not mess up already catalogged data
-fn = [
-    "sampleId",
-    "sampleType",
-    "sampleMatrix",
-    "sampleCollectionLocation",
-    "sampleCollectionDate",
-    "sequencing_reads",
-]
+# meta comes with camel case, cause javascript. get it into snake case since
+# that's what we use everywhere but front ends...
+# python 3.7+ specific, we rely on dict order being insertion order for this to
+# work as is.
+key_map = {
+    "sampleType": "sample_type",
+    "sampleMatrix": "sample_matrix",
+    "sampleCollectionLocation": "sample_collection_location",
+    "sampleCollectionDate": "sample_collection_date",
+    # this column name is already normalized since we added it in this etl
+    "sequencing_reads": "sequencing_reads",
+    # NOTE: if more fields are added to meta.json, this needs to be updated or they
+    #       will never be seen in the csv file. All new fields should be added to
+    #       the end of this dict so as to not mess up already catalogged data
+}
+
+# since this is a small dict we'll just make a new one instead of modifying in
+# place
+normalized_meta = {v: meta[k] for k, v in key_map.items()}
 
 # convert json to csv for queryability
 strbuf = io.StringIO()
-writer = csv.DictWriter(strbuf, fieldnames=fn)
+writer = csv.DictWriter(strbuf, fieldnames=key_map.values())
 writer.writeheader()
-writer.writerow(meta)
+writer.writerow(normalized_meta)
 
-# the write meta into clean as well
+# then write normalized_meta into clean as well
 with io.BytesIO(strbuf.getvalue().encode("utf-8")) as metabuff:
     metabuff.seek(0)
     etl_job.write_sink_file(

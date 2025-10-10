@@ -20,8 +20,8 @@ logger.setLevel("INFO")
 METADATA_QRY_TEMPLATE = """
 select
     -- collection metadata
-    m.sample_id, m.sampletype, m.samplematrix, m.samplecollectiondate,
-    m.samplecollectionlocation,
+    m.sample_id, m.sample_type, m.sample_matrix, m.sample_collection_date,
+    m.sample_collection_location,
     -- pipeline information
     rsv.run_date, rsv.bactopia_version, 'bactopia' AS pipeline_name
 from
@@ -30,7 +30,7 @@ join
     "{database}"."result_software_versions" as rsv on
     rsv.input_file=m.sequencing_reads
 where
-    m.sampleid='{sample_id}' and
+    m.sample_id='{sample_id}' and
     rsv.parameter_name='--ont';
 """
 
@@ -63,7 +63,7 @@ join
     "{database}"."result_amrfinderplus" as ramrfp on
     ramrfp.bactopia_run=rsv.bactopia_run
 where
-    m.sampleid='{sample_id}' and
+    m.sample_id='{sample_id}' and
     rsv.parameter_name='--ont';
 """
 
@@ -141,14 +141,14 @@ def data_function(event, context):
         run_dt_aware = run_dt.replace(tzinfo=datetime.timezone.utc)
         report_data = {
             "sample_id": row["sample_id"],
-            "sample_type": row["sampletype"],
-            "sample_matrix": row["samplematrix"],
+            "sample_type": row["sample_type"],
+            "sample_matrix": row["sample_matrix"],
             "sample_collection_date": (
                 datetime.datetime.fromisoformat(
-                    row["samplecollectiondate"]
+                    row["sample_collection_date"]
                 ).strftime("%Y-%m-%d %H:%M %Z")
             ),
-            "sample_collection_location": row["samplecollectionlocation"],
+            "sample_collection_location": row["sample_collection_location"],
             "pipeline_meta": {
                 "name": row["pipeline_name"],
                 "version": row["bactopia_version"],
