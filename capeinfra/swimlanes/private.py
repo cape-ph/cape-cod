@@ -398,7 +398,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.static_app_vpcendpoint = aws.ec2.VpcEndpoint(
             f"{self.basename}-sas3vpcep",
             vpc_id=self.vpc.id,
-            service_name=f"com.amazonaws.{aws.get_region().name}.s3",
+            service_name=f"com.amazonaws.{aws.get_region().region}.s3",
             vpc_endpoint_type="Interface",
             subnet_ids=[
                 s.id
@@ -476,7 +476,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self.api_vpcendpoint = aws.ec2.VpcEndpoint(
             f"{self.basename}-apivpcep",
             vpc_id=self.vpc.id,
-            service_name=f"com.amazonaws.{aws.get_region().name}.execute-api",
+            service_name=f"com.amazonaws.{aws.get_region().region}.execute-api",
             vpc_endpoint_type="Interface",
             private_dns_enabled=True,
             subnet_ids=[

@@ -22,17 +22,17 @@ class VersionedBucket(CapeComponentResource):
 
         self.name = f"{name}"
 
-        self.bucket = aws.s3.BucketV2(
+        self.bucket = aws.s3.Bucket(
             f"{self.name}-s3",
             bucket=bucket_name,
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} S3 Bucket"},
         )
 
-        self.versioning = aws.s3.BucketVersioningV2(
+        self.versioning = aws.s3.BucketVersioning(
             f"{self.name}-vrsn",
             bucket=self.bucket.id,
-            versioning_configuration=aws.s3.BucketVersioningV2VersioningConfigurationArgs(
+            versioning_configuration=aws.s3.BucketVersioningVersioningConfigurationArgs(
                 status="Enabled",
             ),
             opts=ResourceOptions(parent=self),
@@ -40,7 +40,7 @@ class VersionedBucket(CapeComponentResource):
 
         self.cors_policy = None
         if cors_rules:
-            self.cors_policy = aws.s3.BucketCorsConfigurationV2(
+            self.cors_policy = aws.s3.BucketCorsConfiguration(
                 f"{self.name}-cors",
                 bucket=self.bucket.id,
                 cors_rules=cors_rules,

@@ -57,7 +57,7 @@ class DataCrawler(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
+        buckets: aws.s3.Bucket | list[aws.s3.Bucket],
         db: aws.glue.CatalogDatabase,
         *args,
         prefix: str | None = None,
@@ -145,9 +145,9 @@ class EtlJob(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        src_bucket: aws.s3.BucketV2,
-        sink_bucket: aws.s3.BucketV2,
-        script_bucket: aws.s3.BucketV2,
+        src_bucket: aws.s3.Bucket,
+        sink_bucket: aws.s3.Bucket,
+        script_bucket: aws.s3.Bucket,
         *args,
         default_args: dict = {},
         **kwargs,

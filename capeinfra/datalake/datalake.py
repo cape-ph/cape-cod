@@ -56,7 +56,7 @@ class DatalakeHouse(CapeComponentResource):
         # NOTE: this object storage will change often and the concept of
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
-        self.catalog_bucket = aws.s3.BucketV2(
+        self.catalog_bucket = aws.s3.Bucket(
             f"{catalog_name}-s3",
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} data catalog s3 bucket"},
@@ -68,7 +68,7 @@ class DatalakeHouse(CapeComponentResource):
         # NOTE: this object storage will change often and the concept of
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
-        self.athena_results_bucket = aws.s3.BucketV2(
+        self.athena_results_bucket = aws.s3.Bucket(
             f"{athena_prefix}-s3",
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} athena results s3 bucket"},
@@ -187,7 +187,7 @@ class CatalogDatabase(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        bucket: aws.s3.BucketV2,
+        bucket: aws.s3.Bucket,
         location="database",
         *args,
         **kwargs,
@@ -228,7 +228,7 @@ class Tributary(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        catalog_bucket: aws.s3.BucketV2,
+        catalog_bucket: aws.s3.Bucket,
         etl_attrs_ddb_table: aws.dynamodb.Table,
         crawler_attrs_ddb_table: aws.dynamodb.Table,
         aws_region: str,

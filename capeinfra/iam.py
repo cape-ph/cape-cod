@@ -126,13 +126,13 @@ def get_athena_data_function_policy(
 
 
 def get_bucket_reader_policy(
-    buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
+    buckets: aws.s3.Bucket | list[aws.s3.Bucket],
     principal: str | None = None,
 ) -> str:
     """Get a role policy statement for Get/List perms on s3 buckets.
 
     Args:
-        buckets: A BucketV2 object or a list of BucketV2 objects to grant
+        buckets: A Bucket object or a list of Bucket objects to grant
                  Get/List permissions to.
         principal: The principal the policy applies to. In the case of service
                    roles (e.g. the policy is in an inline role attached to a
@@ -141,7 +141,7 @@ def get_bucket_reader_policy(
     Returns:
         The policy statement as a json encoded string.
     """
-    buckets = [buckets] if isinstance(buckets, aws.s3.BucketV2) else buckets
+    buckets = [buckets] if isinstance(buckets, aws.s3.Bucket) else buckets
     policy_dict = {
         "Version": "2012-10-17",
         "Statement": [
@@ -165,7 +165,7 @@ def get_bucket_reader_policy(
 
 
 def get_bucket_web_host_policy(
-    buckets: aws.s3.BucketV2 | list[aws.s3.BucketV2],
+    buckets: aws.s3.Bucket | list[aws.s3.Bucket],
     vpce_id: Input[str] | None = None,
 ) -> Output[str]:
     """Get a role policy statement for Get perm on s3 buckets.
@@ -174,14 +174,14 @@ def get_bucket_web_host_policy(
     specified, this will result in no VPC restriction
 
     Args:
-        buckets: A BucketV2 object or a list of BucketV2 objects to grant
+        buckets: A Bucket object or a list of Bucket objects to grant
                  Get/List permissions to.
         vpce_id: An optional VPC Endpoint id to limit access to.
 
     Returns:
         The policy statement as a json encoded string.
     """
-    buckets = [buckets] if isinstance(buckets, aws.s3.BucketV2) else buckets
+    buckets = [buckets] if isinstance(buckets, aws.s3.Bucket) else buckets
 
     stmnts = [
         {
