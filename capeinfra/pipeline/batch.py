@@ -171,7 +171,7 @@ class BatchCompute(CapeComponentResource):
         compute_env_name = f"{self.name}-cmpt-env"
         self.compute_environment = aws.batch.ComputeEnvironment(
             compute_env_name,
-            compute_environment_name=compute_env_name,
+            name=compute_env_name,
             service_role=self.service_role.arn,
             type="MANAGED",
             compute_resources=aws.batch.ComputeEnvironmentComputeResourcesArgs(

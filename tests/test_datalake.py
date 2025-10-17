@@ -7,7 +7,7 @@ def test_catalog(mock_datalake):
     def check_catalog_bucket(args):
         [catalog_database] = args
 
-        assert type(catalog_database) is aws.s3.BucketV2
+        assert type(catalog_database) is aws.s3.Bucket
 
     return pulumi.Output.all(
         mock_datalake.catalog_bucket,

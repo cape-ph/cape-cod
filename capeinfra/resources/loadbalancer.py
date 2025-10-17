@@ -326,7 +326,7 @@ class AppLoadBalancer(CapeComponentResource):
 
     def add_static_app_target(
         self,
-        bucket: aws.s3.BucketV2,
+        bucket: aws.s3.Bucket,
         vpc_ep: aws.ec2.VpcEndpoint,
         sa_name: str,
         sa_short_name: str,

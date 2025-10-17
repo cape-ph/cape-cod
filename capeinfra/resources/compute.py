@@ -11,17 +11,9 @@ from abc import abstractmethod
 from io import BytesIO
 
 import pulumi_aws as aws
-from pulumi import (
-    FileArchive,
-    FileAsset,
-    Output,
-    ResourceOptions,
-    log,
-)
+from pulumi import FileArchive, FileAsset, Output, ResourceOptions, log
 
-from capeinfra.resources.objectstorage import (
-    VersionedBucket,
-)
+from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
 
 
@@ -238,7 +230,7 @@ class CapeManagedLambdaLayer(CapeComponentResource, CapeLambdaLayer):
             import_id: If importing an existing remote resource, this is the
                        import id to use.
         Returns:
-            The BucketObjectV2
+            The BucketObject
         """
         # add new objects or get references for the existing ones so pulumi
         # manages correctly
@@ -553,7 +545,7 @@ class CapePythonLambdaLayer(CapeManagedLambdaLayer):
         #       doing nothing with that file is seen by pulumi as it being
         #       deleted from the deployment. So we need a mechanism to import an
         #       existing ref. Pulumi has a way to do this, but you have to "add"
-        #       the exact same object (constructing a BucketObjectV2 with all
+        #       the exact same object (constructing a BucketObject with all
         #       the same params as when you add, but give it an import id that
         #       matches what a new object would have been given). With a zip
         #       file, this means we need to pass the same zip file to the
