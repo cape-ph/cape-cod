@@ -47,6 +47,32 @@ class VersionedBucket(CapeComponentResource):
                 opts=ResourceOptions(parent=self),
             )
 
+        self.policies["read"] = [
+            {"effect": "Allow", "actions": ["s3:GetObject"]}
+        ]
+        self.policies["write"] = [
+            {"effect": "Allow", "actions": ["s3:PutObject"]}
+        ]
+        self.policies["delete"] = [
+            {"effect": "Allow", "actions": ["s3:DeleteObject"]}
+        ]
+        self.policies["browse"] = [
+            {"effect": "Allow", "actions": ["s3:ListBucket"]}
+        ]
+        self.policies["multipart_upload"] = [
+            {
+                "effect": "Allow",
+                "actions": [
+                    "s3:AbortMultipartUpload",
+                    "s3:CreateMultipartUpload",
+                    "s3:UploadPart",
+                    "s3:CompleteMultipartUpload",
+                    "s3:ListParts",
+                    "s3:ListMultipartUploads",
+                ],
+            }
+        ]
+
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs({"bucket_name": self.bucket.bucket})

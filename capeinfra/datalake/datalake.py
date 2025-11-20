@@ -262,7 +262,7 @@ class Tributary(CapeComponentResource):
 
         # configure the buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
-        self.buckets = {}
+        self.buckets = dict[str, VersionedBucket]()
         self.crawlers = {}
         for bucket_id in self.config.get("buckets", default={}):
             self.configure_bucket(bucket_id, crawler_attrs_ddb_table)
@@ -348,7 +348,7 @@ class Tributary(CapeComponentResource):
         if crawler_config:
             self.crawlers[bucket_id] = DataCrawler(
                 f"{bucket_name}-crwl",
-                self.buckets[bucket_id].bucket,
+                self.buckets[bucket_id],
                 self.catalog.catalog_database,
                 opts=ResourceOptions(parent=self),
                 desc_name=f"{self.desc_name} {bucket_id} data crawler",

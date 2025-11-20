@@ -7,12 +7,14 @@ from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
 from capeinfra.iam import (
+    add_resources,
     get_bucket_reader_policy,
     get_etl_job_s3_policy,
     get_inline_role,
     get_start_crawler_policy,
     get_start_etl_job_policy,
 )
+from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
@@ -57,7 +59,7 @@ class DataCrawler(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        buckets: aws.s3.Bucket | list[aws.s3.Bucket],
+        buckets: VersionedBucket | list[VersionedBucket],
         db: aws.glue.CatalogDatabase,
         *args,
         prefix: str | None = None,
@@ -84,16 +86,52 @@ class DataCrawler(CapeComponentResource):
         )
 
         # get a role for the crawler
-        self.crawler_role = get_inline_role(
-            self.name,
-            f"{self.desc_name} data crawler role",
-            "",
-            "glue.amazonaws.com",
-            Output.all(
-                buckets=[bucket.bucket for bucket in self.buckets],
-                db=db.name,
-            ).apply(lambda args: get_bucket_reader_policy(args["buckets"])),
-            "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
+        self.crawler_role = aws.iam.Role(
+            f"{self.name}-role",
+            assume_role_policy=aws.iam.get_policy_document(
+                statements=[
+                    {
+                        "actions": "sts:AssumeRole",
+                        "effect": "Allow",
+                        "principals": [
+                            {
+                                "type": "Service",
+                                "identifiers": ["glue.amazonaws.com"],
+                            }
+                        ],
+                    }
+                ]
+            ).json,
+            opts=ResourceOptions(parent=self),
+            tags={"desc_name": f"{self.desc_name} data crawler role"},
+        )
+        aws.iam.RolePolicyAttachment(
+            f"{self.name}-roleplcy",
+            role=self.crawler_role.id,
+            policy_arn="arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
+            opts=ResourceOptions(parent=self),
+        )
+        statements = list[aws.iam.GetPolicyDocumentStatementArgsDict]()
+        statements = Output.all(
+            [
+                bucket.bucket.arn.apply(
+                    lambda arn: add_resources(
+                        bucket.policies["read"] + bucket.policies["browse"],
+                        f"{arn}/*",
+                        arn,
+                    )
+                )
+                for bucket in self.buckets
+            ]
+        ).apply(
+            lambda args: sum(
+                args[0], list[aws.iam.GetPolicyDocumentStatementArgsDict]()
+            )
+        )
+        aws.iam.RolePolicy(
+            f"{self.name}-roleplcy",
+            role=self.crawler_role.id,
+            policy=aws.iam.get_policy_document(statements=statements).json,
             opts=ResourceOptions(parent=self),
         )
 
@@ -114,7 +152,7 @@ class DataCrawler(CapeComponentResource):
             database_name=db.name,
             s3_targets=[
                 aws.glue.CrawlerS3TargetArgs(
-                    path=bucket.bucket.apply(
+                    path=bucket.bucket.bucket.apply(
                         lambda b: f"s3://{b}/{prefix+'/' if prefix else ''}"
                     ),
                     exclusions=self.config["excludes"],

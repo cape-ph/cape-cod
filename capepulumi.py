@@ -12,6 +12,7 @@ from abc import abstractmethod
 from collections.abc import Mapping
 from typing import Any
 
+import pulumi_aws as aws
 from pulumi import ComponentResource, Config
 
 
@@ -138,6 +139,10 @@ class CapeComponentResource(ComponentResource):
             config, config_name=config_name, default=self.default_config
         )
         self.desc_name = desc_name
+        self.policies = dict[
+            str,
+            list[aws.iam.GetPolicyDocumentStatementArgsDict],
+        ]()
 
     @property
     @abstractmethod
