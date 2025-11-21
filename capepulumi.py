@@ -10,6 +10,7 @@ you cannot modify any state of the module without it importing itself.
 
 from abc import abstractmethod
 from collections.abc import Mapping
+from enum import Enum
 from typing import Any
 
 import pulumi_aws as aws
@@ -113,6 +114,17 @@ class CapeComponentResource(ComponentResource):
     """Extension of ComponentResource that takes a descriptive name and sets up
     configuration."""
 
+    # TODO: in python 3.11+ we have an actual string enum we could use. so when
+    #       we move to that someday, switch this out
+    class PolicyEnum(str, Enum):
+        """This class should provide a (string) enum of supported policy names.
+
+        Each subclass of CapeComponentResource should provide this enum if it
+        supports policies.
+        """
+
+        pass
+
     def __init__(
         self,
         *args,
@@ -139,10 +151,7 @@ class CapeComponentResource(ComponentResource):
             config, config_name=config_name, default=self.default_config
         )
         self.desc_name = desc_name
-        self.policies = dict[
-            str,
-            list[aws.iam.GetPolicyDocumentStatementArgsDict],
-        ]()
+        self._policies = None
 
     @property
     @abstractmethod
@@ -154,3 +163,12 @@ class CapeComponentResource(ComponentResource):
     def config(self):
         """Return the config object for the component."""
         return self._config
+
+    @property
+    @abstractmethod
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        """Return the policy dict for the component."""
+        pass
