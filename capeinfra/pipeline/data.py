@@ -182,7 +182,8 @@ class EtlJob(CapeComponentResource):
             "",
             "glue.amazonaws.com",
             aggregate_statements(
-                [
+                [capeinfra.meta.policies["logging"]]
+                + [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
                             bucket.policies["read"],
