@@ -6,14 +6,7 @@ import pulumi_aws as aws
 from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
-from capeinfra.iam import (
-    add_resources,
-    get_bucket_reader_policy,
-    get_etl_job_s3_policy,
-    get_inline_role,
-    get_start_crawler_policy,
-    get_start_etl_job_policy,
-)
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
 from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
 
@@ -86,52 +79,24 @@ class DataCrawler(CapeComponentResource):
         )
 
         # get a role for the crawler
-        self.crawler_role = aws.iam.Role(
-            f"{self.name}-role",
-            assume_role_policy=aws.iam.get_policy_document(
-                statements=[
-                    {
-                        "actions": "sts:AssumeRole",
-                        "effect": "Allow",
-                        "principals": [
-                            {
-                                "type": "Service",
-                                "identifiers": ["glue.amazonaws.com"],
-                            }
-                        ],
-                    }
-                ]
-            ).json,
-            opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} data crawler role"},
-        )
-        aws.iam.RolePolicyAttachment(
-            f"{self.name}-roleplcy",
-            role=self.crawler_role.id,
-            policy_arn="arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
-            opts=ResourceOptions(parent=self),
-        )
-        statements = list[aws.iam.GetPolicyDocumentStatementArgsDict]()
-        statements = Output.all(
-            [
-                bucket.bucket.arn.apply(
-                    lambda arn: add_resources(
-                        bucket.policies["read"] + bucket.policies["browse"],
-                        f"{arn}/*",
-                        arn,
+        self.crawler_role = get_inline_role2(
+            self.name,
+            f"{self.desc_name} data crawler role",
+            "",
+            "glue.amazonaws.com",
+            aggregate_statements(
+                [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies["read"] + bucket.policies["browse"],
+                            f"{arn}/*",
+                            arn,
+                        )
                     )
-                )
-                for bucket in self.buckets
-            ]
-        ).apply(
-            lambda args: sum(
-                args[0], list[aws.iam.GetPolicyDocumentStatementArgsDict]()
-            )
-        )
-        aws.iam.RolePolicy(
-            f"{self.name}-roleplcy",
-            role=self.crawler_role.id,
-            policy=aws.iam.get_policy_document(statements=statements).json,
+                    for bucket in self.buckets
+                ]
+            ),
+            "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
             opts=ResourceOptions(parent=self),
         )
 
@@ -183,9 +148,9 @@ class EtlJob(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        src_bucket: aws.s3.Bucket,
-        sink_bucket: aws.s3.Bucket,
-        script_bucket: aws.s3.Bucket,
+        src_bucket: VersionedBucket,
+        sink_bucket: VersionedBucket,
+        script_bucket: VersionedBucket,
         *args,
         default_args: dict = {},
         **kwargs,
@@ -211,24 +176,44 @@ class EtlJob(CapeComponentResource):
         self.src_bucket = src_bucket
         self.sink_bucket = sink_bucket
 
-        self.etl_role = get_inline_role(
+        self.etl_role = get_inline_role2(
             self.name,
             f"{self.desc_name} ETL job role",
             "",
             "glue.amazonaws.com",
-            Output.all(
-                src_bucket=src_bucket.bucket,
-                sink_bucket=sink_bucket.bucket,
-                script_bucket=script_bucket.bucket,
-                assets_bucket=capeinfra.meta.automation_assets_bucket.bucket.bucket,
-            ).apply(
-                lambda args: get_etl_job_s3_policy(
-                    args["src_bucket"],
-                    args["sink_bucket"],
-                    args["script_bucket"],
-                    self.config["script"],
-                    args["assets_bucket"],
-                )
+            aggregate_statements(
+                [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies["read"],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in [
+                        src_bucket,
+                        capeinfra.meta.automation_assets_bucket,
+                    ]
+                ]
+                + [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies["write"],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in [sink_bucket]
+                ]
+                + [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies["read"],
+                            f"{arn}/{self.config['script']}",
+                        )
+                    )
+                    for bucket in [script_bucket]
+                ]
             ),
             opts=ResourceOptions(parent=self),
         )
@@ -258,7 +243,7 @@ class EtlJob(CapeComponentResource):
             self.name,
             role_arn=self.etl_role.arn,
             command=aws.glue.JobCommandArgs(
-                script_location=script_bucket.bucket.apply(
+                script_location=script_bucket.bucket.bucket.apply(
                     lambda b: f"s3://{b}/{self.config['script']}"
                 ),
                 python_version="3",

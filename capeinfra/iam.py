@@ -8,6 +8,7 @@ from typing import List
 
 import pulumi_aws as aws
 from pulumi import Input, Output, ResourceOptions
+from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 
 # TODO: ISSUE #72
 
@@ -945,3 +946,82 @@ def add_resources(
         statement["resources"] = resources
 
     return statements
+
+
+def aggregate_statements(statements):
+    return Output.all(statements).apply(
+        lambda args: sum(
+            args[0], list[aws.iam.GetPolicyDocumentStatementArgsDict]()
+        )
+    )
+
+
+# NOTE: done as a function for now because this pattern is in a number of
+#       places (lambda trigger functions, data crawlers, glue jobs, etc)
+def get_inline_role2(
+    name: str,
+    desc_name: str,
+    srvc_prfx: str,
+    assume_role_srvc: str | List[str],
+    statements: Input[list[GetPolicyDocumentStatementArgsDict]] | None = None,
+    srvc_policy_attach: str | List[str] = [],
+    opts: ResourceOptions | None = None,
+) -> aws.iam.Role:
+    """Get an inline role fir the given arguments.
+
+    Args:
+        name: The resource name the role is being used on.
+        desc_name: The descriptive name (e.g. for tagging) for the role. this
+                   will be used as-is, so it needs to be fully rendered
+        srvc_prfx: the service prefix to use in the name (e.g. `lmbd` for aws
+                   lambda)
+        assume_role_srvc: The name of the service assuming the role (e.g.
+                          "glue.amazonaws.com") or a list of such service names.
+        statements: The policy statements to attach to the role.
+        srvc_policy_attach: Optional identifier (e.g. ARN for aws) or list of
+                            identifiers for a service or services role policy
+                            to attach to the role in addition to the
+                            role_policy. NOTE: There is an AWS imposed maximum
+                            of 20 policy attachments for any role.
+        opts: The pulumi ResourceOptions to add to ComponentResources created
+              here.
+
+    Returns:
+        The inline role.
+    """
+    policy_attachments = (
+        [srvc_policy_attach]
+        if isinstance(srvc_policy_attach, str)
+        else srvc_policy_attach
+    )
+
+    # first create the inline role
+    inline_role = aws.iam.Role(
+        f"{name}-{srvc_prfx}role",
+        assume_role_policy=get_service_assume_role(assume_role_srvc),
+        opts=opts,
+        tags={"desc_name": desc_name},
+    )
+
+    # if we were told to also attach service role policies, do so
+    if policy_attachments:
+        for policy_arn in policy_attachments:
+            aws.iam.RolePolicyAttachment(
+                f"{name}-{srvc_prfx}svcroleatch-{policy_arn.split('/')[-1]}",
+                role=inline_role.name,
+                policy_arn=policy_arn,
+                opts=opts,
+            )
+
+    # and now add the policy rules we were given to the role if configured
+    if statements is not None:
+        aws.iam.RolePolicy(
+            f"{name}-{srvc_prfx}roleplcy",
+            role=inline_role.id,
+            policy=aws.iam.get_policy_document(
+                statements=statements  # pyright: ignore[reportArgumentType]
+            ).json,
+            opts=opts,
+        )
+
+    return inline_role
