@@ -291,33 +291,6 @@ def get_vpce_api_invoke_policy(
     )
 
 
-def get_start_crawler_policy(crawler: str) -> str:
-    """Get a role policy statement for starting a crawler.
-
-    Args:
-        crawler: The name of the crawler to start
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "glue:StartCrawler",
-                        "glue:GetCrawler",
-                    ],
-                    "Resource": [f"arn:aws:glue:*:*:crawler/{crawler}"],
-                },
-            ],
-        },
-    )
-
-
 def get_nextflow_executor_policy() -> str:
     """Get a role policy statement for an EC2 instance of Nextflow.
 
@@ -366,95 +339,6 @@ def get_nextflow_executor_policy() -> str:
                     "Resource": ["*"],
                 },
             ],
-        },
-    )
-
-
-def get_start_etl_job_policy(job: str) -> str:
-    """Get a role policy statement for starting an ETL job.
-
-    Args:
-        job: The name of the job being started.
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "glue:StartJobRun",
-                        "glue:GetJobRun",
-                    ],
-                    "Resource": [f"arn:aws:glue:*:*:job/{job}"],
-                },
-            ],
-        },
-    )
-
-
-def get_etl_job_s3_policy(
-    raw_bucket: str,
-    clean_bucket: str,
-    script_bucket: str,
-    script_path: str,
-    assets_bucket: str | None = None,
-) -> str:
-    """Get a role policy statement for an ETL job to read/write to s3.
-
-    Needed to read from a clean bucket and the bucket containing the ETL script
-    as well as to write to the clean bucket.
-
-    Args:
-        raw_bucket: The name of the raw bucket.
-        clean_bucket: The name of the clean bucket.
-        script_bucket: The name of the script bucket.
-        script_path: The path to the ETL script in the script bucket.
-
-    Returns:
-        The policy statement as a dictionary json encoded string.
-    """
-
-    # TODO: FIX THE INCLUSION OF THE ASSETS BUCKET IN THESE PERMISSIONS
-    statements = [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "logs:PutLogEvents",
-                "logs:CreateLogGroup",
-                "logs:CreateLogStream",
-            ],
-            "Resource": "arn:aws:logs:*:*:*",
-        },
-        {
-            "Effect": "Allow",
-            "Action": ["s3:GetObject"],
-            "Resource": [
-                f"arn:aws:s3:::{script_bucket}/{script_path}",
-                f"arn:aws:s3:::{raw_bucket}/*",
-                f"arn:aws:s3:::{raw_bucket}",
-                f"arn:aws:s3:::{assets_bucket}/*",
-                f"arn:aws:s3:::{assets_bucket}",
-            ],
-        },
-        {
-            "Effect": "Allow",
-            "Action": ["s3:PutObject"],
-            "Resource": [
-                f"arn:aws:s3:::{clean_bucket}/*",
-                f"arn:aws:s3:::{clean_bucket}",
-            ],
-        },
-    ]
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": statements,
         },
     )
 
