@@ -6,11 +6,14 @@ from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
 import capeinfra
 from capeinfra.iam import (
     get_inline_role,
+    get_inline_role2,
     get_sqs_lambda_glue_trigger_policy,
     get_sqs_notifier_policy,
 )
 from capeinfra.pipeline.data import DataCrawler, EtlJob
+from capeinfra.resources.database import DynamoTable
 from capeinfra.resources.objectstorage import VersionedBucket
+from capeinfra.resources.queue import SQSQueue
 from capepulumi import CapeComponentResource
 
 
@@ -94,19 +97,12 @@ class DatalakeHouse(CapeComponentResource):
         # setup a DynamoDB table to hold the prefix/suffix/etl job attributes
         # for all tributaries. Each tributary will add its own configured ETL
         # attributes information to this table.
-        self.etl_attr_ddb_table = aws.dynamodb.Table(
-            f"{self.name}-etlattrs-ddb",
-            name=f"{self.name}-ETLAttributes",
-            # NOTE: this table will be accessed as needed to do ETL jobs.
-            #       it'll be pretty hard (at least till this is use for a
-            #       while) to come up with read/write metrics to set this table
-            #       up as PROVISIONED with those values. We'd probably be much
-            #       cheaper to go that route if we have a really solid idea of
-            #       how many reads/writes this table needs
-            billing_mode="PAY_PER_REQUEST",
+
+        self.etl_attr_ddb_table = DynamoTable(
+            name=f"{self.name}-ETLAttrs",
             hash_key="bucket_name",
             range_key="prefix",
-            attributes=[
+            idx_attrs=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
                 # TODO: ISSUE #49
@@ -119,14 +115,12 @@ class DatalakeHouse(CapeComponentResource):
                     "type": "S",
                 },
             ],
-            opts=ResourceOptions(parent=self),
             tags={
-                "desc_name": (
-                    f"{self.desc_name} ETL attributes DynamoDB Table"
-                ),
+                "desc_name": (f"{self.desc_name} ETL attributes DynamoTable"),
             },
         )
 
+        # TODO: change over to DynamoTable
         self.crawler_attrs_ddb_table = aws.dynamodb.Table(
             f"{self.name}-crawlerattrs-ddb",
             name=f"{self.name}-CrawlerAttributes",
@@ -229,7 +223,7 @@ class Tributary(CapeComponentResource):
         self,
         name: str,
         catalog_bucket: aws.s3.Bucket,
-        etl_attrs_ddb_table: aws.dynamodb.Table,
+        etl_attrs_ddb_table: DynamoTable,
         crawler_attrs_ddb_table: aws.dynamodb.Table,
         aws_region: str,
         *args,
@@ -267,18 +261,15 @@ class Tributary(CapeComponentResource):
         for bucket_id in self.config.get("buckets", default={}):
             self.configure_bucket(bucket_id, crawler_attrs_ddb_table)
 
-        # this queue is where all notifications of new objects added to any
-        # buckets which are source locations for pipelines
-        self.src_data_queue = aws.sqs.Queue(
-            # TODO: ISSUE #68
-            f"{self.name}-srcq",
-            name=f"{self.name}-srcq.fifo",
-            content_based_deduplication=True,
-            fifo_queue=True,
+        # when new objects are put into `self.buckets` targets, a trigger
+        # function will put messages in this queue for processing down the line
+        self.src_data_queue = SQSQueue(
+            name=f"{self.name}-srcq",
             tags={
                 "desc_name": f"{self.desc_name} source data notification queue"
             },
         )
+
         self.sources = set()
 
         # setup all configured ETL jobs and add items to the DDB table for each.
@@ -370,13 +361,12 @@ class Tributary(CapeComponentResource):
                 opts=ResourceOptions(parent=self),
             )
 
-    def configure_etl(self, etl_attrs_ddb_table: aws.dynamodb.Table):
+    def configure_etl(self, etl_attrs_ddb_table: DynamoTable):
         """Configure all ETL jobs for the tributary.
 
         Args:
             etl_cfgs: The list of ETL configuration dicts from the pulumi config.
-            etl_attrs_ddb_table: A reference to the NOSQL table holding the ETL
-                                 attributes.
+            etl_attrs_ddb_table: The DynamoTable holding the ETL attributes.
         Returns:
             A list of configured EtlJobs.
         """
@@ -397,34 +387,24 @@ class Tributary(CapeComponentResource):
 
             # put the ETL job configuration into the tributary attributes table
             # for the source bucket
-            aws.dynamodb.TableItem(
-                f"{self.name}-{job.config['name']}-ddbitem",
-                table_name=etl_attrs_ddb_table.name,
-                hash_key=etl_attrs_ddb_table.hash_key,
-                range_key=etl_attrs_ddb_table.range_key.apply(
-                    lambda rk: f"{rk}"
-                ),
-                item=Output.json_dumps(
-                    {
-                        "bucket_name": {
-                            "S": self.buckets[cfg["src"]].bucket.id,
-                        },
-                        "prefix": {"S": job.config["prefix"]},
-                        "etl_job": {"S": job.job.id},
-                        "sink_bucket_name": {
-                            "S": self.buckets[cfg["sink"]].bucket.id
-                        },
-                        "suffixes": {
-                            "L": [
-                                {"S": suf}
-                                for suf in job.config.get(
-                                    "suffixes", default=[""]
-                                )
-                            ]
-                        },
-                    }
-                ),
-                opts=ResourceOptions(parent=self),
+            etl_attrs_ddb_table.add_table_item(
+                job.config["name"],
+                item={
+                    "bucket_name": {
+                        "S": self.buckets[cfg["src"]].bucket.id,
+                    },
+                    "prefix": {"S": job.config["prefix"]},
+                    "etl_job": {"S": job.job.id},
+                    "sink_bucket_name": {
+                        "S": self.buckets[cfg["sink"]].bucket.id
+                    },
+                    "suffixes": {
+                        "L": [
+                            {"S": suf}
+                            for suf in job.config.get("suffixes", default=[""])
+                        ]
+                    },
+                },
             )
             self.sources.add(cfg["src"])
 
@@ -486,7 +466,7 @@ class Tributary(CapeComponentResource):
 
         aws.lambda_.EventSourceMapping(
             f"{self.name}-sqslmbdatrgr",
-            event_source_arn=self.src_data_queue.arn,
+            event_source_arn=self.src_data_queue.sqs_queue.arn,
             function_name=self.qmsg_handler.arn,
             function_response_types=["ReportBatchItemFailures"],
         )
@@ -501,8 +481,12 @@ class Tributary(CapeComponentResource):
                                  for the data lake. The function being setup
                                  here will need to read from this table.
         """
+        # TODO: abstractions for sqs and ddb table do we can replace this role
+        #       with get_inline_role2 based stuff.
+        #       - SQS queue done (or at least ready for integration work)
+
         # get a role for the source bucket trigger
-        self.src_bucket_trigger_role = get_inline_role(
+        self.src_bucket_trigger_role = get_inline_role2(
             f"{self.name}-s3trgrole",
             f"{self.desc_name} source data S3 bucket trigger role",
             "lmbd",
@@ -518,6 +502,22 @@ class Tributary(CapeComponentResource):
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             opts=ResourceOptions(parent=self),
         )
+        # self.src_bucket_trigger_role = get_inline_role(
+        #     f"{self.name}-s3trgrole",
+        #     f"{self.desc_name} source data S3 bucket trigger role",
+        #     "lmbd",
+        #     "lambda.amazonaws.com",
+        #     Output.all(
+        #         qname=self.src_data_queue.name,
+        #         etl_attr_ddb_table_name=etl_attrs_ddb_table.name,
+        #     ).apply(
+        #         lambda args: get_sqs_notifier_policy(
+        #             args["qname"], args["etl_attr_ddb_table_name"]
+        #         )
+        #     ),
+        #     "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        #     opts=ResourceOptions(parent=self),
+        # )
 
         # Create our Lambda function that triggers the given glue job
         new_object_handler = aws.lambda_.Function(
@@ -540,7 +540,7 @@ class Tributary(CapeComponentResource):
             handler="index.index_handler",
             environment={
                 "variables": {
-                    "QUEUE_NAME": self.src_data_queue.name,
+                    "QUEUE_NAME": self.src_data_queue.sqs_queue.name,
                     "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.name,
                     "DDB_REGION": self.aws_region,
                 }
