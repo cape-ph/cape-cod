@@ -5,6 +5,8 @@ from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import (
+    add_resources,
+    aggregate_statements,
     get_inline_role,
     get_inline_role2,
     get_sqs_lambda_glue_trigger_policy,
@@ -106,18 +108,9 @@ class DatalakeHouse(CapeComponentResource):
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
                 # TODO: ISSUE #49
-                {
-                    "name": "bucket_name",
-                    "type": "S",
-                },
-                {
-                    "name": "prefix",
-                    "type": "S",
-                },
+                aws.dynamodb.TableAttributeArgs(name="bucket_name", type="S"),
+                aws.dynamodb.TableAttributeArgs(name="prefix", type="S"),
             ],
-            tags={
-                "desc_name": (f"{self.desc_name} ETL attributes DynamoTable"),
-            },
         )
 
         # TODO: change over to DynamoTable
@@ -263,12 +256,7 @@ class Tributary(CapeComponentResource):
 
         # when new objects are put into `self.buckets` targets, a trigger
         # function will put messages in this queue for processing down the line
-        self.src_data_queue = SQSQueue(
-            name=f"{self.name}-srcq",
-            tags={
-                "desc_name": f"{self.desc_name} source data notification queue"
-            },
-        )
+        self.src_data_queue = SQSQueue(name=f"{self.name}-srcq")
 
         self.sources = set()
 
@@ -472,7 +460,7 @@ class Tributary(CapeComponentResource):
         )
 
     def configure_src_bucket_notifications(
-        self, etl_attrs_ddb_table: aws.dynamodb.Table
+        self, etl_attrs_ddb_table: DynamoTable
     ):
         """Configures notifications on the source data buckets to invoke a function.
 
@@ -481,9 +469,14 @@ class Tributary(CapeComponentResource):
                                  for the data lake. The function being setup
                                  here will need to read from this table.
         """
-        # TODO: abstractions for sqs and ddb table do we can replace this role
-        #       with get_inline_role2 based stuff.
-        #       - SQS queue done (or at least ready for integration work)
+
+        # self.src_data_queue.sqs_queue.arn.apply(
+        #     lambda arn: log.error(f"SQS QUEUE ARN: {arn}")
+        # )
+        #
+        # etl_attrs_ddb_table.ddb_table.arn.apply(
+        #     lambda arn: log.error(f"ETL TABLE ARN: {arn}")
+        # )
 
         # get a role for the source bucket trigger
         self.src_bucket_trigger_role = get_inline_role2(
@@ -491,33 +484,32 @@ class Tributary(CapeComponentResource):
             f"{self.desc_name} source data S3 bucket trigger role",
             "lmbd",
             "lambda.amazonaws.com",
-            Output.all(
-                qname=self.src_data_queue.name,
-                etl_attr_ddb_table_name=etl_attrs_ddb_table.name,
-            ).apply(
-                lambda args: get_sqs_notifier_policy(
-                    args["qname"], args["etl_attr_ddb_table_name"]
-                )
+            aggregate_statements(
+                [capeinfra.meta.policies[capeinfra.meta.PolicyEnum.logging]]
+                + [
+                    self.src_data_queue.sqs_queue.arn.apply(
+                        lambda arn: add_resources(
+                            self.src_data_queue.policies[
+                                self.src_data_queue.PolicyEnum.put_msg
+                            ],
+                            arn,
+                        )
+                    )
+                ]
+                + [
+                    etl_attrs_ddb_table.ddb_table.arn.apply(
+                        lambda arn: add_resources(
+                            etl_attrs_ddb_table.policies[
+                                etl_attrs_ddb_table.PolicyEnum.read
+                            ],
+                            arn,
+                        )
+                    )
+                ]
             ),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             opts=ResourceOptions(parent=self),
         )
-        # self.src_bucket_trigger_role = get_inline_role(
-        #     f"{self.name}-s3trgrole",
-        #     f"{self.desc_name} source data S3 bucket trigger role",
-        #     "lmbd",
-        #     "lambda.amazonaws.com",
-        #     Output.all(
-        #         qname=self.src_data_queue.name,
-        #         etl_attr_ddb_table_name=etl_attrs_ddb_table.name,
-        #     ).apply(
-        #         lambda args: get_sqs_notifier_policy(
-        #             args["qname"], args["etl_attr_ddb_table_name"]
-        #         )
-        #     ),
-        #     "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-        #     opts=ResourceOptions(parent=self),
-        # )
 
         # Create our Lambda function that triggers the given glue job
         new_object_handler = aws.lambda_.Function(
