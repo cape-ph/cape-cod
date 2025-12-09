@@ -375,9 +375,9 @@ class Tributary(CapeComponentResource):
         for cfg in self.config.get("pipelines", "data", "etl", default=[]):
             job = EtlJob(
                 f"{self.name}-ETL-{cfg['name']}",
-                self.buckets[cfg["src"]].bucket,
-                self.buckets[cfg["sink"]].bucket,
-                capeinfra.meta.automation_assets_bucket.bucket,
+                self.buckets[cfg["src"]],
+                self.buckets[cfg["sink"]],
+                capeinfra.meta.automation_assets_bucket,
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} {cfg['name']} ETL job"),
                 config=cfg,

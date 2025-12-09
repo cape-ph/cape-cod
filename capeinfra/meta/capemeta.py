@@ -3,6 +3,7 @@
 import csv
 import json
 import os
+from enum import Enum
 from typing import Any
 
 import pulumi_aws as aws
@@ -30,6 +31,11 @@ from capepulumi import CapeComponentResource
 
 class CapeMeta(CapeComponentResource):
     """Contains resources needed by all parts of the infra."""
+
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        logging = "logging"
 
     def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
@@ -78,6 +84,29 @@ class CapeMeta(CapeComponentResource):
                 "cape-meta-automation-assets-bucket": self.automation_assets_bucket.bucket
             }
         )
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            self.policies[self.PolicyEnum.logging] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "logs:PutLogEvents",
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                    ],
+                    "resources": ["arn:aws:logs:*:*:*"],
+                }
+            ]
+        return self._policies
 
     def create_function_layers(self, layer_specs):
         """Create AWS Lambda layers as per configuration.
