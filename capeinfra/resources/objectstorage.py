@@ -71,19 +71,19 @@ class VersionedBucket(CapeComponentResource):
                 str,
                 list[aws.iam.GetPolicyDocumentStatementArgsDict],
             ]()
-            self.policies[self.PolicyEnum.read] = [
+            self._policies[self.PolicyEnum.read] = [
                 {"effect": "Allow", "actions": ["s3:GetObject"]}
             ]
-            self.policies[self.PolicyEnum.write] = [
+            self._policies[self.PolicyEnum.write] = [
                 {"effect": "Allow", "actions": ["s3:PutObject"]}
             ]
-            self.policies[self.PolicyEnum.delete] = [
+            self._policies[self.PolicyEnum.delete] = [
                 {"effect": "Allow", "actions": ["s3:DeleteObject"]}
             ]
-            self.policies[self.PolicyEnum.browse] = [
+            self._policies[self.PolicyEnum.browse] = [
                 {"effect": "Allow", "actions": ["s3:ListBucket"]}
             ]
-            self.policies[self.PolicyEnum.multipart_upload] = [
+            self._policies[self.PolicyEnum.multipart_upload] = [
                 {
                     "effect": "Allow",
                     "actions": [
