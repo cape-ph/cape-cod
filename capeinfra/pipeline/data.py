@@ -1,6 +1,7 @@
 """Abstractions for data pipelines."""
 
 from copy import deepcopy
+from enum import Enum
 
 import pulumi_aws as aws
 from pulumi import ResourceOptions
@@ -141,6 +142,11 @@ class DataCrawler(CapeComponentResource):
 class EtlJob(CapeComponentResource):
     """An extract/transform/load job."""
 
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        run_job = "run_job"
+
     @property
     def default_config(self):
         return {
@@ -261,3 +267,24 @@ class EtlJob(CapeComponentResource):
             tags={"desc_name": self.desc_name or "AWS Glue ETL Job"},
         )
         self.register_outputs({"job_name": self.job.name})
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            self._policies[self.PolicyEnum.run_job] = [
+                {
+                    "effect": "Allow",
+                    "action": [
+                        "glue:StartJobRun",
+                        "glue:GetJobRun",
+                    ],
+                }
+            ]
+        return self._policies
