@@ -1,4 +1,4 @@
-"""Contains data lake related declaratiohs."""
+"""Contains data lake related declarations."""
 
 import pulumi_aws as aws
 from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
@@ -10,7 +10,6 @@ from capeinfra.iam import (
     get_inline_role,
     get_inline_role2,
     get_sqs_lambda_glue_trigger_policy,
-    get_sqs_notifier_policy,
 )
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.pipeline.data import DataCrawler, EtlJob
