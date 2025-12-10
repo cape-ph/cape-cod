@@ -361,7 +361,7 @@ class Tributary(CapeComponentResource):
             # put the ETL job configuration into the tributary attributes table
             # for the source bucket
             etl_attrs_ddb_table.add_table_item(
-                job.config["name"],
+                f"{self.name}-{job.config['name']}",
                 item={
                     "bucket_name": {
                         "S": self.buckets[cfg["src"]].bucket.id,
