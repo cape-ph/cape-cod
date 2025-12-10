@@ -12,6 +12,7 @@ from capeinfra.iam import (
     get_sqs_lambda_glue_trigger_policy,
     get_sqs_notifier_policy,
 )
+from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.resources.database import DynamoTable
 from capeinfra.resources.objectstorage import VersionedBucket
@@ -477,12 +478,12 @@ class Tributary(CapeComponentResource):
             "lmbd",
             "lambda.amazonaws.com",
             aggregate_statements(
-                [capeinfra.meta.policies[capeinfra.meta.PolicyEnum.logging]]
+                [capeinfra.meta.policies[CapeMeta.PolicyEnum.logging]]
                 + [
                     self.src_data_queue.sqs_queue.arn.apply(
                         lambda arn: add_resources(
                             self.src_data_queue.policies[
-                                self.src_data_queue.PolicyEnum.put_msg
+                                SQSQueue.PolicyEnum.put_msg
                             ],
                             arn,
                         )
@@ -492,7 +493,7 @@ class Tributary(CapeComponentResource):
                     etl_attrs_ddb_table.ddb_table.arn.apply(
                         lambda arn: add_resources(
                             etl_attrs_ddb_table.policies[
-                                etl_attrs_ddb_table.PolicyEnum.read
+                                DynamoTable.PolicyEnum.read
                             ],
                             arn,
                         )

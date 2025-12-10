@@ -3,10 +3,11 @@
 from copy import deepcopy
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
+from pulumi import ResourceOptions
 
 import capeinfra
 from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
+from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
 
@@ -88,7 +89,8 @@ class DataCrawler(CapeComponentResource):
                 [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
-                            bucket.policies["read"] + bucket.policies["browse"],
+                            bucket.policies[bucket.PolicyEnum.read]
+                            + bucket.policies[bucket.PolicyEnum.browse],
                             f"{arn}/*",
                             arn,
                         )
@@ -182,11 +184,11 @@ class EtlJob(CapeComponentResource):
             "",
             "glue.amazonaws.com",
             aggregate_statements(
-                [capeinfra.meta.policies["logging"]]
+                [capeinfra.meta.policies[CapeMeta.PolicyEnum.logging]]
                 + [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
-                            bucket.policies["read"],
+                            bucket.policies[VersionedBucket.PolicyEnum.read],
                             f"{arn}/*",
                             arn,
                         )
@@ -199,7 +201,7 @@ class EtlJob(CapeComponentResource):
                 + [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
-                            bucket.policies["write"],
+                            bucket.policies[VersionedBucket.PolicyEnum.write],
                             f"{arn}/*",
                             arn,
                         )
@@ -209,7 +211,7 @@ class EtlJob(CapeComponentResource):
                 + [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
-                            bucket.policies["read"],
+                            bucket.policies[VersionedBucket.PolicyEnum.read],
                             f"{arn}/{self.config['script']}",
                         )
                     )
