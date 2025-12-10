@@ -50,7 +50,7 @@ class SQSQueue(CapeComponentResource):
                 str,
                 list[aws.iam.GetPolicyDocumentStatementArgsDict],
             ]()
-            self.policies[self.PolicyEnum.put_msg] = [
+            self._policies[self.PolicyEnum.put_msg] = [
                 {
                     "effect": "Allow",
                     "actions": [
