@@ -470,14 +470,6 @@ class Tributary(CapeComponentResource):
                                  here will need to read from this table.
         """
 
-        # self.src_data_queue.sqs_queue.arn.apply(
-        #     lambda arn: log.error(f"SQS QUEUE ARN: {arn}")
-        # )
-        #
-        # etl_attrs_ddb_table.ddb_table.arn.apply(
-        #     lambda arn: log.error(f"ETL TABLE ARN: {arn}")
-        # )
-
         # get a role for the source bucket trigger
         self.src_bucket_trigger_role = get_inline_role2(
             f"{self.name}-s3trgrole",
