@@ -95,7 +95,7 @@ class CapeMeta(CapeComponentResource):
                 str,
                 list[aws.iam.GetPolicyDocumentStatementArgsDict],
             ]()
-            self.policies[self.PolicyEnum.logging] = [
+            self._policies[self.PolicyEnum.logging] = [
                 {
                     "effect": "Allow",
                     "actions": [
@@ -840,33 +840,6 @@ class CapeCannedReports(CapeComponentResource):
         Args:
             report_config: The configuration for a canned report.
         """
-        # TODO: just for reference, remove this
-        """
-        report:
-            - id: bactopia-single-sample-analysis
-            short_name: bctpssa
-            display_name: "Bactopia Single Sample Analysis"
-            template_path: "./assets/report/bactopia-single-sample-analysis/template.html.j2"
-            data_function:
-                code: "./assets/report/bactopia-single-sample-analysis/data_function.py"
-                layers:
-                    - capi-all
-                funct_args:
-                    handler: "index.index_handler"
-                    runtime: "python3.10"
-                    architectures:
-                        - "x86_64"
-                    description:
-                        "Bactopia Single Sample Report Data Lambda Function"
-                    memory_size: 128
-                    timeout: 3
-        """
-        # TODO:
-        # - make template s3 objects
-        # - make lambda function
-        # - make dynamo item for the report (needs lambda arn, probs need to
-        # handle pulumi output value)
-
         template_key = f"{self._template_prefix}/{report_config['id']}"
         template_obj = self.assets_bucket.add_object(
             f"{self.name}-cnndrprt-{report_config['short_name']}",
