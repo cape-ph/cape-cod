@@ -70,7 +70,7 @@ class DynamoTable(CapeComponentResource):
                 str,
                 list[aws.iam.GetPolicyDocumentStatementArgsDict],
             ]()
-            self.policies[self.PolicyEnum.read] = [
+            self._policies[self.PolicyEnum.read] = [
                 {
                     "effect": "Allow",
                     "actions": [
