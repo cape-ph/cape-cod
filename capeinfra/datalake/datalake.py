@@ -7,9 +7,7 @@ import capeinfra
 from capeinfra.iam import (
     add_resources,
     aggregate_statements,
-    get_inline_role,
     get_inline_role2,
-    get_sqs_lambda_glue_trigger_policy,
 )
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.pipeline.data import DataCrawler, EtlJob
@@ -111,29 +109,22 @@ class DatalakeHouse(CapeComponentResource):
                 aws.dynamodb.TableAttributeArgs(name="bucket_name", type="S"),
                 aws.dynamodb.TableAttributeArgs(name="prefix", type="S"),
             ],
+            desc_name=(f"{self.desc_name} ETL attributes DynamoDB Table"),
         )
 
-        # TODO: change over to DynamoTable
-        self.crawler_attrs_ddb_table = aws.dynamodb.Table(
-            f"{self.name}-crawlerattrs-ddb",
-            name=f"{self.name}-CrawlerAttributes",
-            billing_mode="PAY_PER_REQUEST",
+        self.crawler_attrs_ddb_table = DynamoTable(
+            name=f"{self.name}-CrawlerAttrs",
             hash_key="bucket_name",
-            attributes=[
+            idx_attrs=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
                 # TODO: ISSUE #49
-                {
-                    "name": "bucket_name",
-                    "type": "S",
-                },
+                aws.dynamodb.TableAttributeArgs(name="bucket_name", type="S"),
             ],
             opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (
-                    f"{self.desc_name} Glue Crawler attributes DynamoDB Table"
-                ),
-            },
+            desc_name=(
+                f"{self.desc_name} Glue Crawler attributes DynamoDB Table"
+            ),
         )
 
         # create the parts of the datalake from the tributary configuration
@@ -217,7 +208,7 @@ class Tributary(CapeComponentResource):
         name: str,
         catalog_bucket: aws.s3.Bucket,
         etl_attrs_ddb_table: DynamoTable,
-        crawler_attrs_ddb_table: aws.dynamodb.Table,
+        crawler_attrs_ddb_table: DynamoTable,
         aws_region: str,
         *args,
         # TODO: much like passing around lambda function layers
@@ -274,7 +265,7 @@ class Tributary(CapeComponentResource):
         self.register_outputs({"tributary_name": self.name})
 
     def configure_bucket(
-        self, bucket_id: str, crawler_attrs_ddb_table: aws.dynamodb.Table
+        self, bucket_id: str, crawler_attrs_ddb_table: DynamoTable
     ):
         """Creates/configures a bucket based on config values.
 
@@ -282,6 +273,9 @@ class Tributary(CapeComponentResource):
 
         Args:
             bucket_id: The id of the bucket being created.
+            crawler_attrs_ddb_table: A DynamoTable that holds the attributes of
+                                     the crawlers available for the bucket being
+                                     configured.
         """
         bucket_config = self.config.get("buckets", bucket_id)
         bucket_name = bucket_config.get(
@@ -334,19 +328,14 @@ class Tributary(CapeComponentResource):
                 config=crawler_config,
             )
 
-            aws.dynamodb.TableItem(
+            crawler_attrs_ddb_table.add_table_item(
                 f"{self.name}-{bucket_id}-crawler-ddbitem",
-                table_name=crawler_attrs_ddb_table.name,
-                hash_key=crawler_attrs_ddb_table.hash_key,
-                item=Output.json_dumps(
-                    {
-                        "bucket_name": {"S": self.buckets[bucket_id].bucket.id},
-                        "crawler_name": {
-                            "S": self.crawlers[bucket_id].crawler.name
-                        },
-                    }
-                ),
-                opts=ResourceOptions(parent=self),
+                item={
+                    "bucket_name": {"S": self.buckets[bucket_id].bucket.id},
+                    "crawler_name": {
+                        "S": self.crawlers[bucket_id].crawler.name
+                    },
+                },
             )
 
     def configure_etl(self, etl_attrs_ddb_table: DynamoTable):
@@ -399,24 +388,41 @@ class Tributary(CapeComponentResource):
         return jobs
 
     def configure_sqs_lambda_target(self, jobs: list):
-        """Configures the Lmabda that will run on new SQS messages.
+        """Configures the Lambda that will run on new SQS messages.
 
         Args:
             jobs: A list of configured EtlJobs that will be used by this Lambda.
         """
+        # we should always have at least one job at this point, and all jobs
+        # have the same policy set, so just grab the run_job policy of the first
+        run_job_policy = jobs[0].policies[EtlJob.PolicyEnum.run_job]
+
         # get a role for the source bucket triggers
-        self.sqs_trigger_role = get_inline_role(
+        self.sqs_trigger_role = get_inline_role2(
             f"{self.name}-sqstrgrole",
             f"{self.desc_name} source data SQS trigger role",
             "lmbd",
             "lambda.amazonaws.com",
-            Output.all(
-                qname=self.src_data_queue.name,
-                job_names=[j.job.name for j in jobs],
-            ).apply(
-                lambda args: get_sqs_lambda_glue_trigger_policy(
-                    args["qname"], args["job_names"]
-                )
+            aggregate_statements(
+                [capeinfra.meta.policies[CapeMeta.PolicyEnum.logging]]
+                + [
+                    self.src_data_queue.sqs_queue.arn.apply(
+                        lambda arn: add_resources(
+                            self.src_data_queue.policies[
+                                SQSQueue.PolicyEnum.consume_msg
+                            ],
+                            arn,
+                        )
+                    )
+                ]
+                + [
+                    Output.all(job_arns=[j.job.arn for j in jobs]).apply(
+                        lambda job_arns: add_resources(
+                            run_job_policy,
+                            *job_arns,
+                        )
+                    )
+                ]
             ),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             opts=ResourceOptions(parent=self),
