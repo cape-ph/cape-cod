@@ -281,7 +281,7 @@ class EtlJob(CapeComponentResource):
             self._policies[self.PolicyEnum.run_job] = [
                 {
                     "effect": "Allow",
-                    "action": [
+                    "actions": [
                         "glue:StartJobRun",
                         "glue:GetJobRun",
                     ],
