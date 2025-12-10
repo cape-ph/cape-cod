@@ -22,7 +22,10 @@ class DynamoTable(CapeComponentResource):
         self,
         name,
         hash_key: str,
-        idx_attrs: Sequence[aws.dynamodb.TableAttributeArgs],
+        idx_attrs: Sequence[
+            aws.dynamodb.TableAttributeArgs
+            | aws.dynamodb.TableAttributeArgsDict
+        ],
         range_key: str | None = None,
         **kwargs,
     ):

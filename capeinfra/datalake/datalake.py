@@ -4,11 +4,7 @@ import pulumi_aws as aws
 from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
-from capeinfra.iam import (
-    add_resources,
-    aggregate_statements,
-    get_inline_role2,
-)
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.resources.database import DynamoTable
@@ -106,8 +102,8 @@ class DatalakeHouse(CapeComponentResource):
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
                 # TODO: ISSUE #49
-                aws.dynamodb.TableAttributeArgs(name="bucket_name", type="S"),
-                aws.dynamodb.TableAttributeArgs(name="prefix", type="S"),
+                {"name": "bucket_name", "type": "S"},
+                {"name": "prefix", "type": "S"},
             ],
             desc_name=(f"{self.desc_name} ETL attributes DynamoDB Table"),
         )
@@ -119,7 +115,7 @@ class DatalakeHouse(CapeComponentResource):
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
                 # TODO: ISSUE #49
-                aws.dynamodb.TableAttributeArgs(name="bucket_name", type="S"),
+                {"name": "bucket_name", "type": "S"},
             ],
             opts=ResourceOptions(parent=self),
             desc_name=(
