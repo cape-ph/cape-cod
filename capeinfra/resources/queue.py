@@ -15,6 +15,7 @@ class SQSQueue(CapeComponentResource):
         """Enum of supported policy names for this component."""
 
         put_msg = "put_msg"
+        consume_msg = "consume_msg"
 
     def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
@@ -56,6 +57,16 @@ class SQSQueue(CapeComponentResource):
                     "actions": [
                         "sqs:GetQueueUrl",
                         "sqs:SendMessage",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.consume_msg] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "sqs:GetQueueAttributes",
+                        "sqs:ReceiveMessage",
+                        "sqs:DeleteMessage",
                     ],
                 }
             ]
