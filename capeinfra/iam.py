@@ -902,7 +902,7 @@ def get_inline_role2(
         aws.iam.RolePolicy(
             f"{name}-{srvc_prfx}roleplcy",
             role=inline_role.id,
-            policy=aws.iam.get_policy_document(
+            policy=aws.iam.get_policy_document_output(
                 statements=statements  # pyright: ignore[reportArgumentType]
             ).json,
             opts=opts,
