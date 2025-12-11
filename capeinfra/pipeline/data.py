@@ -199,10 +199,7 @@ class EtlJob(CapeComponentResource):
                             arn,
                         )
                     )
-                    for bucket in [
-                        src_bucket,
-                        capeinfra.meta.automation_assets_bucket,
-                    ]
+                    for bucket in [src_bucket]
                 ]
                 + [
                     bucket.bucket.arn.apply(
