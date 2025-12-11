@@ -1,18 +1,15 @@
 """Abstractions for data pipelines."""
 
 from copy import deepcopy
+from enum import Enum
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
+from pulumi import ResourceOptions
 
 import capeinfra
-from capeinfra.iam import (
-    get_bucket_reader_policy,
-    get_etl_job_s3_policy,
-    get_inline_role,
-    get_start_crawler_policy,
-    get_start_etl_job_policy,
-)
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
+from capeinfra.meta.capemeta import CapeMeta
+from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
 
 CAPE_CSV_STANDARD_CLASSIFIER = "cape-csv-standard-classifier"
@@ -57,7 +54,7 @@ class DataCrawler(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        buckets: aws.s3.Bucket | list[aws.s3.Bucket],
+        buckets: VersionedBucket | list[VersionedBucket],
         db: aws.glue.CatalogDatabase,
         *args,
         prefix: str | None = None,
@@ -84,15 +81,24 @@ class DataCrawler(CapeComponentResource):
         )
 
         # get a role for the crawler
-        self.crawler_role = get_inline_role(
+        self.crawler_role = get_inline_role2(
             self.name,
             f"{self.desc_name} data crawler role",
             "",
             "glue.amazonaws.com",
-            Output.all(
-                buckets=[bucket.bucket for bucket in self.buckets],
-                db=db.name,
-            ).apply(lambda args: get_bucket_reader_policy(args["buckets"])),
+            aggregate_statements(
+                [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies[bucket.PolicyEnum.read]
+                            + bucket.policies[bucket.PolicyEnum.browse],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in self.buckets
+                ]
+            ),
             "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole",
             opts=ResourceOptions(parent=self),
         )
@@ -114,7 +120,7 @@ class DataCrawler(CapeComponentResource):
             database_name=db.name,
             s3_targets=[
                 aws.glue.CrawlerS3TargetArgs(
-                    path=bucket.bucket.apply(
+                    path=bucket.bucket.bucket.apply(
                         lambda b: f"s3://{b}/{prefix+'/' if prefix else ''}"
                     ),
                     exclusions=self.config["excludes"],
@@ -136,6 +142,11 @@ class DataCrawler(CapeComponentResource):
 class EtlJob(CapeComponentResource):
     """An extract/transform/load job."""
 
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        run_job = "run_job"
+
     @property
     def default_config(self):
         return {
@@ -145,9 +156,9 @@ class EtlJob(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        src_bucket: aws.s3.Bucket,
-        sink_bucket: aws.s3.Bucket,
-        script_bucket: aws.s3.Bucket,
+        src_bucket: VersionedBucket,
+        sink_bucket: VersionedBucket,
+        script_bucket: VersionedBucket,
         *args,
         default_args: dict = {},
         **kwargs,
@@ -173,24 +184,42 @@ class EtlJob(CapeComponentResource):
         self.src_bucket = src_bucket
         self.sink_bucket = sink_bucket
 
-        self.etl_role = get_inline_role(
+        self.etl_role = get_inline_role2(
             self.name,
             f"{self.desc_name} ETL job role",
             "",
             "glue.amazonaws.com",
-            Output.all(
-                src_bucket=src_bucket.bucket,
-                sink_bucket=sink_bucket.bucket,
-                script_bucket=script_bucket.bucket,
-                assets_bucket=capeinfra.meta.automation_assets_bucket.bucket.bucket,
-            ).apply(
-                lambda args: get_etl_job_s3_policy(
-                    args["src_bucket"],
-                    args["sink_bucket"],
-                    args["script_bucket"],
-                    self.config["script"],
-                    args["assets_bucket"],
-                )
+            aggregate_statements(
+                [capeinfra.meta.policies[CapeMeta.PolicyEnum.logging]]
+                + [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies[VersionedBucket.PolicyEnum.read],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in [src_bucket]
+                ]
+                + [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies[VersionedBucket.PolicyEnum.write],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in [sink_bucket]
+                ]
+                + [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies[VersionedBucket.PolicyEnum.read],
+                            f"{arn}/{self.config['script']}",
+                        )
+                    )
+                    for bucket in [script_bucket]
+                ]
             ),
             opts=ResourceOptions(parent=self),
         )
@@ -220,7 +249,7 @@ class EtlJob(CapeComponentResource):
             self.name,
             role_arn=self.etl_role.arn,
             command=aws.glue.JobCommandArgs(
-                script_location=script_bucket.bucket.apply(
+                script_location=script_bucket.bucket.bucket.apply(
                     lambda b: f"s3://{b}/{self.config['script']}"
                 ),
                 python_version="3",
@@ -235,3 +264,24 @@ class EtlJob(CapeComponentResource):
             tags={"desc_name": self.desc_name or "AWS Glue ETL Job"},
         )
         self.register_outputs({"job_name": self.job.name})
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            self._policies[self.PolicyEnum.run_job] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "glue:StartJobRun",
+                        "glue:GetJobRun",
+                    ],
+                }
+            ]
+        return self._policies

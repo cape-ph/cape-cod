@@ -1,5 +1,6 @@
 """Contains abstractions of object storage for various providers."""
 
+from enum import Enum
 from typing import Any, Optional
 
 import boto3
@@ -11,6 +12,15 @@ from capepulumi import CapeComponentResource
 
 class VersionedBucket(CapeComponentResource):
     """An object storage location with versioning turned on."""
+
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        read = "read"
+        write = "write"
+        delete = "delete"
+        browse = "browse"
+        multipart_upload = "multipart_upload"
 
     def __init__(self, name, bucket_name=None, cors_rules=None, **kwargs):
         # This maintains parental relationships within the pulumi stack
@@ -50,6 +60,43 @@ class VersionedBucket(CapeComponentResource):
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs({"bucket_name": self.bucket.bucket})
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            self._policies[self.PolicyEnum.read] = [
+                {"effect": "Allow", "actions": ["s3:GetObject"]}
+            ]
+            self._policies[self.PolicyEnum.write] = [
+                {"effect": "Allow", "actions": ["s3:PutObject"]}
+            ]
+            self._policies[self.PolicyEnum.delete] = [
+                {"effect": "Allow", "actions": ["s3:DeleteObject"]}
+            ]
+            self._policies[self.PolicyEnum.browse] = [
+                {"effect": "Allow", "actions": ["s3:ListBucket"]}
+            ]
+            self._policies[self.PolicyEnum.multipart_upload] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "s3:AbortMultipartUpload",
+                        "s3:CreateMultipartUpload",
+                        "s3:UploadPart",
+                        "s3:CompleteMultipartUpload",
+                        "s3:ListParts",
+                        "s3:ListMultipartUploads",
+                    ],
+                }
+            ]
+        return self._policies
 
     def add_object(
         self,

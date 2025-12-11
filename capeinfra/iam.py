@@ -8,6 +8,7 @@ from typing import List
 
 import pulumi_aws as aws
 from pulumi import Input, Output, ResourceOptions
+from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 
 # TODO: ISSUE #72
 
@@ -290,33 +291,6 @@ def get_vpce_api_invoke_policy(
     )
 
 
-def get_start_crawler_policy(crawler: str) -> str:
-    """Get a role policy statement for starting a crawler.
-
-    Args:
-        crawler: The name of the crawler to start
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "glue:StartCrawler",
-                        "glue:GetCrawler",
-                    ],
-                    "Resource": [f"arn:aws:glue:*:*:crawler/{crawler}"],
-                },
-            ],
-        },
-    )
-
-
 def get_nextflow_executor_policy() -> str:
     """Get a role policy statement for an EC2 instance of Nextflow.
 
@@ -367,158 +341,6 @@ def get_nextflow_executor_policy() -> str:
             ],
         },
     )
-
-
-def get_start_etl_job_policy(job: str) -> str:
-    """Get a role policy statement for starting an ETL job.
-
-    Args:
-        job: The name of the job being started.
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "glue:StartJobRun",
-                        "glue:GetJobRun",
-                    ],
-                    "Resource": [f"arn:aws:glue:*:*:job/{job}"],
-                },
-            ],
-        },
-    )
-
-
-def get_etl_job_s3_policy(
-    raw_bucket: str,
-    clean_bucket: str,
-    script_bucket: str,
-    script_path: str,
-    assets_bucket: str | None = None,
-) -> str:
-    """Get a role policy statement for an ETL job to read/write to s3.
-
-    Needed to read from a clean bucket and the bucket containing the ETL script
-    as well as to write to the clean bucket.
-
-    Args:
-        raw_bucket: The name of the raw bucket.
-        clean_bucket: The name of the clean bucket.
-        script_bucket: The name of the script bucket.
-        script_path: The path to the ETL script in the script bucket.
-
-    Returns:
-        The policy statement as a dictionary json encoded string.
-    """
-
-    # TODO: FIX THE INCLUSION OF THE ASSETS BUCKET IN THESE PERMISSIONS
-    statements = [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "logs:PutLogEvents",
-                "logs:CreateLogGroup",
-                "logs:CreateLogStream",
-            ],
-            "Resource": "arn:aws:logs:*:*:*",
-        },
-        {
-            "Effect": "Allow",
-            "Action": ["s3:GetObject"],
-            "Resource": [
-                f"arn:aws:s3:::{script_bucket}/{script_path}",
-                f"arn:aws:s3:::{raw_bucket}/*",
-                f"arn:aws:s3:::{raw_bucket}",
-                f"arn:aws:s3:::{assets_bucket}/*",
-                f"arn:aws:s3:::{assets_bucket}",
-            ],
-        },
-        {
-            "Effect": "Allow",
-            "Action": ["s3:PutObject"],
-            "Resource": [
-                f"arn:aws:s3:::{clean_bucket}/*",
-                f"arn:aws:s3:::{clean_bucket}",
-            ],
-        },
-    ]
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": statements,
-        },
-    )
-
-
-# TODO: ISSUE #152 this is now used for a couple of different notifiers, with
-#       and without attributes tables. the param names are a little specific to
-#       one use case only and there is a world in which we need to add other
-#       statements optionally (other than for an dynamodb table). refactor?
-def get_sqs_notifier_policy(
-    queue_name: str, etl_attr_ddb_table_name: str | None = None
-) -> str:
-    """Get a role policy statement for reading dynamodb and writing sqs.
-
-    This policy allows for actions on an sqs queue, (optionally) a dynamodb
-    table and logging necessary for raw data handlers to place metadata about
-    a new S3 object into a specific SQS queue (and to read some of the metadata
-    from a dynamodb table if configured).
-
-    Args:
-        queue_name: the name of the queue to grant access to.
-        etl_attr_ddb_table_name: The optional name of the DynamoDB table
-                                 storing the ETL attributes.
-
-    Returns:
-        The policy statement as a dictionary json encoded string.
-    """
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "logs:PutLogEvents",
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                ],
-                "Resource": "arn:aws:logs:*:*:*",
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "sqs:GetQueueUrl",
-                    "sqs:SendMessage",
-                ],
-                "Resource": [
-                    f"arn:aws:sqs:*:*:{queue_name}",
-                ],
-            },
-        ],
-    }
-
-    if etl_attr_ddb_table_name:
-        policy["Statement"].append(
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "dynamodb:DescribeTable",
-                    "dynamodb:GetItem",
-                ],
-                "Resource": [
-                    f"arn:aws:dynamodb:*:*:table/{etl_attr_ddb_table_name}",
-                ],
-            }
-        )
-    return json.dumps(policy)
 
 
 # TODO: ISSUE #TBD trying to get this a little more generalized than when it
@@ -688,71 +510,6 @@ def get_api_lambda_authorizer_policy(funct_arns: list[Output] | None = None):
         {
             "Version": "2012-10-17",
             "Statement": stmnts,
-        },
-    )
-
-
-def get_sqs_lambda_glue_trigger_policy(queue_name: str, job_names: list) -> str:
-    """Get a role policy statement for reading from sqs and starting glue jobs.
-
-    This policy allows for actions on an sqs queue, configured glue jobs and
-    logging necessary for SQS trigger functions to read metadata from an SQS
-    queue and to start ETL glue jobs with the metadata.
-
-    Args:
-        queue_name: the name of the queue to grant access to.
-        job_names: a list of ETL job names that this policy will allow execution
-                   of.
-
-    Returns:
-        The policy statement as a dictionary json encoded string.
-    """
-
-    statements = [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "logs:PutLogEvents",
-                "logs:CreateLogGroup",
-                "logs:CreateLogStream",
-            ],
-            "Resource": "arn:aws:logs:*:*:*",
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                # This is the bare minimum required for an SQS notified
-                # lambda to do its job.
-                "sqs:GetQueueAttributes",
-                "sqs:ReceiveMessage",
-                "sqs:DeleteMessage",
-            ],
-            "Resource": [
-                f"arn:aws:sqs:*:*:{queue_name}",
-            ],
-        },
-    ]
-
-    # generally we will have job names here (otherwise whey put in a job queue)
-    # but if they have not been defined at the time of the tributary deployemnt,
-    # we may not. so only add the policy for them if we have some listed.
-    if job_names:
-        statements.append(
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "glue:StartJobRun",
-                    "glue:GetJobRun",
-                ],
-                "Resource": [
-                    f"arn:aws:glue:*:*:job/{job}" for job in job_names
-                ],
-            }
-        )
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": statements,
         },
     )
 
@@ -932,3 +689,97 @@ def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
             ],
         },
     )
+
+
+def add_resources(
+    statements: list[aws.iam.GetPolicyDocumentStatementArgsDict], *arns: str
+) -> list[aws.iam.GetPolicyDocumentStatementArgsDict]:
+    new_statements = []
+    for statement in statements:
+        statement = statement.copy()
+        statement["resources"] = list(
+            set(statement["resources"] if "resources" in statement else [])
+            | set(arns)
+        )
+        new_statements.append(statement)
+
+    return new_statements
+
+
+def aggregate_statements(statements):
+    return Output.all(statements).apply(
+        lambda args: sum(
+            args[0], list[aws.iam.GetPolicyDocumentStatementArgsDict]()
+        )
+    )
+
+
+# NOTE: done as a function for now because this pattern is in a number of
+#       places (lambda trigger functions, data crawlers, glue jobs, etc)
+def get_inline_role2(
+    name: str,
+    desc_name: str,
+    srvc_prfx: str,
+    assume_role_srvc: str | List[str],
+    statements: Input[list[GetPolicyDocumentStatementArgsDict]] | None = None,
+    srvc_policy_attach: str | List[str] = [],
+    opts: ResourceOptions | None = None,
+) -> aws.iam.Role:
+    """Get an inline role fir the given arguments.
+
+    Args:
+        name: The resource name the role is being used on.
+        desc_name: The descriptive name (e.g. for tagging) for the role. this
+                   will be used as-is, so it needs to be fully rendered
+        srvc_prfx: the service prefix to use in the name (e.g. `lmbd` for aws
+                   lambda)
+        assume_role_srvc: The name of the service assuming the role (e.g.
+                          "glue.amazonaws.com") or a list of such service names.
+        statements: The policy statements to attach to the role.
+        srvc_policy_attach: Optional identifier (e.g. ARN for aws) or list of
+                            identifiers for a service or services role policy
+                            to attach to the role in addition to the
+                            role_policy. NOTE: There is an AWS imposed maximum
+                            of 20 policy attachments for any role.
+        opts: The pulumi ResourceOptions to add to ComponentResources created
+              here.
+
+    Returns:
+        The inline role.
+    """
+    policy_attachments = (
+        [srvc_policy_attach]
+        if isinstance(srvc_policy_attach, str)
+        else srvc_policy_attach
+    )
+
+    # first create the inline role
+    inline_role = aws.iam.Role(
+        f"{name}-{srvc_prfx}role",
+        assume_role_policy=get_service_assume_role(assume_role_srvc),
+        opts=opts,
+        tags={"desc_name": desc_name},
+    )
+
+    # if we were told to also attach service role policies, do so
+    if policy_attachments:
+        for policy_arn in policy_attachments:
+            aws.iam.RolePolicyAttachment(
+                f"{name}-{srvc_prfx}svcroleatch-{policy_arn.split('/')[-1]}",
+                role=inline_role.name,
+                policy_arn=policy_arn,
+                opts=opts,
+            )
+
+    # and now add the policy rules we were given to the role if configured
+    if statements is not None:
+        aws.iam.RolePolicy(
+            f"{name}-{srvc_prfx}roleplcy",
+            role=inline_role.id,
+            policy=aws.iam.get_policy_document_output(
+                statements=statements
+            ).json,
+            opts=opts,
+        )
+
+    return inline_role
