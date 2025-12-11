@@ -237,7 +237,7 @@ class Tributary(CapeComponentResource):
         # configure the buckets for the tributary. this will go down
         # into the crawlers for the buckets as well (IFF configured)
         self.buckets = dict[str, VersionedBucket]()
-        self.crawlers = {}
+        self.crawlers = dict[str, DataCrawler]()
         for bucket_id in self.config.get("buckets", default={}):
             self.configure_bucket(bucket_id, crawler_attrs_ddb_table)
 
@@ -413,9 +413,9 @@ class Tributary(CapeComponentResource):
                 ]
                 + [
                     Output.all(job_arns=[j.job.arn for j in jobs]).apply(
-                        lambda job_arns: add_resources(
+                        lambda args: add_resources(
                             run_job_policy,
-                            *job_arns,
+                            *args["job_arns"],
                         )
                     )
                 ]
