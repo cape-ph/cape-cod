@@ -38,6 +38,9 @@ class DynamoTable(CapeComponentResource):
         )
 
         self.name = name
+        # HACK: store the passed in range key because getting range key from the
+        # generated table is unstable for checking if it exists or not
+        self.range_key = range_key
 
         self.ddb_table = aws.dynamodb.Table(
             f"{self.name}-ddbt",
@@ -109,7 +112,11 @@ class DynamoTable(CapeComponentResource):
             f"{self.name}-{name}-ddbitem",
             table_name=self.ddb_table.name,
             hash_key=self.ddb_table.hash_key,
-            range_key=self.ddb_table.range_key.apply(lambda rk: f"{rk}"),
+            range_key=(
+                self.ddb_table.range_key.apply(lambda rk: f"{rk}")
+                if self.range_key
+                else None
+            ),
             item=Output.json_dumps(item),
             opts=ResourceOptions(parent=self),
         )
