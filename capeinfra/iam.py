@@ -694,14 +694,16 @@ def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
 def add_resources(
     statements: list[aws.iam.GetPolicyDocumentStatementArgsDict], *arns: str
 ) -> list[aws.iam.GetPolicyDocumentStatementArgsDict]:
+    new_statements = []
     for statement in statements:
-        resources = (
-            list(statement["resources"]) if "resources" in statement else []
+        statement = statement.copy()
+        statement["resources"] = list(
+            set(statement["resources"] if "resources" in statement else [])
+            | set(arns)
         )
-        resources.extend(arns)
-        statement["resources"] = resources
+        new_statements.append(statement)
 
-    return statements
+    return new_statements
 
 
 def aggregate_statements(statements):
