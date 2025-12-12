@@ -10,6 +10,7 @@ import zipfile
 from abc import abstractmethod
 from enum import Enum
 from io import BytesIO
+from typing import List
 
 import pulumi_aws as aws
 from pulumi import FileArchive, FileAsset, Output, ResourceOptions, log
@@ -692,6 +693,11 @@ class CapeLambdaFunction(CapeComponentResource):
         role,
         code,
         handler,
+        layers: List[Output] | None = None,
+        architectures: List[str] | None = None,
+        description: str | None = None,
+        memory_size: int | None = None,
+        timeout: int | None = None,
         runtime: str = "python3.10",
         logging_config: aws.lambda_.FunctionLoggingConfigArgsDict | None = None,
         environment: aws.lambda_.FunctionEnvironmentArgsDict | None = None,
@@ -714,6 +720,11 @@ class CapeLambdaFunction(CapeComponentResource):
             f"{self.name}-lmbd-fn",
             role=role,
             code=code,
+            layers=layers,
+            architectures=architectures,
+            description=description,
+            memory_size=memory_size,
+            timeout=timeout,
             runtime=runtime,
             logging_config=logging_config,
             handler=handler,
