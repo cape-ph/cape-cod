@@ -93,7 +93,11 @@ class DynamoTable(CapeComponentResource):
             ]
         return self._policies
 
-    def add_table_item(self, name: str, item: dict[str, dict[str, Any]]):
+    # TODO: dict[Any, Any] here was to punt on a type hinting need. should be
+    #       resolved.
+    def add_table_item(
+        self, name: str, item: dict[str, dict[str, Any]] | dict[Any, Any]
+    ):
         """Add an item to the table.
 
         For more information on DynamoDB Attribute Value format, see here:
