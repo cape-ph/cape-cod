@@ -16,6 +16,7 @@ from capeinfra.iam import (
     get_api_lambda_authorizer_policy,
     get_api_policy,
     get_inline_role,
+    get_inline_role2,
     get_s3_api_proxy_policy,
     get_vpce_api_invoke_policy,
 )
@@ -117,7 +118,7 @@ class CapeRestApi(CapeComponentResource):
             f"{self.name}-loggrp",
         )
 
-        self._log_role = get_inline_role(
+        self._log_role = get_inline_role2(
             f"{self.name}-logrl",
             f"{self.desc_name} API Logging Role",
             "apigw",
@@ -395,7 +396,7 @@ class CapeRestApi(CapeComponentResource):
             # )
 
             # create a role for the authorizer (lambda function)
-            authorizer_lambda_role = get_inline_role(
+            authorizer_lambda_role = get_inline_role2(
                 f"{self.name}-{authorizer_name}-lmbd-role",
                 (
                     f"{self.desc_name} {self.config.get('desc')} "
@@ -404,11 +405,11 @@ class CapeRestApi(CapeComponentResource):
                 "lmbd",
                 "lambda.amazonaws.com",
                 # TODO: we will need a way to grant perms for this function if it
-                #       needs to access resources oither than the lambda itself.
-                #       that will be done in  a policy here using the res_grants
-                #       passed in
+                #       needs to access resources other than the lambda itself.
+                #       that will be done in a policy here.
                 None,
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                opts=ResourceOptions(parent=self),
             )
 
             # Create our Lambda function for the authorizer
