@@ -88,17 +88,12 @@ class PrivateSwimlane(ScopedSwimlane):
             },
         }
 
-    def __init__(self, name, data_lake_house: DatalakeHouse, *args, **kwargs):
+    def __init__(self, name, *args, **kwargs):
         # This maintains parental relationships within the pulumi stack
         super().__init__(name, *args, **kwargs)
-        # TODO: ISSUE #153 is there a better way to expose the auto assets
-        #       bucket since we're now passing it to every client that needs a
-        #       lambda script? Same for data catalog (which is passed to the
-        #       swimlane base class)
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
-        self.data_lake_house = data_lake_house
 
         # will contain a mapping of env var labels to resource names and types.
         # these may be used in api configuration to state the need for a
@@ -129,7 +124,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "ETL_ATTRS_DDB_TABLE",
             {
-                "resource_name": self.data_lake_house.etl_attr_ddb_table.name,
+                "resource_name": capeinfra.data_lakehouse.etl_attr_ddb_table.name,
                 "type": "table",
             },
         )
@@ -137,7 +132,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "CRAWLER_ATTRS_DDB_TABLE",
             {
-                "resource_name": self.data_lake_house.crawler_attrs_ddb_table.name,
+                "resource_name": capeinfra.data_lakehouse.crawler_attrs_ddb_table.name,
                 "type": "table",
             },
         )
