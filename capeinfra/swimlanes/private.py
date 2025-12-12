@@ -142,7 +142,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "CANNED_REPORT_DDB_TABLE",
             {
-                "resource_name": capeinfra.meta.canned_reports.canned_report_ddb_table.name,
+                "resource_name": capeinfra.meta.canned_reports.canned_report_ddb_table.ddb_table.name,
                 "type": "table",
             },
         )
