@@ -21,7 +21,8 @@ from capeinfra.iam import (
     get_inline_role2,
     get_vpce_api_invoke_policy,
 )
-from capeinfra.resources.compute import CapePythonLambdaLayer
+from capeinfra.meta.capemeta import CapeMeta
+from capeinfra.resources.compute import CapeLambdaFunction
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
@@ -306,7 +307,7 @@ class CapeRestApi(CapeComponentResource):
                 ),
                 "result_cached_sec": authz_def["result_cached_sec"],
                 "role": authz_def["role"].arn,
-                "uri": authz_def["handler"].invoke_arn,
+                "uri": authz_def["handler"].function.invoke_arn,
             }
 
         # as the lambda function arns are Output variables, we need to use the
@@ -407,22 +408,6 @@ class CapeRestApi(CapeComponentResource):
 
             self._authorizers[authz_name].update(authorizer_def)
 
-            # Role for this lambda authorizer. At present all functions get
-            # the same role functionally as we do not have specific resource
-            # grants, but they will be different roles in actuality.
-            # TODO: res_grants is not wired up in the policy doc function yet,
-            #       so don't waste time figuring out why it doesn't work, need
-            #       a way to specify grants for each authorizer
-            # TODO: get_api_authorizer_policy probably needs work (if it still
-            #       exists) when this gets wired up
-            # policy_doc = (
-            #     Output.all(grants=res_grants).apply(
-            #         lambda kwargs: get_api_authorizer_policy(**kwargs)
-            #     )
-            #     if res_grants
-            #     else None
-            # )
-
             # create a role for the authorizer (lambda function)
             authorizer_lambda_role = get_inline_role2(
                 f"{self.name}-{authorizer_name}-lmbd-role",
@@ -444,15 +429,12 @@ class CapeRestApi(CapeComponentResource):
             # TODO: In the case that 2 apis use the same authorizer function
             #       code, this will create a new function with the same code if
             #       another already exists. need a way to reuse in that case
-            authorizer_handler = aws.lambda_.Function(
-                f"{self.name}-{authorizer_name}-lmbd-hndlr",
+            authorizer_handler = CapeLambdaFunction(
+                f"{self.name}-{authorizer_name}-hndlr",
                 role=authorizer_lambda_role.arn,
                 code=AssetArchive(
                     {"index.py": FileAsset(authorizer_def["file"])}
                 ),
-                # TODO: this runtime should maybe be configurable long term
-                runtime="python3.10",
-                # logging_config=authorizer_logging_config,
                 logging_config=(
                     {
                         "log_format": "Text",
@@ -473,12 +455,10 @@ class CapeRestApi(CapeComponentResource):
                 #       out
                 environment={"variables": {}},
                 opts=ResourceOptions(parent=self),
-                tags={
-                    "desc_name": (
-                        f"{self.desc_name} {self.api_name} API "
-                        f"{authorizer_name} lambda authorizer function"
-                    )
-                },
+                desc_name=(
+                    f"{self.desc_name} {self.api_name} API "
+                    f"{authorizer_name} authorizer"
+                ),
             )
 
             self._authorizers[authz_name]["handler"] = authorizer_handler
@@ -490,7 +470,7 @@ class CapeRestApi(CapeComponentResource):
             #       will change (e.g. the authorizer may need to hit an identity
             #       pool or something) in which case this role (and a policy doc
             #       that grants the access needed) will be required
-            self._authorizers[authz_name]["role"] = get_inline_role(
+            self._authorizers[authz_name]["role"] = get_inline_role2(
                 f"{self.name}-{authorizer_name}-authz-role",
                 (
                     f"{self.desc_name} {self.config.get('desc')} "
@@ -499,12 +479,22 @@ class CapeRestApi(CapeComponentResource):
                 "lmbd",
                 "apigateway.amazonaws.com",
                 # magic for all the lambda functions the authorizer can call
-                (
-                    Output.all(funct_arns=[authorizer_handler.arn]).apply(
-                        lambda kwargs: get_api_lambda_authorizer_policy(
-                            **kwargs
+                aggregate_statements(
+                    [capeinfra.meta.policies[CapeMeta.PolicyEnum.logging]]
+                    + [
+                        self._authorizers[authz_name][
+                            "handler"
+                        ].function.arn.apply(
+                            lambda arn: add_resources(
+                                self._authorizers[authz_name][
+                                    "handler"
+                                ].policies[
+                                    CapeLambdaFunction.PolicyEnum.invoke
+                                ],
+                                arn,
+                            )
                         )
-                    )
+                    ]
                 ),
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             )

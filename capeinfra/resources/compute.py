@@ -8,6 +8,7 @@ import tempfile
 import urllib.request
 import zipfile
 from abc import abstractmethod
+from enum import Enum
 from io import BytesIO
 
 import pulumi_aws as aws
@@ -675,3 +676,68 @@ class CapeAwsManagedLambdaLayer(CapeLambdaLayer):
 
     def _make_layer(self):
         self._lambda_layer = self.LambdaLayerShim(self.arn)
+
+
+class CapeLambdaFunction(CapeComponentResource):
+    """Wrapper for an AWS Lambda function."""
+
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        invoke = "invoke"
+
+    def __init__(
+        self,
+        name,
+        role,
+        code,
+        handler,
+        runtime: str = "python3.10",
+        logging_config: aws.lambda_.FunctionLoggingConfigArgsDict | None = None,
+        environment: aws.lambda_.FunctionEnvironmentArgsDict | None = None,
+        **kwargs,
+    ):
+        """Constructor.
+
+        With the exception of `name` and `kwargs`, all args are passed to
+        pulumi_aws.lambda_.Function. See that class for documentation.
+        """
+        super().__init__(
+            "capeinfra:resources:compute:CapeLambdaFunction",
+            name,
+            **kwargs,
+        )
+
+        self.name = name
+
+        self.function = aws.lambda_.Function(
+            f"{self.name}-lmbd-fn",
+            role=role,
+            code=code,
+            runtime=runtime,
+            logging_config=logging_config,
+            handler=handler,
+            environment=environment,
+            opts=ResourceOptions(parent=self),
+            tags={"desc_name": (f"{self.desc_name} lambda function")},
+        )
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            self._policies[self.PolicyEnum.invoke] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "lambda:InvokeFunction",
+                    ],
+                }
+            ]
+        return self._policies
