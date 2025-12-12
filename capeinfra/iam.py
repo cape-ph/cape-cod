@@ -41,49 +41,6 @@ def get_service_assume_role(srvc: str | List[str]) -> str:
     )
 
 
-# TODO: need to lock this down to CAPE buckets, our account, etc
-def get_s3_api_proxy_policy(
-    principal: str | None = None,
-) -> str:
-    """Get a role policy statement for Get/List perms on s3 buckets.
-
-    Args:
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-    policy_dict = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": [
-                    # api for MPU
-                    "s3:AbortMultipartUpload",
-                    "s3:CreateMultipartUpload",
-                    "s3:UploadPart",
-                    "s3:CompleteMultipartUpload",
-                    "s3:ListParts",
-                    "s3:ListMultipartUploads",
-                    # general s3 actions needed by api
-                    "s3:PutObject",
-                    "s3:DeleteObject",
-                ],
-                "Resource": [
-                    f"arn:aws:s3:::*/*",
-                    f"arn:aws:s3:::*",
-                ],
-            }
-        ],
-    }
-
-    if principal is not None:
-        for stmnt in policy_dict["Statement"]:
-            stmnt.setdefault("Principal", principal)
-
-    return json.dumps(policy_dict)
-
-
 # TODO: this is what's needed in addition to at least some of the
 #       AthenaFullAccess aws managed policy attachment. we may want to pair down
 #       from the full access thing if we find it grants too much

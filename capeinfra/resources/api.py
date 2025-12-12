@@ -13,14 +13,16 @@ from pulumi import AssetArchive, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import (
+    add_resources,
+    aggregate_statements,
     get_api_lambda_authorizer_policy,
     get_api_policy,
     get_inline_role,
     get_inline_role2,
-    get_s3_api_proxy_policy,
     get_vpce_api_invoke_policy,
 )
 from capeinfra.resources.compute import CapePythonLambdaLayer
+from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
@@ -241,14 +243,40 @@ class CapeRestApi(CapeComponentResource):
         # TODO: ISSUE 245
         self._aws_proxy_roles = {}
 
-        self._aws_proxy_roles["s3"] = self._api_lambda_role = get_inline_role(
+        # the proxy role needs write on all tributary input-raw buckets to allow
+        # upload of files. so get a list of all those VersionedBuckets so we can
+        # construct that set of policy statements
+        trib_inputraw_buckets = list[VersionedBucket]()
+        for trib in capeinfra.data_lakehouse.tributaries:
+            trib_inputraw_buckets.extend(
+                trib.filter_buckets(prefix="input", suffix="raw")
+            )
+
+        self._aws_proxy_roles["s3"] = self._api_lambda_role = get_inline_role2(
             f"{self.name}-awsprxys3-role",
             (
                 f"{self.desc_name} {self.config.get('desc')} AWS S3 api integration proxy role"
             ),
             "apigw",
             "apigateway.amazonaws.com",
-            get_s3_api_proxy_policy(),
+            aggregate_statements(
+                [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies[
+                                VersionedBucket.PolicyEnum.multipart_upload
+                            ]
+                            + bucket.policies[VersionedBucket.PolicyEnum.write]
+                            + bucket.policies[
+                                VersionedBucket.PolicyEnum.delete
+                            ],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in trib_inputraw_buckets
+                ]
+            ),
         ).arn
 
     def _render_spec(self):
