@@ -1,5 +1,7 @@
 """Contains data lake related declarations."""
 
+from typing import List, Literal
+
 import pulumi_aws as aws
 from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
 
@@ -11,6 +13,11 @@ from capeinfra.resources.database import DynamoTable
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.resources.queue import SQSQueue
 from capepulumi import CapeComponentResource
+
+# aliases for prefixes and suffixes we expect for tributary buckets that have an
+# etl associated
+TributaryETLBucketIdPrefixes = Literal["input", "result"]
+TributaryETLBucketIdSuffixes = Literal["clean", "raw"]
 
 
 class DatalakeHouse(CapeComponentResource):
@@ -259,6 +266,44 @@ class Tributary(CapeComponentResource):
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs({"tributary_name": self.name})
+
+    def filter_buckets(
+        self,
+        prefix: (
+            List[TributaryETLBucketIdPrefixes] | TributaryETLBucketIdPrefixes
+        ) = ["input", "result"],
+        suffix: (
+            List[TributaryETLBucketIdSuffixes] | TributaryETLBucketIdSuffixes
+        ) = ["clean", "raw"],
+    ) -> list[VersionedBucket]:
+        """Return a subset of tributary buckets base on bucket id parts.
+
+        This is intended for use to get [input|result]-[raw|clean] bucket sets.
+        There is currently no rule that says there must be buckets with those
+        names in a tributary, but this method operates on only those values.
+
+        Args:
+            prefix: A bucket id prefix or list of prefixes to filter based on.
+            suffix: A bucket id suffix or list of suffixes to filter based on.
+
+        Returns:
+            A list of VersionedBuckets in the tributary matching the filters.
+        """
+        prefix = prefix if isinstance(prefix, list) else [prefix]
+        suffix = suffix if isinstance(suffix, list) else [suffix]
+
+        filtered_buckets = list[VersionedBucket]()
+
+        for bid, vb in self.buckets.items():
+            bid_parts = bid.split("-")
+            if len(bid_parts) != 2:
+                # if we don't have 2 parts here, the bucket name is not of the
+                # format we want to filter against
+                continue
+            if bid_parts[0] in prefix and bid_parts[1] in suffix:
+                filtered_buckets.append(vb)
+
+        return filtered_buckets
 
     def configure_bucket(
         self, bucket_id: str, crawler_attrs_ddb_table: DynamoTable
