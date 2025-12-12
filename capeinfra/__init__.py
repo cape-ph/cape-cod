@@ -1,5 +1,6 @@
 import pulumi
 
+from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.meta.capemeta import CapeMeta
 
 # get the stack name once since it's a function and we'll use this a bunch to
@@ -15,3 +16,9 @@ stack_ns = "".join([t[0] for t in CAPE_STACK_NS.split("-")])
 
 # general stack scaffolding
 meta = CapeMeta(f"{stack_ns}-meta", desc_name=f"{CAPE_STACK_NS} Meta ")
+
+# here there be data
+data_lakehouse = DatalakeHouse(
+    f"{stack_ns}-dlh",
+    desc_name=f"{CAPE_STACK_NS} private swimlane",
+)
