@@ -15,7 +15,6 @@ import capeinfra
 from capeinfra.iam import (
     add_resources,
     aggregate_statements,
-    get_api_lambda_authorizer_policy,
     get_api_policy,
     get_inline_role,
     get_inline_role2,

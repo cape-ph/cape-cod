@@ -418,59 +418,6 @@ def get_api_policy(grants: dict[str, list[Output]]):
     )
 
 
-# TODO: grants doesn't do anything here yet. Not sure what we'll add access to
-#       at this point
-def get_api_lambda_authorizer_policy(funct_arns: list[Output] | None = None):
-    """Get a role policy statement for the an API Lambda Authorizer.
-
-    The authorizer for an API will be given access as configured in
-    `grants`. Lambda logging will be unconditionally enabled without
-    configuration.
-
-    At present, `grants` is a placeholder and cannot be used to modify the
-    policy. This will change as the needs of the authorizers matures.
-
-
-    Args:
-        funct_arns: A list of lambda ARN Outputs
-
-    Returns:
-        The policy statement as a dictionary json encoded string.
-    """
-    stmnts = [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "logs:PutLogEvents",
-                "logs:CreateLogGroup",
-                "logs:CreateLogStream",
-            ],
-            "Resource": "arn:aws:logs:*:*:*",
-        },
-    ]
-
-    # TODO: figure out what the authorizer actually needs grants on
-
-    # add the table grants as configured
-    for fa in funct_arns or []:
-        stmnts.append(
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "lambda:InvokeFunction",
-                ],
-                "Resource": [f"{fa}"],
-            },
-        )
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": stmnts,
-        },
-    )
-
-
 # NOTE: done as a function for now because this pattern is in a number of
 #       places (lambda trigger functions, data crawlers, glue jobs, etc)
 def get_inline_role(
