@@ -18,7 +18,7 @@ from pulumi import (
 )
 
 import capeinfra
-from capeinfra.iam import get_athena_data_function_policy, get_inline_role
+from capeinfra.iam import get_inline_role2
 from capeinfra.resources.compute import (
     CapeAwsManagedLambdaLayer,
     CapeGHReleaseLambdaLayer,
@@ -845,7 +845,7 @@ class CapeCannedReports(CapeComponentResource):
         #       new perms will be needed per data function. not sure what that
         #       looks like right now (but will invlolve adding a policy where
         #       we currently pass None below)
-        report_role = get_inline_role(
+        report_role = get_inline_role2(
             f"{self.name}-{report_config['short_name']}-lmbd-role",
             (
                 f"{self.desc_name} {self.config.get('desc')} lambda role for "
@@ -853,7 +853,20 @@ class CapeCannedReports(CapeComponentResource):
             ),
             "lmbd",
             "lambda.amazonaws.com",
-            get_athena_data_function_policy(),
+            [  # TODO: migrate to getting policies from resources directly
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "s3:GetObject",
+                        "s3:PutObject",
+                        "s3:GetBucketLocation",
+                    ],
+                    "resources": [
+                        f"arn:aws:s3:::*/*",
+                        f"arn:aws:s3:::*",
+                    ],
+                },
+            ],
             [
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",

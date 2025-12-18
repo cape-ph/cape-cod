@@ -15,8 +15,7 @@ import capeinfra
 from capeinfra.iam import (
     add_resources,
     aggregate_statements,
-    get_api_policy,
-    get_inline_role,
+    get_api_statements,
     get_inline_role2,
     get_vpce_api_invoke_policy,
 )
@@ -167,14 +166,15 @@ class CapeRestApi(CapeComponentResource):
         #       read from DynamoDB in another, this role's policy must have both
         #       those grants). This may not be the long term implementation.
         # TODO: ISSUE 245
-        self._api_lambda_role = get_inline_role(
+        self._api_lambda_role = get_inline_role2(
             f"{self.name}-lmbd-role",
             f"{self.desc_name} {self.config.get('desc')} lambda role",
             "lmbd",
             "lambda.amazonaws.com",
+            # TODO: migrate policies into each policy granting resource
             Output.all(
                 grants=res_grants,
-            ).apply(lambda kwargs: get_api_policy(**kwargs)),
+            ).apply(lambda kwargs: get_api_statements(**kwargs)),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
