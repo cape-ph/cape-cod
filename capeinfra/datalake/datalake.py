@@ -6,7 +6,7 @@ import pulumi_aws as aws
 from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
-from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.resources.database import DynamoTable
@@ -439,7 +439,7 @@ class Tributary(CapeComponentResource):
         run_job_policy = jobs[0].policies[EtlJob.PolicyEnum.run_job]
 
         # get a role for the source bucket triggers
-        self.sqs_trigger_role = get_inline_role2(
+        self.sqs_trigger_role = get_inline_role(
             f"{self.name}-sqstrgrole",
             f"{self.desc_name} source data SQS trigger role",
             "lmbd",
@@ -518,7 +518,7 @@ class Tributary(CapeComponentResource):
         """
 
         # get a role for the source bucket trigger
-        self.src_bucket_trigger_role = get_inline_role2(
+        self.src_bucket_trigger_role = get_inline_role(
             f"{self.name}-s3trgrole",
             f"{self.desc_name} source data S3 bucket trigger role",
             "lmbd",

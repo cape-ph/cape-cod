@@ -16,7 +16,7 @@ from capeinfra.iam import (
     add_resources,
     aggregate_statements,
     get_api_statements,
-    get_inline_role2,
+    get_inline_role,
     get_vpce_api_invoke_policy,
 )
 from capeinfra.meta.capemeta import CapeMeta
@@ -119,7 +119,7 @@ class CapeRestApi(CapeComponentResource):
             f"{self.name}-loggrp",
         )
 
-        self._log_role = get_inline_role2(
+        self._log_role = get_inline_role(
             f"{self.name}-logrl",
             f"{self.desc_name} API Logging Role",
             "apigw",
@@ -166,7 +166,7 @@ class CapeRestApi(CapeComponentResource):
         #       read from DynamoDB in another, this role's policy must have both
         #       those grants). This may not be the long term implementation.
         # TODO: ISSUE 245
-        self._api_lambda_role = get_inline_role2(
+        self._api_lambda_role = get_inline_role(
             f"{self.name}-lmbd-role",
             f"{self.desc_name} {self.config.get('desc')} lambda role",
             "lmbd",
@@ -252,7 +252,7 @@ class CapeRestApi(CapeComponentResource):
                 trib.filter_buckets(prefix="input", suffix="raw")
             )
 
-        self._aws_proxy_roles["s3"] = self._api_lambda_role = get_inline_role2(
+        self._aws_proxy_roles["s3"] = self._api_lambda_role = get_inline_role(
             f"{self.name}-awsprxys3-role",
             (
                 f"{self.desc_name} {self.config.get('desc')} AWS S3 api integration proxy role"
@@ -408,7 +408,7 @@ class CapeRestApi(CapeComponentResource):
             self._authorizers[authz_name].update(authorizer_def)
 
             # create a role for the authorizer (lambda function)
-            authorizer_lambda_role = get_inline_role2(
+            authorizer_lambda_role = get_inline_role(
                 f"{self.name}-{authorizer_name}-lmbd-role",
                 (
                     f"{self.desc_name} {self.config.get('desc')} "
@@ -469,7 +469,7 @@ class CapeRestApi(CapeComponentResource):
             #       will change (e.g. the authorizer may need to hit an identity
             #       pool or something) in which case this role (and a policy doc
             #       that grants the access needed) will be required
-            self._authorizers[authz_name]["role"] = get_inline_role2(
+            self._authorizers[authz_name]["role"] = get_inline_role(
                 f"{self.name}-{authorizer_name}-authz-role",
                 (
                     f"{self.desc_name} {self.config.get('desc')} "

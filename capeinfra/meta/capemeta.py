@@ -18,7 +18,7 @@ from pulumi import (
 )
 
 import capeinfra
-from capeinfra.iam import get_inline_role2
+from capeinfra.iam import get_inline_role
 from capeinfra.resources.compute import (
     CapeAwsManagedLambdaLayer,
     CapeGHReleaseLambdaLayer,
@@ -845,7 +845,7 @@ class CapeCannedReports(CapeComponentResource):
         #       new perms will be needed per data function. not sure what that
         #       looks like right now (but will invlolve adding a policy where
         #       we currently pass None below)
-        report_role = get_inline_role2(
+        report_role = get_inline_role(
             f"{self.name}-{report_config['short_name']}-lmbd-role",
             (
                 f"{self.desc_name} {self.config.get('desc')} lambda role for "

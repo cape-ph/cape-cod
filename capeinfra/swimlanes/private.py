@@ -19,7 +19,7 @@ from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
-    get_inline_role2,
+    get_inline_role,
     get_instance_profile,
     get_vpce_api_invoke_policy,
 )
@@ -742,7 +742,7 @@ class PrivateSwimlane(ScopedSwimlane):
             ":".join(services) if services else "<NO SERVICES CONFIGURED>"
         )
 
-        ec2_role = get_inline_role2(
+        ec2_role = get_inline_role(
             f"{self.basename}-ec2role-{disemvowel(ia_name)}",
             f"{self.desc_name} EC2 instance role for {desc_services} access",
             "ec2",

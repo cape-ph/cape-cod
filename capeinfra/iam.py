@@ -353,7 +353,7 @@ def aggregate_statements(statements):
 
 # NOTE: done as a function for now because this pattern is in a number of
 #       places (lambda trigger functions, data crawlers, glue jobs, etc)
-def get_inline_role2(
+def get_inline_role(
     name: str,
     desc_name: str,
     srvc_prfx: str,

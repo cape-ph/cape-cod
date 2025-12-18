@@ -7,7 +7,7 @@ import pulumi_aws as aws
 from pulumi import ResourceOptions
 
 import capeinfra
-from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
@@ -81,7 +81,7 @@ class DataCrawler(CapeComponentResource):
         )
 
         # get a role for the crawler
-        self.crawler_role = get_inline_role2(
+        self.crawler_role = get_inline_role(
             self.name,
             f"{self.desc_name} data crawler role",
             "",
@@ -184,7 +184,7 @@ class EtlJob(CapeComponentResource):
         self.src_bucket = src_bucket
         self.sink_bucket = sink_bucket
 
-        self.etl_role = get_inline_role2(
+        self.etl_role = get_inline_role(
             self.name,
             f"{self.desc_name} ETL job role",
             "",
