@@ -248,58 +248,6 @@ def get_vpce_api_invoke_policy(
     )
 
 
-def get_nextflow_executor_policy() -> str:
-    """Get a role policy statement for an EC2 instance of Nextflow.
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "batch:CancelJob",
-                        "batch:DescribeComputeEnvironments",
-                        "batch:DescribeJobDefinitions",
-                        "batch:DescribeJobQueues",
-                        "batch:DescribeJobs",
-                        "batch:ListJobs",
-                        "batch:RegisterJobDefinition",
-                        "batch:SubmitJob",
-                        "batch:TagResource",
-                        "batch:TerminateJob",
-                        "ec2:DescribeInstanceAttribute",
-                        "ec2:DescribeInstanceStatus",
-                        "ec2:DescribeInstanceTypes",
-                        "ec2:DescribeInstances",
-                        "ecr:BatchCheckLayerAvailability",
-                        "ecr:BatchGetImage",
-                        "ecr:DescribeImageScanFindings",
-                        "ecr:DescribeImages",
-                        "ecr:DescribeRepositories",
-                        "ecr:GetAuthorizationToken",
-                        "ecr:GetDownloadUrlForLayer",
-                        "ecr:GetLifecyclePolicy",
-                        "ecr:GetLifecyclePolicyPreview",
-                        "ecr:GetRepositoryPolicy",
-                        "ecr:ListImages",
-                        "ecr:ListTagsForResource",
-                        "ecs:DescribeContainerInstances",
-                        "ecs:DescribeTasks",
-                        "logs:GetLogEvents",
-                        "s3:*",
-                    ],
-                    "Resource": ["*"],
-                },
-            ],
-        },
-    )
-
-
 # TODO: ISSUE #TBD trying to get this a little more generalized than when it
 #       only existed for the DAP api (which needed the table/queue access this
 #       function currently gives). It'd be great if this was totally
@@ -487,26 +435,6 @@ def get_inline_role(
     return inline_role
 
 
-def get_instance_profile(
-    name: str,
-    role: aws.iam.Role,
-    name_suffix: str | None = None,
-) -> aws.iam.InstanceProfile:
-    """Get an instance profile for the given role
-
-    Args:
-        role: The role in which to generate an instance profile for
-
-    Returns:
-        The instance profile
-    """
-    return aws.iam.InstanceProfile(
-        f"{name}-instnc-prfl{('-'+ name_suffix) if name_suffix else ''}",
-        role=role.name,
-        opts=ResourceOptions(parent=role),
-    )
-
-
 def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
     """Get a role policy statement for reading dynamodb and sqs.
 
@@ -593,6 +521,11 @@ def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
             ],
         },
     )
+
+
+# ======================
+# NEW IAM MODULE BELOW
+# ======================
 
 
 def add_resources(
@@ -687,3 +620,23 @@ def get_inline_role2(
         )
 
     return inline_role
+
+
+def get_instance_profile(
+    name: str,
+    role: aws.iam.Role,
+    name_suffix: str | None = None,
+) -> aws.iam.InstanceProfile:
+    """Get an instance profile for the given role
+
+    Args:
+        role: The role in which to generate an instance profile for
+
+    Returns:
+        The instance profile
+    """
+    return aws.iam.InstanceProfile(
+        f"{name}-instnc-prfl{('-'+ name_suffix) if name_suffix else ''}",
+        role=role.name,
+        opts=ResourceOptions(parent=role),
+    )

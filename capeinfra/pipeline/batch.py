@@ -5,7 +5,7 @@ import json
 import pulumi_aws as aws
 from pulumi import Input, ResourceOptions
 
-from capeinfra.iam import get_inline_role, get_instance_profile
+from capeinfra.iam import get_inline_role2, get_instance_profile
 from capeinfra.pipeline.ecr import ContainerRepository
 from capepulumi import CapeComponentResource
 
@@ -104,7 +104,7 @@ class BatchCompute(CapeComponentResource):
         self.name = f"{name}"
 
         # get a role for the crawler
-        self.service_role = get_inline_role(
+        self.service_role = get_inline_role2(
             f"{self.name}-srvc",
             f"{self.desc_name} AWS batch service role",
             "",
@@ -113,7 +113,7 @@ class BatchCompute(CapeComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        self.instance_role = get_inline_role(
+        self.instance_role = get_inline_role2(
             f"{self.name}-instnc",
             f"{self.desc_name} AWS batch instance role",
             "",

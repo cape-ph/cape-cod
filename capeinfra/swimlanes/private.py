@@ -7,9 +7,7 @@ import json
 
 import pulumi_aws as aws
 from pulumi import (
-    AssetArchive,
     Config,
-    FileAsset,
     Output,
     ResourceOptions,
     warn,
@@ -21,10 +19,8 @@ from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.iam import (
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
-    get_inline_role,
+    get_inline_role2,
     get_instance_profile,
-    get_nextflow_executor_policy,
-    get_sqs_lambda_dap_submit_policy,
     get_vpce_api_invoke_policy,
 )
 from capeinfra.pipeline.dapregistry import DAPRegistry
@@ -158,7 +154,6 @@ class PrivateSwimlane(ScopedSwimlane):
         capeinfra.meta.principals.add_principals()
         self._create_hosted_domain()
         self.create_vpn()
-        self.prepare_nextflow_executor()
 
     @property
     def type_name(self) -> str:
@@ -689,6 +684,8 @@ class PrivateSwimlane(ScopedSwimlane):
             The instance profile with the specified grants
         """
 
+        # TODO: Update statements to be more restrictive and belong to a
+        # specific entity and service
         statements = []
         policy_attachments = []
 
@@ -745,21 +742,12 @@ class PrivateSwimlane(ScopedSwimlane):
             ":".join(services) if services else "<NO SERVICES CONFIGURED>"
         )
 
-        ec2_role = get_inline_role(
+        ec2_role = get_inline_role2(
             f"{self.basename}-ec2role-{disemvowel(ia_name)}",
             f"{self.desc_name} EC2 instance role for {desc_services} access",
             "ec2",
             "ec2.amazonaws.com",
-            (
-                None  # no role policy if no statements
-                if not statements
-                else json.dumps(
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": statements,
-                    }
-                )
-            ),
+            statements or None,
             policy_attachments,
             opts=ResourceOptions(parent=self),
         )
@@ -943,51 +931,5 @@ class PrivateSwimlane(ScopedSwimlane):
                 target_vpc_subnet_id=sn.id,
                 opts=ResourceOptions(
                     depends_on=[subnet_association, auth_rule_inet]
-                ),
-            )
-
-    # TODO: ISSUE #115
-    # Generalize this to work for all "head node"/"job submission"-like EC2
-    # instances that spin up AWS Batch jobs. Currently it's very specific to
-    # Nextflow and the policy it requires
-    def prepare_nextflow_executor(self):
-        """Creates necessary resources for our nextflow EC2 instance."""
-
-        self.nextflow_role = get_inline_role(
-            f"{self.basename}-nxtflw",
-            f"{self.desc_name} instance role for nextflow kickoff instance",
-            "ec2",
-            "ec2.amazonaws.com",
-            role_policy=get_nextflow_executor_policy(),
-        )
-        aws.iam.RolePolicyAttachment(
-            f"{self.basename}-instnc-ssmvcroleatch",
-            role=self.nextflow_role.name,
-            policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-            opts=ResourceOptions(parent=self),
-        )
-        self.nextflow_role_profile = get_instance_profile(
-            f"{self.basename}-nxtflw-instnc-rl", self.nextflow_role
-        )
-
-        for env_name in self.compute_environments:
-            compute_environment = self.compute_environments[env_name]
-            compute_environment.instance_role.arn
-            aws.iam.RolePolicy(
-                f"{self.basename}-nxtflow-pass-{env_name}-plcy",
-                role=self.nextflow_role.id,
-                policy=compute_environment.instance_role.arn.apply(
-                    lambda arn: json.dumps(
-                        {
-                            "Version": "2012-10-17",
-                            "Statement": [
-                                {
-                                    "Effect": "Allow",
-                                    "Action": "iam:PassRole",
-                                    "Resource": arn,
-                                }
-                            ],
-                        }
-                    )
                 ),
             )
