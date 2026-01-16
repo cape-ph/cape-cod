@@ -10,6 +10,7 @@ import pulumi_aws as aws
 from boto3.dynamodb.types import TypeSerializer
 from pulumi import (
     AssetArchive,
+    Config,
     FileArchive,
     FileAsset,
     Output,
@@ -45,6 +46,15 @@ class CapeMeta(CapeComponentResource):
             config="meta",
             **kwargs,
         )
+
+        # TODO: we have a few different places instantiating the main config
+        #       to get this value (datalake and private swimlane at least) and
+        #       really should just have one way to get it. since a lot of places
+        #       follow the pattern of importing capeinfra which exports an
+        #       instantiation of this class, that seems a pretty natural way to
+        #       get there.
+        self.region = Config("aws").require("region")
+
         self.automation_assets_bucket = VersionedBucket(
             f"{name}-assets-vbkt",
             desc_name=f"{self.desc_name} automation assets",
@@ -74,7 +84,7 @@ class CapeMeta(CapeComponentResource):
 
         self.capepy = CapePy(self.automation_assets_bucket)
         self.principals = CapePrincipals(
-            config=self.config.get("principals", default={})
+            self.region, config=self.config.get("principals", default={})
         )
 
         # We also need to register all the expected outputs for this component
@@ -191,6 +201,16 @@ class CapePy(CapeComponentResource):
         )
 
 
+# TODO: this class name made sense when we were just adding users and groups
+#       with a user pool. now that we're adding external identity providers it's
+#       less ideal of a name (though principals is still fine for the user/group
+#       part of what this does. That said we have a lot going on on a couple of
+#       branches that already make it hard to see what's changing between
+#       deployments, and this would add to the noise by changing the
+#       "capeinfra:meta:capemeta:CapePrincipals" namespace which then changes a
+#       bunch of sub components. so for now we'll leave the name and add IdPs to
+#       this. then when things calm down a little we can look at renaming this
+#       to make sense.
 class CapePrincipals(CapeComponentResource):
     """Class that handles config-based local user and group creation/association."""
 
@@ -205,6 +225,7 @@ class CapePrincipals(CapeComponentResource):
             The default config dict for the user/group config
         """
         return {
+            "idps": [],
             "groups": {
                 "Admins": {
                     "description": "CAPE administrators group.",
@@ -220,7 +241,7 @@ class CapePrincipals(CapeComponentResource):
             ],
         }
 
-    def __init__(self, **kwargs):
+    def __init__(self, region, **kwargs):
         self.name = "cape-principals"
         super().__init__(
             "capeinfra:meta:capemeta:CapePrincipals",
@@ -228,6 +249,8 @@ class CapePrincipals(CapeComponentResource):
             desc_name="Resources for user management in the CAPE infrastructure",
             **kwargs,
         )
+
+        self.region = region
 
         self.user_pool = aws.cognito.UserPool(
             "cape-users",
@@ -248,6 +271,12 @@ class CapePrincipals(CapeComponentResource):
             },
             auto_verified_attributes=["email"],
             username_attributes=["email"],
+            region=self.region,
+            # TODO: we'll use the lambda_config member to setup the post-authn
+            #       trigger that will write a user record to our CAPE database.
+            #       see: https://www.pulumi.com/registry/packages/aws/api-docs/cognito/userpool/#userpoollambdaconfig
+            #       obviously we'll need to setup the function and role for it
+            #       as well.
         )
         self.user_pool_domain = aws.cognito.UserPoolDomain(
             f"{capeinfra.stack_ns}-cape-users-domain",
@@ -263,6 +292,39 @@ class CapePrincipals(CapeComponentResource):
 
         # make the DDB table for the user attributes
         self.create_user_attribute_store()
+
+    def add_idps(self):
+        """Add identity providers based on configuration."""
+        # TODO: not real sure if we'll need to keep this info around for any
+        #       reason yet. if we don't need it then we can just remove this
+        #       member (and stop writing to it in the loop below)
+        self.idps = {}
+
+        for idpcfg in self.config.get("idps", default=[]):
+            # TODO: configure external providers with IdentifyProvider from
+            #       config
+            idpname = idpcfg["name"]
+            idptype = idpcfg["type"]
+            self.idps[idpname] = {
+                idptype: aws.cognito.IdentityProvider(
+                    f"cape-idp-{idpname}-{idptype}",
+                    provider_details={
+                        # TODO: need to get this for realz
+                    },
+                    provider_name=idpname,
+                    provider_type=idptype,
+                    user_pool_id=self.user_pool.id,
+                    attribute_mapping={
+                        # TODO: need to get this for realz
+                    },
+                    # TODO: these are friendly ids that can be used in addition
+                    #       to the IdP name to reference this IdP. may or may
+                    #       not actually want to use this.
+                    idp_identifiers=[],
+                    region=self.region,
+                    opts=ResourceOptions(parent=self),
+                )
+            }
 
     def add_principals(self):
         """"""
