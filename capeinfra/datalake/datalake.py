@@ -10,7 +10,7 @@ from capeinfra.iam import add_resources, aggregate_statements, get_inline_role
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.resources.database import DynamoTable
-from capeinfra.resources.objectstorage import VersionedBucket
+from capeinfra.resources.objectstorage import Bucket, VersionedBucket
 from capeinfra.resources.queue import SQSQueue
 from capepulumi import CapeComponentResource
 
@@ -62,10 +62,10 @@ class DatalakeHouse(CapeComponentResource):
         # NOTE: this object storage will change often and the concept of
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
-        self.catalog_bucket = aws.s3.Bucket(
+        self.catalog_bucket = Bucket(
             f"{catalog_name}-s3",
+            desc_name=f"{self.desc_name} data catalog",
             opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} data catalog s3 bucket"},
         )
 
         athena_prefix = f"{self.name}-athena"
@@ -74,17 +74,17 @@ class DatalakeHouse(CapeComponentResource):
         # NOTE: this object storage will change often and the concept of
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
-        self.athena_results_bucket = aws.s3.Bucket(
+        self.athena_results_bucket = Bucket(
             f"{athena_prefix}-s3",
             opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} athena results s3 bucket"},
+            desc_name=f"{self.desc_name} athena results",
         )
         aws.athena.Workgroup(
             f"{athena_prefix}-wrkgrp",
             configuration=aws.athena.WorkgroupConfigurationArgs(
                 enforce_workgroup_configuration=True,
                 result_configuration=aws.athena.WorkgroupConfigurationResultConfigurationArgs(
-                    output_location=self.athena_results_bucket.bucket.apply(
+                    output_location=self.athena_results_bucket.bucket.bucket.apply(
                         lambda b: f"s3://{b}/output"
                     )
                 ),
@@ -168,7 +168,7 @@ class CatalogDatabase(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        bucket: aws.s3.Bucket,
+        bucket: Bucket,
         location="database",
         *args,
         **kwargs,
@@ -182,7 +182,9 @@ class CatalogDatabase(CapeComponentResource):
 
         self.catalog_database = aws.glue.CatalogDatabase(
             self.name,
-            location_uri=bucket.bucket.apply(lambda b: f"s3://{b}/{location}"),
+            location_uri=bucket.bucket.bucket.apply(
+                lambda b: f"s3://{b}/{location}"
+            ),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Catalog Database"},
         )
@@ -209,7 +211,7 @@ class Tributary(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        catalog_bucket: aws.s3.Bucket,
+        catalog_bucket: Bucket,
         etl_attrs_ddb_table: DynamoTable,
         crawler_attrs_ddb_table: DynamoTable,
         aws_region: str,
