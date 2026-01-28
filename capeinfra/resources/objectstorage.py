@@ -65,7 +65,10 @@ class Bucket(CapeComponentResource):
                 list[aws.iam.GetPolicyDocumentStatementArgsDict],
             ]()
             self._policies[self.PolicyEnum.read] = [
-                {"effect": "Allow", "actions": ["s3:GetObject"]}
+                {
+                    "effect": "Allow",
+                    "actions": ["s3:GetObject", "s3:GetBucketLocation"],
+                }
             ]
             self._policies[self.PolicyEnum.write] = [
                 {"effect": "Allow", "actions": ["s3:PutObject"]}

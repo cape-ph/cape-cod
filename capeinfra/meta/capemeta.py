@@ -18,7 +18,7 @@ from pulumi import (
 )
 
 import capeinfra
-from capeinfra.iam import get_inline_role
+from capeinfra.iam import add_resources, get_inline_role
 from capeinfra.resources.compute import (
     CapeAwsManagedLambdaLayer,
     CapeGHReleaseLambdaLayer,
@@ -853,20 +853,16 @@ class CapeCannedReports(CapeComponentResource):
             ),
             "lmbd",
             "lambda.amazonaws.com",
-            [  # TODO: migrate to getting policies from resources directly
-                {
-                    "effect": "Allow",
-                    "actions": [
-                        "s3:GetObject",
-                        "s3:PutObject",
-                        "s3:GetBucketLocation",
+            self.assets_bucket.bucket.arn.apply(
+                lambda arn: add_resources(
+                    self.assets_bucket.policies[VersionedBucket.PolicyEnum.read]
+                    + self.assets_bucket.policies[
+                        VersionedBucket.PolicyEnum.write
                     ],
-                    "resources": [
-                        f"arn:aws:s3:::*/*",
-                        f"arn:aws:s3:::*",
-                    ],
-                },
-            ],
+                    f"{arn}/*",
+                    arn,
+                )
+            ),
             [
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
