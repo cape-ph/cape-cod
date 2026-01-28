@@ -90,8 +90,10 @@ class DataCrawler(CapeComponentResource):
                 [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
-                            bucket.policies[bucket.PolicyEnum.read]
-                            + bucket.policies[bucket.PolicyEnum.browse],
+                            bucket.policies[VersionedBucket.PolicyEnum.read]
+                            + bucket.policies[
+                                VersionedBucket.PolicyEnum.browse
+                            ],
                             f"{arn}/*",
                             arn,
                         )
