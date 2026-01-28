@@ -6,17 +6,14 @@ This includes the private VPC, API/VPC endpoints and other top-level resources.
 import json
 
 import pulumi_aws as aws
-from pulumi import (
-    Config,
-    Output,
-    ResourceOptions,
-    warn,
-)
+from pulumi import Config, Output, ResourceOptions, warn
 from pulumi_synced_folder import S3BucketFolder
 
 import capeinfra
 from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.iam import (
+    add_resources,
+    aggregate_statements,
     get_bucket_reader_policy,
     get_bucket_web_host_policy,
     get_inline_role,
@@ -29,7 +26,7 @@ from capeinfra.pipeline.dapregistry import DAPRegistry
 #       handling.
 from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
-from capeinfra.resources.objectstorage import VersionedBucket
+from capeinfra.resources.objectstorage import Bucket, VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane, SubnetType
 from capeinfra.util.file import file_as_string
 from capeinfra.util.jinja2 import (
@@ -691,19 +688,17 @@ class PrivateSwimlane(ScopedSwimlane):
 
         if "athena" in services:
             # TODO: issue #185
+            athena_bucket = capeinfra.data_lakehouse.athena_results_bucket
             statements.append(
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:GetObject",
-                        "s3:ListBucket",
-                        "s3:PutObject",
-                    ],
-                    "Resource": [
-                        "arn:aws:s3:::*/*",
-                        "arn:aws:s3:::*",
-                    ],
-                }
+                athena_bucket.bucket.arn.apply(
+                    lambda arn: add_resources(
+                        athena_bucket.policies[Bucket.PolicyEnum.read]
+                        + athena_bucket.policies[Bucket.PolicyEnum.write]
+                        + athena_bucket.policies[Bucket.PolicyEnum.browse],
+                        f"{arn}/*",
+                        arn,
+                    )
+                )
             )
             policy_attachments.append(
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
@@ -719,17 +714,21 @@ class PrivateSwimlane(ScopedSwimlane):
             #                    resource we're allowing for reading. In this
             #                    case (at time of writing) it's the meta bucket
             #                    (probably with a specific prefix)
+            # TODO: NEED CLARIFICATION ON WHAT BUCKET THIS IS ACCESSING TO
+            # MIGRATE TO BUCKET POLICY FORMAT
             statements.append(
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:GetObject",
-                    ],
-                    "Resource": [
-                        "arn:aws:s3:::*/*",
-                        "arn:aws:s3:::*",
-                    ],
-                }
+                [
+                    {
+                        "effect": "Allow",
+                        "actions": [
+                            "s3:GetObject",
+                        ],
+                        "resources": [
+                            "arn:aws:s3:::*/*",
+                            "arn:aws:s3:::*",
+                        ],
+                    }
+                ]
             )
             # NOTE: this may need to change. right now we just need EC2
             #       instances specified with `s3` service to be read only.
@@ -747,7 +746,7 @@ class PrivateSwimlane(ScopedSwimlane):
             f"{self.desc_name} EC2 instance role for {desc_services} access",
             "ec2",
             "ec2.amazonaws.com",
-            statements or None,
+            statements and aggregate_statements(statements) or None,
             policy_attachments,
             opts=ResourceOptions(parent=self),
         )
