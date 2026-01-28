@@ -714,8 +714,8 @@ class PrivateSwimlane(ScopedSwimlane):
             #                    resource we're allowing for reading. In this
             #                    case (at time of writing) it's the meta bucket
             #                    (probably with a specific prefix)
-            # TODO: NEED CLARIFICATION ON WHAT BUCKET THIS IS ACCESSING TO
-            # MIGRATE TO BUCKET POLICY FORMAT
+            # TODO: Clean this up after migrating exposed environment variable (issue #309)
+            #       implementation to using component lookups and policies
             statements.append(
                 [
                     {
