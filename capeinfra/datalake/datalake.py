@@ -1,16 +1,23 @@
 """Contains data lake related declarations."""
 
+from typing import List, Literal
+
 import pulumi_aws as aws
 from pulumi import AssetArchive, Config, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
-from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.resources.database import DynamoTable
-from capeinfra.resources.objectstorage import VersionedBucket
+from capeinfra.resources.objectstorage import Bucket, VersionedBucket
 from capeinfra.resources.queue import SQSQueue
 from capepulumi import CapeComponentResource
+
+# aliases for prefixes and suffixes we expect for tributary buckets that have an
+# etl associated
+TributaryETLBucketIdPrefixes = Literal["input", "result"]
+TributaryETLBucketIdSuffixes = Literal["clean", "raw"]
 
 
 class DatalakeHouse(CapeComponentResource):
@@ -55,10 +62,10 @@ class DatalakeHouse(CapeComponentResource):
         # NOTE: this object storage will change often and the concept of
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
-        self.catalog_bucket = aws.s3.Bucket(
+        self.catalog_bucket = Bucket(
             f"{catalog_name}-s3",
+            desc_name=f"{self.desc_name} data catalog",
             opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} data catalog s3 bucket"},
         )
 
         athena_prefix = f"{self.name}-athena"
@@ -67,17 +74,17 @@ class DatalakeHouse(CapeComponentResource):
         # NOTE: this object storage will change often and the concept of
         #       versions of the database doesn't really make sense. so
         #       this is not versioned object storage
-        self.athena_results_bucket = aws.s3.Bucket(
+        self.athena_results_bucket = Bucket(
             f"{athena_prefix}-s3",
             opts=ResourceOptions(parent=self),
-            tags={"desc_name": f"{self.desc_name} athena results s3 bucket"},
+            desc_name=f"{self.desc_name} athena results",
         )
         aws.athena.Workgroup(
             f"{athena_prefix}-wrkgrp",
             configuration=aws.athena.WorkgroupConfigurationArgs(
                 enforce_workgroup_configuration=True,
                 result_configuration=aws.athena.WorkgroupConfigurationResultConfigurationArgs(
-                    output_location=self.athena_results_bucket.bucket.apply(
+                    output_location=self.athena_results_bucket.bucket.bucket.apply(
                         lambda b: f"s3://{b}/output"
                     )
                 ),
@@ -161,7 +168,7 @@ class CatalogDatabase(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        bucket: aws.s3.Bucket,
+        bucket: Bucket,
         location="database",
         *args,
         **kwargs,
@@ -175,7 +182,9 @@ class CatalogDatabase(CapeComponentResource):
 
         self.catalog_database = aws.glue.CatalogDatabase(
             self.name,
-            location_uri=bucket.bucket.apply(lambda b: f"s3://{b}/{location}"),
+            location_uri=bucket.bucket.bucket.apply(
+                lambda b: f"s3://{b}/{location}"
+            ),
             opts=ResourceOptions(parent=self),
             tags={"desc_name": self.desc_name or "AWS Glue Catalog Database"},
         )
@@ -202,7 +211,7 @@ class Tributary(CapeComponentResource):
     def __init__(
         self,
         name: str,
-        catalog_bucket: aws.s3.Bucket,
+        catalog_bucket: Bucket,
         etl_attrs_ddb_table: DynamoTable,
         crawler_attrs_ddb_table: DynamoTable,
         aws_region: str,
@@ -259,6 +268,44 @@ class Tributary(CapeComponentResource):
         # We also need to register all the expected outputs for this component
         # resource that will get returned by default.
         self.register_outputs({"tributary_name": self.name})
+
+    def filter_buckets(
+        self,
+        prefix: (
+            List[TributaryETLBucketIdPrefixes] | TributaryETLBucketIdPrefixes
+        ) = ["input", "result"],
+        suffix: (
+            List[TributaryETLBucketIdSuffixes] | TributaryETLBucketIdSuffixes
+        ) = ["clean", "raw"],
+    ) -> list[VersionedBucket]:
+        """Return a subset of tributary buckets base on bucket id parts.
+
+        This is intended for use to get [input|result]-[raw|clean] bucket sets.
+        There is currently no rule that says there must be buckets with those
+        names in a tributary, but this method operates on only those values.
+
+        Args:
+            prefix: A bucket id prefix or list of prefixes to filter based on.
+            suffix: A bucket id suffix or list of suffixes to filter based on.
+
+        Returns:
+            A list of VersionedBuckets in the tributary matching the filters.
+        """
+        prefix = prefix if isinstance(prefix, list) else [prefix]
+        suffix = suffix if isinstance(suffix, list) else [suffix]
+
+        filtered_buckets = list[VersionedBucket]()
+
+        for bid, vb in self.buckets.items():
+            bid_parts = bid.split("-")
+            if len(bid_parts) != 2:
+                # if we don't have 2 parts here, the bucket name is not of the
+                # format we want to filter against
+                continue
+            if bid_parts[0] in prefix and bid_parts[1] in suffix:
+                filtered_buckets.append(vb)
+
+        return filtered_buckets
 
     def configure_bucket(
         self, bucket_id: str, crawler_attrs_ddb_table: DynamoTable
@@ -394,7 +441,7 @@ class Tributary(CapeComponentResource):
         run_job_policy = jobs[0].policies[EtlJob.PolicyEnum.run_job]
 
         # get a role for the source bucket triggers
-        self.sqs_trigger_role = get_inline_role2(
+        self.sqs_trigger_role = get_inline_role(
             f"{self.name}-sqstrgrole",
             f"{self.desc_name} source data SQS trigger role",
             "lmbd",
@@ -473,7 +520,7 @@ class Tributary(CapeComponentResource):
         """
 
         # get a role for the source bucket trigger
-        self.src_bucket_trigger_role = get_inline_role2(
+        self.src_bucket_trigger_role = get_inline_role(
             f"{self.name}-s3trgrole",
             f"{self.desc_name} source data S3 bucket trigger role",
             "lmbd",

@@ -10,8 +10,8 @@ from pulumi import Archive, Asset, ResourceOptions, log
 from capepulumi import CapeComponentResource
 
 
-class VersionedBucket(CapeComponentResource):
-    """An object storage location with versioning turned on."""
+class Bucket(CapeComponentResource):
+    """An object storage location."""
 
     class PolicyEnum(str, Enum):
         """Enum of supported policy names for this component."""
@@ -22,10 +22,12 @@ class VersionedBucket(CapeComponentResource):
         browse = "browse"
         multipart_upload = "multipart_upload"
 
-    def __init__(self, name, bucket_name=None, cors_rules=None, **kwargs):
+    def __init__(
+        self, name, bucket_type="", bucket_name=None, cors_rules=None, **kwargs
+    ):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
-            "capeinfra:resources:objectstorage:S3VersionedBucket",
+            f"capeinfra:resources:objectstorage:S3{bucket_type}Bucket",
             name,
             **kwargs,
         )
@@ -37,15 +39,6 @@ class VersionedBucket(CapeComponentResource):
             bucket=bucket_name,
             opts=ResourceOptions(parent=self),
             tags={"desc_name": f"{self.desc_name} S3 Bucket"},
-        )
-
-        self.versioning = aws.s3.BucketVersioning(
-            f"{self.name}-vrsn",
-            bucket=self.bucket.id,
-            versioning_configuration=aws.s3.BucketVersioningVersioningConfigurationArgs(
-                status="Enabled",
-            ),
-            opts=ResourceOptions(parent=self),
         )
 
         self.cors_policy = None
@@ -72,7 +65,10 @@ class VersionedBucket(CapeComponentResource):
                 list[aws.iam.GetPolicyDocumentStatementArgsDict],
             ]()
             self._policies[self.PolicyEnum.read] = [
-                {"effect": "Allow", "actions": ["s3:GetObject"]}
+                {
+                    "effect": "Allow",
+                    "actions": ["s3:GetObject", "s3:GetBucketLocation"],
+                }
             ]
             self._policies[self.PolicyEnum.write] = [
                 {"effect": "Allow", "actions": ["s3:PutObject"]}
@@ -173,3 +169,23 @@ class VersionedBucket(CapeComponentResource):
                 return None
 
         return self.bucket.id.apply(lambda i: apply_fnct(i))
+
+
+class VersionedBucket(Bucket):
+    """An object storage location with versioning turned on."""
+
+    def __init__(self, name, **kwargs):
+        super().__init__(
+            name,
+            bucket_type="Versioned",
+            **kwargs,
+        )
+
+        self.versioning = aws.s3.BucketVersioning(
+            f"{self.name}-vrsn",
+            bucket=self.bucket.id,
+            versioning_configuration=aws.s3.BucketVersioningVersioningConfigurationArgs(
+                status="Enabled",
+            ),
+            opts=ResourceOptions(parent=self),
+        )

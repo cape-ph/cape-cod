@@ -18,12 +18,14 @@ from pulumi import (
 )
 
 import capeinfra
-from capeinfra.iam import get_athena_data_function_policy, get_inline_role
+from capeinfra.iam import add_resources, get_inline_role
 from capeinfra.resources.compute import (
     CapeAwsManagedLambdaLayer,
     CapeGHReleaseLambdaLayer,
+    CapeLambdaFunction,
     CapePythonLambdaLayer,
 )
+from capeinfra.resources.database import DynamoTable
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource
@@ -782,6 +784,8 @@ class CapeCannedReports(CapeComponentResource):
         self._template_prefix = self.config.get("template_prefix")
         report_cfgs = self.config.get("reports")
 
+        self.report_data_functions = []
+
         if not report_cfgs:
             # NOTE: we can take this opportunity to *not* deploy stuff like the
             #       dynamo table containing canned report metadata if we want to
@@ -808,30 +812,17 @@ class CapeCannedReports(CapeComponentResource):
         #       public internet). VPC endpoint is arguably more secure and
         #       performant as it's a direct connection to Dynamo from our
         #       clients, but it adds cost.
-        self.canned_report_ddb_table = aws.dynamodb.Table(
-            f"{self.name}-cnndrprts-ddb",
+
+        self.canned_report_ddb_table = DynamoTable(
             name=f"{self.name}-CannedReportsStore",
-            # NOTE: this table will be accessed as needed to fetch canned report
-            #       metadata. it'll be pretty hard (at least till this is in use
-            #       in use for a while) to come up with read/write metrics to
-            #       set this table up as PROVISIONED with those values. We'd
-            #       probably be much cheaper to go that route if we have a
-            #       really solid idea of how many reads/writes this table needs
-            billing_mode="PAY_PER_REQUEST",
             hash_key="report_id",
             range_key=None,
-            attributes=[
+            idx_attrs=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
-                {
-                    "name": "report_id",
-                    "type": "S",
-                },
+                {"name": "report_id", "type": "S"},
             ],
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (f"{self.desc_name} Canned Report DynamoDB Table"),
-            },
+            desc_name=(f"{self.desc_name} Canned Report"),
         )
 
     def _create_canned_report(self, report_config):
@@ -862,7 +853,16 @@ class CapeCannedReports(CapeComponentResource):
             ),
             "lmbd",
             "lambda.amazonaws.com",
-            get_athena_data_function_policy(),
+            self.assets_bucket.bucket.arn.apply(
+                lambda arn: add_resources(
+                    self.assets_bucket.policies[VersionedBucket.PolicyEnum.read]
+                    + self.assets_bucket.policies[
+                        VersionedBucket.PolicyEnum.write
+                    ],
+                    f"{arn}/*",
+                    arn,
+                )
+            ),
             [
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
@@ -880,7 +880,7 @@ class CapeCannedReports(CapeComponentResource):
             for n in report_config["data_function"]["layers"]
         ]
 
-        report_data_lambda = aws.lambda_.Function(
+        report_data_lambda = CapeLambdaFunction(
             f"{self.name}-{report_config['short_name']}-datfn",
             role=report_role.arn,
             layers=layers,
@@ -906,13 +906,15 @@ class CapeCannedReports(CapeComponentResource):
             timeout=funct_args.get("timeout", 3),
         )
 
+        self.report_data_functions.append(report_data_lambda)
+
         report_meta = {
             "report_id": report_config["id"],
             "short_name": report_config["short_name"],
             "display_name": report_config["display_name"],
             "template_key": template_key,
             "template_bucket": self.assets_bucket.bucket.bucket,
-            "data_function": report_data_lambda.arn,
+            "data_function": report_data_lambda.function.arn,
         }
 
         Output.all(report_meta_kw=report_meta).apply(
@@ -930,13 +932,7 @@ class CapeCannedReports(CapeComponentResource):
             k: serializer.serialize(v) for k, v in report_meta.items()
         }
 
-        aws.dynamodb.TableItem(
+        self.canned_report_ddb_table.add_table_item(
             f"{self.name}-{report_meta['short_name']}-ddbitem",
-            table_name=self.canned_report_ddb_table.name,
-            hash_key=self.canned_report_ddb_table.hash_key,
-            # TODO: do we have a range key here? schema is unknown and UID
-            #       is really the only thing we can bank on being there
-            range_key=None,
-            item=Output.json_dumps(serialized_attrs),
-            opts=ResourceOptions(parent=self),
+            item=serialized_attrs,
         )
