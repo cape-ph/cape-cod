@@ -22,15 +22,16 @@ class Bucket(CapeComponentResource):
         browse = "browse"
         multipart_upload = "multipart_upload"
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:objectstorage:S3Bucket"
+
     def __init__(
         self, name, bucket_type="", bucket_name=None, cors_rules=None, **kwargs
     ):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            f"capeinfra:resources:objectstorage:S3{bucket_type}Bucket",
-            name,
-            **kwargs,
-        )
+        super().__init__(name, **kwargs)
 
         self.name = f"{name}"
 
@@ -174,12 +175,13 @@ class Bucket(CapeComponentResource):
 class VersionedBucket(Bucket):
     """An object storage location with versioning turned on."""
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:objectstorage:S3VersionedBucket"
+
     def __init__(self, name, **kwargs):
-        super().__init__(
-            name,
-            bucket_type="Versioned",
-            **kwargs,
-        )
+        super().__init__(name, **kwargs)
 
         self.versioning = aws.s3.BucketVersioning(
             f"{self.name}-vrsn",

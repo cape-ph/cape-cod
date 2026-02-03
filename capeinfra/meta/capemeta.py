@@ -39,14 +39,14 @@ class CapeMeta(CapeComponentResource):
 
         logging = "logging"
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapeMeta"
+
     def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:meta:capemeta:CapeMeta",
-            name,
-            config="meta",
-            **kwargs,
-        )
+        super().__init__(name, config="meta", **kwargs)
         self.automation_assets_bucket = VersionedBucket(
             f"{name}-assets-vbkt",
             desc_name=f"{self.desc_name} automation assets",
@@ -161,10 +161,15 @@ class CapeMeta(CapeComponentResource):
 
 
 class CapePy(CapeComponentResource):
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapePy"
+
     def __init__(self, assets_bucket: VersionedBucket, **kwargs):
         self.name = "capepy"
         super().__init__(
-            "capeinfra:meta:capemeta:CapePy",
             self.name,
             desc_name="Resources for distributing the CapePy library",
             **kwargs,
@@ -222,10 +227,14 @@ class CapePrincipals(CapeComponentResource):
             ],
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapePrincipals"
+
     def __init__(self, **kwargs):
         self.name = "cape-principals"
         super().__init__(
-            "capeinfra:meta:capemeta:CapePrincipals",
             self.name,
             desc_name="Resources for user management in the CAPE infrastructure",
             **kwargs,
@@ -762,12 +771,16 @@ class CapeCannedReports(CapeComponentResource):
             "reports": [],
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapeCannedReports"
+
     def __init__(
         self, assets_bucket: VersionedBucket, function_layers: dict, **kwargs
     ):
         self.name = "cape-reports"
         super().__init__(
-            "capeinfra:meta:capemeta:CapeCannedReports",
             self.name,
             desc_name=(
                 "Resources for canned report management in the CAPE "

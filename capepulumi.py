@@ -146,12 +146,18 @@ class CapeComponentResource(ComponentResource):
             desc_name: A descriptive name that can be added to tags for child
                        components because names are so restricted in length.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(self.type_name, *args, **kwargs)
         self._config = CapeConfig(
             config, config_name=config_name, default=self.default_config
         )
         self.desc_name = desc_name
         self._policies = None
+
+    @property
+    @abstractmethod
+    def type_name(self) -> str:
+        """Abstract property to get the type_name (pulumi namespacing)."""
+        pass
 
     @property
     @abstractmethod

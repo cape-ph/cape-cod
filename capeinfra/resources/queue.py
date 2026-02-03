@@ -17,13 +17,14 @@ class SQSQueue(CapeComponentResource):
         put_msg = "put_msg"
         consume_msg = "consume_msg"
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:queue:SQSQueue"
+
     def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:resources:queue:SQSQueue",
-            name,
-            **kwargs,
-        )
+        super().__init__(name, **kwargs)
 
         self.name = name
 

@@ -9,6 +9,11 @@ from capepulumi import CapeComponentResource
 class ContainerRepository(CapeComponentResource):
     """An ECR Container Repository."""
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:ContainerRepository"
+
     def __init__(
         self,
         name: Input[str],
@@ -22,9 +27,7 @@ class ContainerRepository(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:datalake:ContainerRepository", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}-repo"
         self.repository = awsx.ecr.Repository(self.name, name=self.name)
@@ -48,6 +51,11 @@ class ContainerRepository(CapeComponentResource):
 class ContainerImage(CapeComponentResource):
     """An ECR Container Image."""
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:ContainerImage"
+
     def __init__(
         self,
         name: Input[str],
@@ -63,9 +71,7 @@ class ContainerImage(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:datalake:ContainerImage", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = name
 
