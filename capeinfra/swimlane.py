@@ -63,7 +63,6 @@ class ScopedSwimlane(CapeComponentResource):
     ):
         # This maintains parental relationships within the pulumi stack
         super().__init__(
-            self.type_name,
             basename,
             *args,
             config=CapeConfig("swimlanes").get(self.scope, default={}),
@@ -106,12 +105,6 @@ class ScopedSwimlane(CapeComponentResource):
         self.create_job_definitions()
         self.create_compute_environments()
         self.register_outputs({f"{self.basename}-vpc-id": self.vpc.id})
-
-    @property
-    @abstractmethod
-    def type_name(self) -> str:
-        """Abstract property to get the type_name (pulumi namespacing)."""
-        pass
 
     @property
     @abstractmethod

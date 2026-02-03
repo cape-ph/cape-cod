@@ -13,6 +13,11 @@ from capepulumi import CapeComponentResource
 class BatchJobDefinition(CapeComponentResource):
     """A batch job definition."""
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:BatchJobDefinition"
+
     def __init__(
         self,
         name: Input[str],
@@ -30,9 +35,7 @@ class BatchJobDefinition(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:datalake:BatchJobDefinition", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
 
@@ -78,6 +81,11 @@ class BatchCompute(CapeComponentResource):
             }
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:BatchCompute"
+
     def __init__(
         self,
         name: Input[str],
@@ -97,9 +105,7 @@ class BatchCompute(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:datalake:BatchCompute", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
 

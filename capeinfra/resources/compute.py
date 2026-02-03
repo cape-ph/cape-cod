@@ -101,7 +101,6 @@ class CapeManagedLambdaLayer(CapeComponentResource, CapeLambdaLayer):
 
         CapeComponentResource.__init__(
             self,
-            t=self.type_name,
             name=name,
             *args,
             **kwargs,
@@ -264,16 +263,6 @@ class CapeManagedLambdaLayer(CapeComponentResource, CapeLambdaLayer):
         """
         pass
 
-    # TODO: this property should really go into CapeComponentResource. it's in
-    #       use in the Swimlane hierarchy aids in inheritance. we would need to
-    #       get all resources defining this and potentially require
-    #       re-deployment of some resources, so it's not a simple fix.
-    @property
-    @abstractmethod
-    def type_name(self) -> str:
-        """Abstract property to get the type_name (pulumi namespacing)."""
-        pass
-
 
 class CapeGHReleaseLambdaLayer(CapeManagedLambdaLayer):
     """CapeComponentResource wrapping a github release LambdaLayer.
@@ -291,6 +280,11 @@ class CapeGHReleaseLambdaLayer(CapeManagedLambdaLayer):
         compatible_runtimes: Optional list of runtimes for the layer. Matches
                              the form of the LambdaLayer arg of the same name.
     """
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:compute:CapeGHReleaseLambdaLayer"
 
     def __init__(
         self,
@@ -314,11 +308,6 @@ class CapeGHReleaseLambdaLayer(CapeManagedLambdaLayer):
         self.tag = tag
         self.asset = asset
         self._layer_archive_uri = None
-
-    @property
-    def type_name(self) -> str:
-        """Return the type_name (pulumi namespacing)."""
-        return "capeinfra:resources:compute:CapeGHReleaseLambdaLayer"
 
     @property
     def layer_archive_uri(self):
@@ -667,11 +656,7 @@ class CapeAwsManagedLambdaLayer(CapeLambdaLayer):
         *args,
         **kwargs,
     ):
-        super().__init__(
-            name=name,
-            *args,
-            **kwargs,
-        )
+        super().__init__(name=name, *args, **kwargs)
 
         self.arn = arn
 
@@ -686,6 +671,11 @@ class CapeLambdaFunction(CapeComponentResource):
         """Enum of supported policy names for this component."""
 
         invoke = "invoke"
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:compute:CapeLambdaFunction"
 
     def __init__(
         self,
@@ -708,11 +698,7 @@ class CapeLambdaFunction(CapeComponentResource):
         With the exception of `name` and `kwargs`, all args are passed to
         pulumi_aws.lambda_.Function. See that class for documentation.
         """
-        super().__init__(
-            "capeinfra:resources:compute:CapeLambdaFunction",
-            name,
-            **kwargs,
-        )
+        super().__init__(name, **kwargs)
 
         self.name = name
 

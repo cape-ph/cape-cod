@@ -29,6 +29,11 @@ from capepulumi import CapeComponentResource
 class CapeRestApi(CapeComponentResource):
     """CapeComponentResource wrapping a REST API"""
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:CapeRestApi"
+
     def __init__(
         self,
         name: str,
@@ -71,9 +76,7 @@ class CapeRestApi(CapeComponentResource):
                              authorizer for the API. If not provided, no
                              authorizer will be configured for the API.
         """
-        super().__init__(
-            "capeinfra:resources:CapeRestApi", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = name
         self.api_name = api_name

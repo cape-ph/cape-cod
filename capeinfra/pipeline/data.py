@@ -51,6 +51,11 @@ class DataCrawler(CapeComponentResource):
             "prefix": None,
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:Crawler"
+
     def __init__(
         self,
         name: str,
@@ -73,7 +78,7 @@ class DataCrawler(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:Crawler", name, *args, **kwargs)
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
         self.buckets = buckets = (
@@ -155,6 +160,11 @@ class EtlJob(CapeComponentResource):
             "max_concurrent_runs": 5,
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:Job"
+
     def __init__(
         self,
         name: str,
@@ -180,7 +190,7 @@ class EtlJob(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:Job", name, *args, **kwargs)
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
         self.src_bucket = src_bucket

@@ -18,6 +18,11 @@ class DynamoTable(CapeComponentResource):
 
         read = "read"
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:database:DynamoTable"
+
     def __init__(
         self,
         name,
@@ -31,11 +36,7 @@ class DynamoTable(CapeComponentResource):
     ):
 
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:resources:database:DynamoTable",
-            name,
-            **kwargs,
-        )
+        super().__init__(name, **kwargs)
 
         self.name = name
         # HACK: store the passed in range key because getting range key from the

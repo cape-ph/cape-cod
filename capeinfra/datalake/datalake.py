@@ -23,6 +23,11 @@ TributaryETLBucketIdSuffixes = Literal["clean", "raw"]
 class DatalakeHouse(CapeComponentResource):
     """Top level object in the CAPE infrastructure for datalake storage."""
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:DatalakeHouse"
+
     def __init__(
         self,
         name: str,
@@ -30,13 +35,7 @@ class DatalakeHouse(CapeComponentResource):
         **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:datalake:DatalakeHouse",
-            name,
-            *args,
-            config="datalakehouse",
-            **kwargs,
-        )
+        super().__init__(name, *args, config="datalakehouse", **kwargs)
 
         self.name = f"{name}"
 
@@ -165,6 +164,11 @@ class DatalakeHouse(CapeComponentResource):
 class CatalogDatabase(CapeComponentResource):
     """The metadata catalog for the datalake house."""
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:CatalogDatabase"
+
     def __init__(
         self,
         name: str,
@@ -174,9 +178,7 @@ class CatalogDatabase(CapeComponentResource):
         **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:datalake:CatalogDatabase", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
 
@@ -208,6 +210,11 @@ class Tributary(CapeComponentResource):
       - any crawlers that should run when data hits a bucket
     """
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:Tributary"
+
     def __init__(
         self,
         name: str,
@@ -229,7 +236,7 @@ class Tributary(CapeComponentResource):
         **kwargs,
     ):
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:Tributary", name, *args, **kwargs)
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
         catalog_name = f"{self.name}-catalog"

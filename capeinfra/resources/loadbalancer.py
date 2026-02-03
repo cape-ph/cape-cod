@@ -44,6 +44,11 @@ class AppLoadBalancer(CapeComponentResource):
           these are added via the `add_XXX_target` methods.
     """
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:loadbalancer:AppLoadBalancer"
+
     def __init__(
         self,
         name: str,
@@ -65,12 +70,7 @@ class AppLoadBalancer(CapeComponentResource):
                   class.
         """
         # TODO: ISSUE #112
-        super().__init__(
-            "capeinfra:resources:loadbalancer:AppLoadBalancer",
-            name,
-            *args,
-            **kwargs,
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
         self._vpc_id = vpc_id

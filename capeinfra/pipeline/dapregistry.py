@@ -57,6 +57,11 @@ class DAPRegistry(CapeComponentResource):
             "dap-assets": "./assets/analysis-pipelines",
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:pipeline:DAPRegistry"
+
     def __init__(
         self,
         name: str,
@@ -70,9 +75,7 @@ class DAPRegistry(CapeComponentResource):
             opts: The ResourceOptions to apply to the registry resource.
         Returns:
         """
-        super().__init__(
-            "capeinfra:pipeline:DAPRegistry", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
         self.dap_assets = Path(self.config["dap-assets"])
