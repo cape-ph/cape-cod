@@ -116,7 +116,7 @@ config:
               type_args:
                   type: gh-release
                   uri: https://github.com/kotify/cloud-print-utils
-                  tag: weasyprint-65.1
+                  tag: weasyprint-68.0
                   asset: weasyprint-layer-python3.13-x86_64.zip
               args:
                   description:
