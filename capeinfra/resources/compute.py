@@ -8,7 +8,9 @@ import tempfile
 import urllib.request
 import zipfile
 from abc import abstractmethod
+from enum import Enum
 from io import BytesIO
+from typing import List
 
 import pulumi_aws as aws
 from pulumi import FileArchive, FileAsset, Output, ResourceOptions, log
@@ -99,7 +101,6 @@ class CapeManagedLambdaLayer(CapeComponentResource, CapeLambdaLayer):
 
         CapeComponentResource.__init__(
             self,
-            t=self.type_name,
             name=name,
             *args,
             **kwargs,
@@ -262,16 +263,6 @@ class CapeManagedLambdaLayer(CapeComponentResource, CapeLambdaLayer):
         """
         pass
 
-    # TODO: this property should really go into CapeComponentResource. it's in
-    #       use in the Swimlane hierarchy aids in inheritance. we would need to
-    #       get all resources defining this and potentially require
-    #       re-deployment of some resources, so it's not a simple fix.
-    @property
-    @abstractmethod
-    def type_name(self) -> str:
-        """Abstract property to get the type_name (pulumi namespacing)."""
-        pass
-
 
 class CapeGHReleaseLambdaLayer(CapeManagedLambdaLayer):
     """CapeComponentResource wrapping a github release LambdaLayer.
@@ -289,6 +280,11 @@ class CapeGHReleaseLambdaLayer(CapeManagedLambdaLayer):
         compatible_runtimes: Optional list of runtimes for the layer. Matches
                              the form of the LambdaLayer arg of the same name.
     """
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:compute:CapeGHReleaseLambdaLayer"
 
     def __init__(
         self,
@@ -312,11 +308,6 @@ class CapeGHReleaseLambdaLayer(CapeManagedLambdaLayer):
         self.tag = tag
         self.asset = asset
         self._layer_archive_uri = None
-
-    @property
-    def type_name(self) -> str:
-        """Return the type_name (pulumi namespacing)."""
-        return "capeinfra:resources:compute:CapeGHReleaseLambdaLayer"
 
     @property
     def layer_archive_uri(self):
@@ -665,13 +656,85 @@ class CapeAwsManagedLambdaLayer(CapeLambdaLayer):
         *args,
         **kwargs,
     ):
-        super().__init__(
-            name=name,
-            *args,
-            **kwargs,
-        )
+        super().__init__(name=name, *args, **kwargs)
 
         self.arn = arn
 
     def _make_layer(self):
         self._lambda_layer = self.LambdaLayerShim(self.arn)
+
+
+class CapeLambdaFunction(CapeComponentResource):
+    """Wrapper for an AWS Lambda function."""
+
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        invoke = "invoke"
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:compute:CapeLambdaFunction"
+
+    def __init__(
+        self,
+        name,
+        role,
+        code,
+        handler,
+        layers: List[Output] | None = None,
+        architectures: List[str] | None = None,
+        description: str | None = None,
+        memory_size: int | None = None,
+        timeout: int | None = None,
+        runtime: str = "python3.10",
+        logging_config: aws.lambda_.FunctionLoggingConfigArgsDict | None = None,
+        environment: aws.lambda_.FunctionEnvironmentArgsDict | None = None,
+        **kwargs,
+    ):
+        """Constructor.
+
+        With the exception of `name` and `kwargs`, all args are passed to
+        pulumi_aws.lambda_.Function. See that class for documentation.
+        """
+        super().__init__(name, **kwargs)
+
+        self.name = name
+
+        self.function = aws.lambda_.Function(
+            f"{self.name}-lmbd-fn",
+            role=role,
+            code=code,
+            layers=layers,
+            architectures=architectures,
+            description=description,
+            memory_size=memory_size,
+            timeout=timeout,
+            runtime=runtime,
+            logging_config=logging_config,
+            handler=handler,
+            environment=environment,
+            opts=ResourceOptions(parent=self),
+            tags={"desc_name": (f"{self.desc_name} lambda function")},
+        )
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            self._policies[self.PolicyEnum.invoke] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "lambda:InvokeFunction",
+                    ],
+                }
+            ]
+        return self._policies

@@ -41,91 +41,6 @@ def get_service_assume_role(srvc: str | List[str]) -> str:
     )
 
 
-# TODO: need to lock this down to CAPE buckets, our account, etc
-def get_s3_api_proxy_policy(
-    principal: str | None = None,
-) -> str:
-    """Get a role policy statement for Get/List perms on s3 buckets.
-
-    Args:
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-    policy_dict = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": [
-                    # api for MPU
-                    "s3:AbortMultipartUpload",
-                    "s3:CreateMultipartUpload",
-                    "s3:UploadPart",
-                    "s3:CompleteMultipartUpload",
-                    "s3:ListParts",
-                    "s3:ListMultipartUploads",
-                    # general s3 actions needed by api
-                    "s3:PutObject",
-                    "s3:DeleteObject",
-                ],
-                "Resource": [
-                    f"arn:aws:s3:::*/*",
-                    f"arn:aws:s3:::*",
-                ],
-            }
-        ],
-    }
-
-    if principal is not None:
-        for stmnt in policy_dict["Statement"]:
-            stmnt.setdefault("Principal", principal)
-
-    return json.dumps(policy_dict)
-
-
-# TODO: this is what's needed in addition to at least some of the
-#       AthenaFullAccess aws managed policy attachment. we may want to pair down
-#       from the full access thing if we find it grants too much
-def get_athena_data_function_policy(
-    principal: str | None = None,
-) -> str:
-    """Get a policy statement for general report data function permissions.
-
-     Gets basic permissions for running athena queries and getting using
-     tables.
-
-    Args:
-        principal: The optional principal to limit this policy statement to.
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-    policy_dict = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "s3:GetObject",
-                    "s3:PutObject",
-                    "s3:GetBucketLocation",
-                ],
-                "Resource": [
-                    f"arn:aws:s3:::*/*",
-                    f"arn:aws:s3:::*",
-                ],
-            },
-        ],
-    }
-
-    if principal is not None:
-        for stmnt in policy_dict["Statement"]:
-            stmnt.setdefault("Principal", principal)
-
-    return json.dumps(policy_dict)
-
-
 def get_bucket_reader_policy(
     buckets: aws.s3.Bucket | list[aws.s3.Bucket],
     principal: str | None = None,
@@ -291,58 +206,6 @@ def get_vpce_api_invoke_policy(
     )
 
 
-def get_nextflow_executor_policy() -> str:
-    """Get a role policy statement for an EC2 instance of Nextflow.
-
-    Returns:
-        The policy statement as a json encoded string.
-    """
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "batch:CancelJob",
-                        "batch:DescribeComputeEnvironments",
-                        "batch:DescribeJobDefinitions",
-                        "batch:DescribeJobQueues",
-                        "batch:DescribeJobs",
-                        "batch:ListJobs",
-                        "batch:RegisterJobDefinition",
-                        "batch:SubmitJob",
-                        "batch:TagResource",
-                        "batch:TerminateJob",
-                        "ec2:DescribeInstanceAttribute",
-                        "ec2:DescribeInstanceStatus",
-                        "ec2:DescribeInstanceTypes",
-                        "ec2:DescribeInstances",
-                        "ecr:BatchCheckLayerAvailability",
-                        "ecr:BatchGetImage",
-                        "ecr:DescribeImageScanFindings",
-                        "ecr:DescribeImages",
-                        "ecr:DescribeRepositories",
-                        "ecr:GetAuthorizationToken",
-                        "ecr:GetDownloadUrlForLayer",
-                        "ecr:GetLifecyclePolicy",
-                        "ecr:GetLifecyclePolicyPreview",
-                        "ecr:GetRepositoryPolicy",
-                        "ecr:ListImages",
-                        "ecr:ListTagsForResource",
-                        "ecs:DescribeContainerInstances",
-                        "ecs:DescribeTasks",
-                        "logs:GetLogEvents",
-                        "s3:*",
-                    ],
-                    "Resource": ["*"],
-                },
-            ],
-        },
-    )
-
-
 # TODO: ISSUE #TBD trying to get this a little more generalized than when it
 #       only existed for the DAP api (which needed the table/queue access this
 #       function currently gives). It'd be great if this was totally
@@ -352,7 +215,9 @@ def get_nextflow_executor_policy() -> str:
 #       spend too long getting it perfect. Also, we should restrict the EC2
 #       instance describing
 # TODO: ISSUE 245 - TOO MANY PERMS HERE
-def get_api_policy(grants: dict[str, list[Output]]):
+def get_api_statements(
+    grants: dict[str, list[Output]],
+) -> list[GetPolicyDocumentStatementArgsDict]:
     """Get a role policy statement for the API.
 
     The entire API (all functions) will be given access as configured in
@@ -373,50 +238,50 @@ def get_api_policy(grants: dict[str, list[Output]]):
     Returns:
         The policy statement as a dictionary json encoded string.
     """
-    stmnts = [
+    stmnts: list[GetPolicyDocumentStatementArgsDict] = [
         {
-            "Effect": "Allow",
-            "Action": [
+            "effect": "Allow",
+            "actions": [
                 "logs:PutLogEvents",
                 "logs:CreateLogGroup",
                 "logs:CreateLogStream",
                 "logs:GetLogEvents",
             ],
-            "Resource": "arn:aws:logs:*:*:*",
+            "resources": "arn:aws:logs:*:*:*",
         },
         {
-            "Effect": "Allow",
-            "Action": [
+            "effect": "Allow",
+            "actions": [
                 "ec2:DescribeInstances",
             ],
-            "Resource": [
+            "resources": [
                 "*",
             ],
         },
         {
             # TODO: make this policy more strict once we organize our queues/resources
-            "Effect": "Allow",
-            "Action": [
+            "effect": "Allow",
+            "actions": [
                 "s3:ListBucket",
                 "s3:ListAllMyBuckets",
                 "s3:PutObject",
                 "s3:GetObject",
             ],
-            "Resource": [
+            "resources": [
                 "*",
             ],
         },
         {  # TODO: make this policy more strict once we organize our queues/resources
-            "Effect": "Allow",
-            "Action": ["batch:SubmitJob", "batch:DescribeJobs"],
-            "Resource": [
+            "effect": "Allow",
+            "actions": ["batch:SubmitJob", "batch:DescribeJobs"],
+            "resources": [
                 "*",
             ],
         },
         {  # TODO: make this policy more strict once we organize our queues/resources
-            "Effect": "Allow",
-            "Action": ["lambda:InvokeFunction"],
-            "Resource": [
+            "effect": "Allow",
+            "actions": ["lambda:InvokeFunction"],
+            "resources": [
                 "*",
             ],
         },
@@ -426,12 +291,12 @@ def get_api_policy(grants: dict[str, list[Output]]):
     for q in grants.get("queue", []):
         stmnts.append(
             {
-                "Effect": "Allow",
-                "Action": [
+                "effect": "Allow",
+                "actions": [
                     "sqs:GetQueueUrl",
                     "sqs:SendMessage",
                 ],
-                "Resource": [
+                "resources": [
                     f"arn:aws:sqs:*:*:{q}",
                 ],
             },
@@ -441,254 +306,26 @@ def get_api_policy(grants: dict[str, list[Output]]):
     for t in grants.get("table", []):
         stmnts.append(
             {
-                "Effect": "Allow",
-                "Action": [
+                "effect": "Allow",
+                "actions": [
                     "dynamodb:DescribeTable",
                     "dynamodb:GetItem",
                     "dynamodb:Scan",
                 ],
-                "Resource": [
+                "resources": [
                     f"arn:aws:dynamodb:*:*:table/{t}",
                 ],
             },
         )
 
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": stmnts,
-        },
-    )
+    return stmnts
 
 
-# TODO: grants doesn't do anything here yet. Not sure what we'll add access to
-#       at this point
-def get_api_lambda_authorizer_policy(funct_arns: list[Output] | None = None):
-    """Get a role policy statement for the an API Lambda Authorizer.
-
-    The authorizer for an API will be given access as configured in
-    `grants`. Lambda logging will be unconditionally enabled without
-    configuration.
-
-    At present, `grants` is a placeholder and cannot be used to modify the
-    policy. This will change as the needs of the authorizers matures.
-
-
-    Args:
-        funct_arns: A list of lambda ARN Outputs
-
-    Returns:
-        The policy statement as a dictionary json encoded string.
-    """
-    stmnts = [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "logs:PutLogEvents",
-                "logs:CreateLogGroup",
-                "logs:CreateLogStream",
-            ],
-            "Resource": "arn:aws:logs:*:*:*",
-        },
-    ]
-
-    # TODO: figure out what the authorizer actually needs grants on
-
-    # add the table grants as configured
-    for fa in funct_arns or []:
-        stmnts.append(
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "lambda:InvokeFunction",
-                ],
-                "Resource": [f"{fa}"],
-            },
-        )
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": stmnts,
-        },
-    )
-
-
-# NOTE: done as a function for now because this pattern is in a number of
-#       places (lambda trigger functions, data crawlers, glue jobs, etc)
-def get_inline_role(
-    name: str,
-    desc_name: str,
-    srvc_prfx: str,
-    assume_role_srvc: str | List[str],
-    role_policy: Input[str] | None = None,
-    srvc_policy_attach: str | List[str] = [],
-    opts: ResourceOptions | None = None,
-) -> aws.iam.Role:
-    """Get an inline role fir the given arguments.
-
-    Args:
-        name: The resource name the role is being used on.
-        desc_name: The descriptive name (e.g. for tagging) for the role. this
-                   will be used as-is, so it needs to be fully rendered
-        srvc_prfx: the service prefix to use in the name (e.g. `lmbd` for aws
-                   lambda)
-        assume_role_srvc: The name of the service assuming the role (e.g.
-                          "glue.amazonaws.com") or a list of such service names.
-        role_policy: The policy to attach to the role.
-        srvc_policy_attach: Optional identifier (e.g. ARN for aws) or list of
-                            identifiers for a service or services role policy
-                            to attach to the role in addition to the
-                            role_policy. NOTE: There is an AWS imposed maximum
-                            of 20 policy attachments for any role.
-        opts: The pulumi ResourceOptions to add to ComponentResources created
-              here.
-
-    Returns:
-        The inline role.
-    """
-    policy_attachments = (
-        [srvc_policy_attach]
-        if isinstance(srvc_policy_attach, str)
-        else srvc_policy_attach
-    )
-
-    # first create the inline role
-    inline_role = aws.iam.Role(
-        f"{name}-{srvc_prfx}role",
-        assume_role_policy=get_service_assume_role(assume_role_srvc),
-        opts=opts,
-        tags={"desc_name": desc_name},
-    )
-
-    # if we were told to also attach service role policies, do so
-    if policy_attachments:
-        for policy_arn in policy_attachments:
-            aws.iam.RolePolicyAttachment(
-                f"{name}-{srvc_prfx}svcroleatch-{policy_arn.split('/')[-1]}",
-                role=inline_role.name,
-                policy_arn=policy_arn,
-                opts=opts,
-            )
-
-    # and now add the policy rules we were given to the role if configured
-    if role_policy is not None:
-        aws.iam.RolePolicy(
-            f"{name}-{srvc_prfx}roleplcy",
-            role=inline_role.id,
-            policy=role_policy,
-            opts=opts,
-        )
-
-    return inline_role
-
-
-def get_instance_profile(
-    name: str,
-    role: aws.iam.Role,
-    name_suffix: str | None = None,
-) -> aws.iam.InstanceProfile:
-    """Get an instance profile for the given role
-
-    Args:
-        role: The role in which to generate an instance profile for
-
-    Returns:
-        The instance profile
-    """
-    return aws.iam.InstanceProfile(
-        f"{name}-instnc-prfl{('-'+ name_suffix) if name_suffix else ''}",
-        role=role.name,
-        opts=ResourceOptions(parent=role),
-    )
-
-
-def get_sqs_lambda_dap_submit_policy(queue_name: str, table_name: str) -> str:
-    """Get a role policy statement for reading dynamodb and sqs.
-
-    This policy allows for actions on an sqs queue, a dynamodb table and
-    logging necessary for data handlers to read data analysis pipeline
-    submission messages from SQS as well as read the data analysis pipeline
-    registry dynamodb table.
-
-    Args:
-        queue_name: The name of the queue to grant read access to.
-        table_name: The name of the DynamoDB table storing the DAP
-                    registry.
-
-    Returns:
-        The policy statement as a dictionary json encoded string.
-    """
-
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "logs:PutLogEvents",
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                    ],
-                    "Resource": "arn:aws:logs:*:*:*",
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        # This is the bare minimum required for an SQS notified
-                        # lambda to do its job.
-                        "sqs:GetQueueAttributes",
-                        "sqs:ReceiveMessage",
-                        "sqs:DeleteMessage",
-                    ],
-                    "Resource": [
-                        f"arn:aws:sqs:*:*:{queue_name}",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "dynamodb:DescribeTable",
-                        "dynamodb:GetItem",
-                    ],
-                    "Resource": [
-                        f"arn:aws:dynamodb:*:*:table/{table_name}",
-                    ],
-                },
-                {
-                    "Sid": "AllowSSMExecution",
-                    "Effect": "Allow",
-                    "Action": ["ssm:SendCommand", "ssm:GetCommandInvocation"],
-                    # TODO: get this specified via parameter
-                    "Resource": [
-                        # TODO: ISSUE #158 this should be changed to have
-                        #       tag-based pairing down
-                        "arn:aws:ec2:us-east-2:767397883306:instance/*",
-                        # TODO: this isn't tied to our account
-                        "arn:aws:ssm:us-east-2::document/AWS-RunShellScript",
-                        # TODO: how do we lock this down better? this is needed
-                        #       for GetCommandInvocation and came from an error
-                        #       message, but i'm not entirely certain what exact
-                        #       resource it's not allow to access
-                        "arn:aws:ssm:us-east-2:767397883306:*",
-                    ],
-                },
-                {
-                    "Sid": "AllowEC2DescribeInstances",
-                    "Effect": "Allow",
-                    "Action": "ec2:DescribeInstances",
-                    # TODO: ISSUE #158
-                    "Resource": [
-                        "arn:aws:ec2:*:*:instance/*",
-                    ],
-                    "Condition": {
-                        "Null": {"aws:ResourceTag/Pipeline": "false"}
-                    },
-                },
-            ],
-        },
-    )
+# =====================================
+#         NEW IAM MODULE BELOW
+#      anything above needs to be
+#  investigated and potentially sunset
+# =====================================
 
 
 def add_resources(
@@ -716,7 +353,7 @@ def aggregate_statements(statements):
 
 # NOTE: done as a function for now because this pattern is in a number of
 #       places (lambda trigger functions, data crawlers, glue jobs, etc)
-def get_inline_role2(
+def get_inline_role(
     name: str,
     desc_name: str,
     srvc_prfx: str,
@@ -783,3 +420,23 @@ def get_inline_role2(
         )
 
     return inline_role
+
+
+def get_instance_profile(
+    name: str,
+    role: aws.iam.Role,
+    name_suffix: str | None = None,
+) -> aws.iam.InstanceProfile:
+    """Get an instance profile for the given role
+
+    Args:
+        role: The role in which to generate an instance profile for
+
+    Returns:
+        The instance profile
+    """
+    return aws.iam.InstanceProfile(
+        f"{name}-instnc-prfl{('-'+ name_suffix) if name_suffix else ''}",
+        role=role.name,
+        opts=ResourceOptions(parent=role),
+    )

@@ -18,6 +18,11 @@ class DynamoTable(CapeComponentResource):
 
         read = "read"
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:database:DynamoTable"
+
     def __init__(
         self,
         name,
@@ -31,11 +36,7 @@ class DynamoTable(CapeComponentResource):
     ):
 
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:resources:database:DynamoTable",
-            name,
-            **kwargs,
-        )
+        super().__init__(name, **kwargs)
 
         self.name = name
         # HACK: store the passed in range key because getting range key from the
@@ -93,7 +94,11 @@ class DynamoTable(CapeComponentResource):
             ]
         return self._policies
 
-    def add_table_item(self, name: str, item: dict[str, dict[str, Any]]):
+    # TODO: dict[Any, Any] here was to punt on a type hinting need. should be
+    #       resolved.
+    def add_table_item(
+        self, name: str, item: dict[str, dict[str, Any]] | dict[Any, Any]
+    ):
         """Add an item to the table.
 
         For more information on DynamoDB Attribute Value format, see here:

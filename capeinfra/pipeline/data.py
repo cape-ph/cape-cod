@@ -7,7 +7,7 @@ import pulumi_aws as aws
 from pulumi import ResourceOptions
 
 import capeinfra
-from capeinfra.iam import add_resources, aggregate_statements, get_inline_role2
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role
 from capeinfra.meta.capemeta import CapeMeta
 from capeinfra.resources.objectstorage import VersionedBucket
 from capepulumi import CapeComponentResource
@@ -51,6 +51,11 @@ class DataCrawler(CapeComponentResource):
             "prefix": None,
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:Crawler"
+
     def __init__(
         self,
         name: str,
@@ -73,7 +78,7 @@ class DataCrawler(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:Crawler", name, *args, **kwargs)
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
         self.buckets = buckets = (
@@ -81,7 +86,7 @@ class DataCrawler(CapeComponentResource):
         )
 
         # get a role for the crawler
-        self.crawler_role = get_inline_role2(
+        self.crawler_role = get_inline_role(
             self.name,
             f"{self.desc_name} data crawler role",
             "",
@@ -90,8 +95,10 @@ class DataCrawler(CapeComponentResource):
                 [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
-                            bucket.policies[bucket.PolicyEnum.read]
-                            + bucket.policies[bucket.PolicyEnum.browse],
+                            bucket.policies[VersionedBucket.PolicyEnum.read]
+                            + bucket.policies[
+                                VersionedBucket.PolicyEnum.browse
+                            ],
                             f"{arn}/*",
                             arn,
                         )
@@ -153,6 +160,11 @@ class EtlJob(CapeComponentResource):
             "max_concurrent_runs": 5,
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:datalake:Job"
+
     def __init__(
         self,
         name: str,
@@ -178,13 +190,13 @@ class EtlJob(CapeComponentResource):
         Returns:
         """
         # This maintains parental relationships within the pulumi stack
-        super().__init__("capeinfra:datalake:Job", name, *args, **kwargs)
+        super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
         self.src_bucket = src_bucket
         self.sink_bucket = sink_bucket
 
-        self.etl_role = get_inline_role2(
+        self.etl_role = get_inline_role(
             self.name,
             f"{self.desc_name} ETL job role",
             "",

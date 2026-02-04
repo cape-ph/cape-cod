@@ -75,6 +75,11 @@ class BYOCert(CapeComponentResource):
                 f"during ACM Cert ({name}) creation: {err}"
             )
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:certs:BYOCert"
+
     def __init__(self, name, ca_path, cert_path, key_path, *args, **kwargs):
         """Create a BYOCert object.
 
@@ -91,9 +96,7 @@ class BYOCert(CapeComponentResource):
             FileNotFoundError: When any of the given file paths cannot be
                                found.
         """
-        super().__init__(
-            "capeinfra:resources:certs:BYOCert", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         ca_crt_pem, server_crt_pem, server_key_pem = [
             # this raises FileNotFoundError

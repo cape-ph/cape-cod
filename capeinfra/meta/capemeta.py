@@ -21,12 +21,14 @@ from pulumi import (
 )
 
 import capeinfra
-from capeinfra.iam import get_athena_data_function_policy, get_inline_role
+from capeinfra.iam import add_resources, get_inline_role
 from capeinfra.resources.compute import (
     CapeAwsManagedLambdaLayer,
     CapeGHReleaseLambdaLayer,
+    CapeLambdaFunction,
     CapePythonLambdaLayer,
 )
+from capeinfra.resources.database import DynamoTable
 from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.naming import disemvowel
 from capepulumi import CapeComponentResource
@@ -40,23 +42,14 @@ class CapeMeta(CapeComponentResource):
 
         logging = "logging"
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapeMeta"
+
     def __init__(self, name, **kwargs):
         # This maintains parental relationships within the pulumi stack
-        super().__init__(
-            "capeinfra:meta:capemeta:CapeMeta",
-            name,
-            config="meta",
-            **kwargs,
-        )
-
-        # TODO: we have a few different places instantiating the main config
-        #       to get this value (datalake and private swimlane at least) and
-        #       really should just have one way to get it. since a lot of places
-        #       follow the pattern of importing capeinfra which exports an
-        #       instantiation of this class, that seems a pretty natural way to
-        #       get there.
-        self.region = Config("aws").require("region")
-
+        super().__init__(name, config="meta", **kwargs)
         self.automation_assets_bucket = VersionedBucket(
             f"{name}-assets-vbkt",
             desc_name=f"{self.desc_name} automation assets",
@@ -86,7 +79,7 @@ class CapeMeta(CapeComponentResource):
 
         self.capepy = CapePy(self.automation_assets_bucket)
         self.principals = CapePrincipals(
-            self.region, config=self.config.get("principals", default={})
+            config=self.config.get("principals", default={})
         )
 
         # We also need to register all the expected outputs for this component
@@ -171,10 +164,15 @@ class CapeMeta(CapeComponentResource):
 
 
 class CapePy(CapeComponentResource):
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapePy"
+
     def __init__(self, assets_bucket: VersionedBucket, **kwargs):
         self.name = "capepy"
         super().__init__(
-            "capeinfra:meta:capemeta:CapePy",
             self.name,
             desc_name="Resources for distributing the CapePy library",
             **kwargs,
@@ -243,16 +241,18 @@ class CapePrincipals(CapeComponentResource):
             ],
         }
 
-    def __init__(self, region, **kwargs):
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapePrincipals"
+
+    def __init__(self, **kwargs):
         self.name = "cape-principals"
         super().__init__(
-            "capeinfra:meta:capemeta:CapePrincipals",
             self.name,
             desc_name="Resources for user management in the CAPE infrastructure",
             **kwargs,
         )
-
-        self.region = region
 
         self.user_pool = aws.cognito.UserPool(
             "cape-users",
@@ -273,7 +273,6 @@ class CapePrincipals(CapeComponentResource):
             },
             auto_verified_attributes=["email"],
             username_attributes=["email"],
-            region=self.region,
             # TODO: we'll use the lambda_config member to setup the post-authn
             #       trigger that will write a user record to our CAPE database.
             #       see: https://www.pulumi.com/registry/packages/aws/api-docs/cognito/userpool/#userpoollambdaconfig
@@ -358,7 +357,8 @@ class CapePrincipals(CapeComponentResource):
             # name to reference this IdP. may or may not actually want to use
             # this.
             idp_identifiers=idpcfg.get("identifiers", []),
-            region=self.region,
+            # TODO: do we need to specify region here? had it, but then a recent
+            #       refactor removed that from CapeMeta and CapePrincipals
             opts=ResourceOptions(parent=self),
         )
 
@@ -937,12 +937,16 @@ class CapeCannedReports(CapeComponentResource):
             "reports": [],
         }
 
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:CapeCannedReports"
+
     def __init__(
         self, assets_bucket: VersionedBucket, function_layers: dict, **kwargs
     ):
         self.name = "cape-reports"
         super().__init__(
-            "capeinfra:meta:capemeta:CapeCannedReports",
             self.name,
             desc_name=(
                 "Resources for canned report management in the CAPE "
@@ -958,6 +962,8 @@ class CapeCannedReports(CapeComponentResource):
 
         self._template_prefix = self.config.get("template_prefix")
         report_cfgs = self.config.get("reports")
+
+        self.report_data_functions = []
 
         if not report_cfgs:
             # NOTE: we can take this opportunity to *not* deploy stuff like the
@@ -985,30 +991,17 @@ class CapeCannedReports(CapeComponentResource):
         #       public internet). VPC endpoint is arguably more secure and
         #       performant as it's a direct connection to Dynamo from our
         #       clients, but it adds cost.
-        self.canned_report_ddb_table = aws.dynamodb.Table(
-            f"{self.name}-cnndrprts-ddb",
+
+        self.canned_report_ddb_table = DynamoTable(
             name=f"{self.name}-CannedReportsStore",
-            # NOTE: this table will be accessed as needed to fetch canned report
-            #       metadata. it'll be pretty hard (at least till this is in use
-            #       in use for a while) to come up with read/write metrics to
-            #       set this table up as PROVISIONED with those values. We'd
-            #       probably be much cheaper to go that route if we have a
-            #       really solid idea of how many reads/writes this table needs
-            billing_mode="PAY_PER_REQUEST",
             hash_key="report_id",
             range_key=None,
-            attributes=[
+            idx_attrs=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
-                {
-                    "name": "report_id",
-                    "type": "S",
-                },
+                {"name": "report_id", "type": "S"},
             ],
-            opts=ResourceOptions(parent=self),
-            tags={
-                "desc_name": (f"{self.desc_name} Canned Report DynamoDB Table"),
-            },
+            desc_name=(f"{self.desc_name} Canned Report"),
         )
 
     def _create_canned_report(self, report_config):
@@ -1039,7 +1032,16 @@ class CapeCannedReports(CapeComponentResource):
             ),
             "lmbd",
             "lambda.amazonaws.com",
-            get_athena_data_function_policy(),
+            self.assets_bucket.bucket.arn.apply(
+                lambda arn: add_resources(
+                    self.assets_bucket.policies[VersionedBucket.PolicyEnum.read]
+                    + self.assets_bucket.policies[
+                        VersionedBucket.PolicyEnum.write
+                    ],
+                    f"{arn}/*",
+                    arn,
+                )
+            ),
             [
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
@@ -1057,7 +1059,7 @@ class CapeCannedReports(CapeComponentResource):
             for n in report_config["data_function"]["layers"]
         ]
 
-        report_data_lambda = aws.lambda_.Function(
+        report_data_lambda = CapeLambdaFunction(
             f"{self.name}-{report_config['short_name']}-datfn",
             role=report_role.arn,
             layers=layers,
@@ -1083,13 +1085,15 @@ class CapeCannedReports(CapeComponentResource):
             timeout=funct_args.get("timeout", 3),
         )
 
+        self.report_data_functions.append(report_data_lambda)
+
         report_meta = {
             "report_id": report_config["id"],
             "short_name": report_config["short_name"],
             "display_name": report_config["display_name"],
             "template_key": template_key,
             "template_bucket": self.assets_bucket.bucket.bucket,
-            "data_function": report_data_lambda.arn,
+            "data_function": report_data_lambda.function.arn,
         }
 
         Output.all(report_meta_kw=report_meta).apply(
@@ -1107,13 +1111,7 @@ class CapeCannedReports(CapeComponentResource):
             k: serializer.serialize(v) for k, v in report_meta.items()
         }
 
-        aws.dynamodb.TableItem(
+        self.canned_report_ddb_table.add_table_item(
             f"{self.name}-{report_meta['short_name']}-ddbitem",
-            table_name=self.canned_report_ddb_table.name,
-            hash_key=self.canned_report_ddb_table.hash_key,
-            # TODO: do we have a range key here? schema is unknown and UID
-            #       is really the only thing we can bank on being there
-            range_key=None,
-            item=Output.json_dumps(serialized_attrs),
-            opts=ResourceOptions(parent=self),
+            item=serialized_attrs,
         )

@@ -13,19 +13,26 @@ from pulumi import AssetArchive, FileAsset, Output, ResourceOptions, log
 
 import capeinfra
 from capeinfra.iam import (
-    get_api_lambda_authorizer_policy,
-    get_api_policy,
+    add_resources,
+    aggregate_statements,
+    get_api_statements,
     get_inline_role,
-    get_s3_api_proxy_policy,
     get_vpce_api_invoke_policy,
 )
-from capeinfra.resources.compute import CapePythonLambdaLayer
+from capeinfra.meta.capemeta import CapeMeta
+from capeinfra.resources.compute import CapeLambdaFunction
+from capeinfra.resources.objectstorage import VersionedBucket
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
 
 class CapeRestApi(CapeComponentResource):
     """CapeComponentResource wrapping a REST API"""
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:CapeRestApi"
 
     def __init__(
         self,
@@ -69,9 +76,7 @@ class CapeRestApi(CapeComponentResource):
                              authorizer for the API. If not provided, no
                              authorizer will be configured for the API.
         """
-        super().__init__(
-            "capeinfra:resources:CapeRestApi", name, *args, **kwargs
-        )
+        super().__init__(name, *args, **kwargs)
 
         self.name = name
         self.api_name = api_name
@@ -169,9 +174,10 @@ class CapeRestApi(CapeComponentResource):
             f"{self.desc_name} {self.config.get('desc')} lambda role",
             "lmbd",
             "lambda.amazonaws.com",
+            # TODO: migrate policies into each policy granting resource
             Output.all(
                 grants=res_grants,
-            ).apply(lambda kwargs: get_api_policy(**kwargs)),
+            ).apply(lambda kwargs: get_api_statements(**kwargs)),
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
@@ -240,6 +246,15 @@ class CapeRestApi(CapeComponentResource):
         # TODO: ISSUE 245
         self._aws_proxy_roles = {}
 
+        # the proxy role needs write on all tributary input-raw buckets to allow
+        # upload of files. so get a list of all those VersionedBuckets so we can
+        # construct that set of policy statements
+        trib_inputraw_buckets = list[VersionedBucket]()
+        for trib in capeinfra.data_lakehouse.tributaries:
+            trib_inputraw_buckets.extend(
+                trib.filter_buckets(prefix="input", suffix="raw")
+            )
+
         self._aws_proxy_roles["s3"] = self._api_lambda_role = get_inline_role(
             f"{self.name}-awsprxys3-role",
             (
@@ -247,7 +262,24 @@ class CapeRestApi(CapeComponentResource):
             ),
             "apigw",
             "apigateway.amazonaws.com",
-            get_s3_api_proxy_policy(),
+            aggregate_statements(
+                [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
+                            bucket.policies[
+                                VersionedBucket.PolicyEnum.multipart_upload
+                            ]
+                            + bucket.policies[VersionedBucket.PolicyEnum.write]
+                            + bucket.policies[
+                                VersionedBucket.PolicyEnum.delete
+                            ],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in trib_inputraw_buckets
+                ]
+            ),
         ).arn
 
     def _render_spec(self):
@@ -277,7 +309,7 @@ class CapeRestApi(CapeComponentResource):
                 ),
                 "result_cached_sec": authz_def["result_cached_sec"],
                 "role": authz_def["role"].arn,
-                "uri": authz_def["handler"].invoke_arn,
+                "uri": authz_def["handler"].function.invoke_arn,
             }
 
         # as the lambda function arns are Output variables, we need to use the
@@ -378,22 +410,6 @@ class CapeRestApi(CapeComponentResource):
 
             self._authorizers[authz_name].update(authorizer_def)
 
-            # Role for this lambda authorizer. At present all functions get
-            # the same role functionally as we do not have specific resource
-            # grants, but they will be different roles in actuality.
-            # TODO: res_grants is not wired up in the policy doc function yet,
-            #       so don't waste time figuring out why it doesn't work, need
-            #       a way to specify grants for each authorizer
-            # TODO: get_api_authorizer_policy probably needs work (if it still
-            #       exists) when this gets wired up
-            # policy_doc = (
-            #     Output.all(grants=res_grants).apply(
-            #         lambda kwargs: get_api_authorizer_policy(**kwargs)
-            #     )
-            #     if res_grants
-            #     else None
-            # )
-
             # create a role for the authorizer (lambda function)
             authorizer_lambda_role = get_inline_role(
                 f"{self.name}-{authorizer_name}-lmbd-role",
@@ -404,26 +420,23 @@ class CapeRestApi(CapeComponentResource):
                 "lmbd",
                 "lambda.amazonaws.com",
                 # TODO: we will need a way to grant perms for this function if it
-                #       needs to access resources oither than the lambda itself.
-                #       that will be done in  a policy here using the res_grants
-                #       passed in
+                #       needs to access resources other than the lambda itself.
+                #       that will be done in a policy here.
                 None,
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                opts=ResourceOptions(parent=self),
             )
 
             # Create our Lambda function for the authorizer
             # TODO: In the case that 2 apis use the same authorizer function
             #       code, this will create a new function with the same code if
             #       another already exists. need a way to reuse in that case
-            authorizer_handler = aws.lambda_.Function(
-                f"{self.name}-{authorizer_name}-lmbd-hndlr",
+            authorizer_handler = CapeLambdaFunction(
+                f"{self.name}-{authorizer_name}-hndlr",
                 role=authorizer_lambda_role.arn,
                 code=AssetArchive(
                     {"index.py": FileAsset(authorizer_def["file"])}
                 ),
-                # TODO: this runtime should maybe be configurable long term
-                runtime="python3.10",
-                # logging_config=authorizer_logging_config,
                 logging_config=(
                     {
                         "log_format": "Text",
@@ -444,12 +457,10 @@ class CapeRestApi(CapeComponentResource):
                 #       out
                 environment={"variables": {}},
                 opts=ResourceOptions(parent=self),
-                tags={
-                    "desc_name": (
-                        f"{self.desc_name} {self.api_name} API "
-                        f"{authorizer_name} lambda authorizer function"
-                    )
-                },
+                desc_name=(
+                    f"{self.desc_name} {self.api_name} API "
+                    f"{authorizer_name} authorizer"
+                ),
             )
 
             self._authorizers[authz_name]["handler"] = authorizer_handler
@@ -470,12 +481,22 @@ class CapeRestApi(CapeComponentResource):
                 "lmbd",
                 "apigateway.amazonaws.com",
                 # magic for all the lambda functions the authorizer can call
-                (
-                    Output.all(funct_arns=[authorizer_handler.arn]).apply(
-                        lambda kwargs: get_api_lambda_authorizer_policy(
-                            **kwargs
+                aggregate_statements(
+                    [capeinfra.meta.policies[CapeMeta.PolicyEnum.logging]]
+                    + [
+                        self._authorizers[authz_name][
+                            "handler"
+                        ].function.arn.apply(
+                            lambda arn: add_resources(
+                                self._authorizers[authz_name][
+                                    "handler"
+                                ].policies[
+                                    CapeLambdaFunction.PolicyEnum.invoke
+                                ],
+                                arn,
+                            )
                         )
-                    )
+                    ]
                 ),
                 "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             )
