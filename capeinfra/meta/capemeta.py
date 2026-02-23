@@ -284,6 +284,10 @@ class CapePrincipals(CapeComponentResource):
             domain=f"{capeinfra.stack_ns}-cape-users",
             user_pool_id=self.user_pool.id,
         )
+
+        # Create a placeholder for user pool identity providers
+        self.idps = {}
+
         # Create a placeholder for user pool clients
         self.clients = {}
 
@@ -307,10 +311,6 @@ class CapePrincipals(CapeComponentResource):
         idpname = idpcfg["name"]
         idptype = idpcfg["type"]
 
-        log.warn(
-            f"Checking self.idps (keys: "
-            f"{[k for k in self.idps.keys()]}) for {idpname}"
-        )
         if idpname in self.idps:
             log.error(
                 f"Attempt to create an external identity provider named "
@@ -334,10 +334,6 @@ class CapePrincipals(CapeComponentResource):
                 )
 
                 return None
-
-        log.warn(f"Creating External IdP {idpname} of type {idptype}.")
-        log.warn(f"\tOriginal config for IdP: {idpcfg}")
-        log.warn(f"\tProvider details for IdP: {provider_details}")
 
         if provider_details is None:
             log.error(
@@ -414,10 +410,6 @@ class CapePrincipals(CapeComponentResource):
 
     def add_idps(self):
         """Add identity providers based on pulumi configuration."""
-        # TODO: not real sure if we'll need to keep this info around for any
-        #       reason yet. if we don't need it then we can just remove this
-        #       member (and stop writing to it in the loop below)
-        self.idps = {}
 
         for idpcfg in self.config.get("idps", default=[]):
             idp = self._handle_idpcfg(idpcfg)
@@ -470,12 +462,6 @@ class CapePrincipals(CapeComponentResource):
         # now that we have all the users and groups parsed, add the user
         # attributes table items
         self._add_user_attrs_items()
-
-        # TODO: configure external providers with IdentifyProvider
-        # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
-        #                              provider_name="GTRI", provider_type="OIDC",
-        #                              ...)
-        self.add_idps()
 
         # TODO: Create identity pool cape-identities
 
@@ -901,13 +887,24 @@ class CapePrincipals(CapeComponentResource):
             `callback_urls` and `allowed_oauth_scopes`
             name: the client name to register
         """
+        # we'll allow the user pool clients to login with any configured IdP,
+        # be they the internal cognito or external.
+        # THIS MAY CHANGE IN THE FUTURE
+        # COGNITO is a special AWS provider name, the others are the names of
+        # the configured IdPs
+        idp_names = ["COGNITO"] + [k for k in self.idps.keys()]
+
+        log.warn(
+            f"Adding app client {name} and setting supported_identity_providers={idp_names}"
+        )
+
         self.clients[name] = aws.cognito.UserPoolClient(
             f"client={name}",
             name=name,
             user_pool_id=self.user_pool.id,
             allowed_oauth_flows_user_pool_client=True,
             allowed_oauth_flows=["code"],
-            supported_identity_providers=["COGNITO"],
+            supported_identity_providers=idp_names,
             **options,  # pyright: ignore
         )
 
