@@ -125,3 +125,133 @@ class DynamoTable(CapeComponentResource):
             item=Output.json_dumps(item),
             opts=ResourceOptions(parent=self),
         )
+
+
+class RDSInstance(CapeComponentResource):
+    """An RDS EC2 Instance."""
+
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        # TODO: these will need updated as we deal with new things like
+        #       snapshotting (create/restore), clustering (if needed), etc
+
+        # write access
+        createdbinstance = "createdbinstance"
+        deletedbinstance = "deletedbinstance"
+        modifydbinstance = "modifybinstance"
+        rebootdbinstance = "rebootdbinstance"
+        startdbinstance = "startdbinstance"
+
+        # list access
+        describedbinstances = "describebinstances"
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:database:RDSInstance"
+
+    def __init__(
+        self,
+        name,
+        availability_zone,
+        instance_class=aws.rds.InstanceType.T4_G_SMALL,
+        engine="postgres",
+        engine_version="18.2",
+        **kwargs,
+    ):
+
+        # This maintains parental relationships within the pulumi stack
+        super().__init__(name, **kwargs)
+
+        self.name = name
+
+        # TODO:
+        # - get most of this into config
+        # - add db subnet
+        # - backups? delete protection?
+        # - auto major/minor upgrades? (probs minor if anything)
+        # - sizing (storage initial and max)
+        # - KMS for password? auto management by RDS, or set our own (fyi, this
+        #   can go into logs and will be in the state file if we set our own)
+        # - certs
+        # - maint windows (and by extention apply_immediately)?
+        # - storage encryption?
+        # - vpc sec groups
+        # - going to need a user to do deployments. could go the bastion box
+        #   route like inventory system or a vpn user
+        self.rds_instance = aws.rds.Instance(
+            f"{self.name}-rdsinst",
+            instance_class=instance_class,
+            availability_zone=availability_zone,
+            engine=engine,
+            engine_version=engine_version,
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (f"{self.desc_name} RDS Instance"),
+            },
+        )
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            # TODO: most of these actions have dependent perms. may need to to
+            #       add thise explicitly here. they are listed here:
+            # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonrds.html
+
+            self._policies[self.PolicyEnum.createdbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:CreateDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.deletedbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:DeleteDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.modifydbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:ModifyDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.rebootdbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:RebootDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.startdbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:StartDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.describedbinstances] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:DescribeDBInstances",
+                    ],
+                }
+            ]
+        return self._policies

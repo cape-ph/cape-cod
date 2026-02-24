@@ -26,6 +26,7 @@ from capeinfra.pipeline.dapregistry import DAPRegistry
 #       handling.
 from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
+from capeinfra.resources.database import RDSInstance
 from capeinfra.resources.objectstorage import Bucket, VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane, SubnetType
 from capeinfra.util.file import file_as_string
@@ -139,6 +140,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 "type": "table",
             },
         )
+        self.create_env_rds_instance()
         self.create_analysis_pipeline_registry()
         self.create_static_web_resources()
         self.create_application_instances()
@@ -212,6 +214,22 @@ class PrivateSwimlane(ScopedSwimlane):
             config=self.apis[api_name]["spec"],
             desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),
+        )
+
+    def create_env_rds_instance(self):
+        """Creates the CAPE environment RDS instance."""
+        # TODO: make a subnet group for this so we get our dual redundancy. For
+        #       now we're just using the default group. we may want to consider
+        #       making a subnet for DBs, but we would also throw them in compute
+        #       or services SNs that already exist. that should also handle the
+        #       az so we don't need to spec it here
+        #
+        self.env_rds_inst = RDSInstance(
+            "tbd-config-me",
+            "us-east-2b",
+            instance_class=aws.rds.InstanceType.T4_G_SMALL,
+            engine="postgres",
+            engine_version="18.2",
         )
 
     def create_analysis_pipeline_registry(self):
