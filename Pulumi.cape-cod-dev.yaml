@@ -132,14 +132,6 @@ config:
         #       roles attached to the groups should really be the only
         #       swimlane specific things, right?
         #
-        # TODO:
-        # - add cognito and third party IdP config here. maybe call cognito
-        #   something more cloud provider agnostic
-        # - move the principals stuff under cognito. look into if we should
-        #   be using the cognito provided user csv import instead of the
-        #   home brewed one here. also see if an import exists for groups
-        # - Will need the "cape database" config where-ish as well. or maybe
-        #   in private swimlane.
         principals:
             # `idps` (mapping[], optional)
             # a list of config blocks that will yield identity provider
