@@ -139,7 +139,7 @@ class PrivateSwimlane(ScopedSwimlane):
                 "type": "table",
             },
         )
-        # create our identity providers from the configuration. we need hese
+        # create our identity providers from the configuration. we need these
         # defined before we can add app clients that will use them to log in.
         capeinfra.meta.principals.add_idps()
 
