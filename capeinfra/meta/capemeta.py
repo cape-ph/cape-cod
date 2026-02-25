@@ -273,7 +273,8 @@ class CapePrincipals(CapeComponentResource):
             },
             auto_verified_attributes=["email"],
             username_attributes=["email"],
-            # TODO: we'll use the lambda_config member to setup the post-authn
+            # TODO: ISSUE 327
+            #       we'll use the lambda_config member to setup the post-authn
             #       trigger that will write a user record to our CAPE database.
             #       see: https://www.pulumi.com/registry/packages/aws/api-docs/cognito/userpool/#userpoollambdaconfig
             #       obviously we'll need to setup the function and role for it
@@ -369,7 +370,7 @@ class CapePrincipals(CapeComponentResource):
         Returns: The SAML provider_details dict for the IdP or None on error.
         """
         # NOTE: It would be awesome to just have the yaml for the IdP contain
-        #       all the provder details and pass them straight to the
+        #       all the provider details and pass them straight to the
         #       IdentityProvider constructor. That would work if we'd be ok
         #       embedding the content of a metadata file in the metadata config
         #       in the case where we provide the metadata document. otherwise we
@@ -894,7 +895,7 @@ class CapePrincipals(CapeComponentResource):
         # the configured IdPs
         idp_names = ["COGNITO"] + [k for k in self.idps.keys()]
 
-        log.warn(
+        log.info(
             f"Adding app client {name} and setting supported_identity_providers={idp_names}"
         )
 
