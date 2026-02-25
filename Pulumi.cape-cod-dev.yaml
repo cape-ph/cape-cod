@@ -131,7 +131,45 @@ config:
         #       differing assets for each swimlane? i don't *think* so as the
         #       roles attached to the groups should really be the only
         #       swimlane specific things, right?
+        #
         principals:
+            # `idps` (mapping[], optional)
+            # a list of config blocks that will yield identity provider
+            # configurations
+            # This file is a list of mappings, and each mapping is expected to
+            # contain:
+            # * `name` (string, required) - A short, unique name for the IDP
+            #    that contains no spaces. This will be displayed on buttons on
+            #    login pages and used in resource naming
+            # * `type`: The type of IdP as would be specified to pulumi's
+            #   identity provider. See
+            #   https://www.pulumi.com/registry/packages/aws/api-docs/cognito/identityprovider/
+            #   At this time, only SAML has been tested
+            # * `metadata_url` (string, optional) - a URL to the metadata
+            #   provided by the IdP. This or `metadata_file` must be provided.
+            # * `metadata_file` (string, optional) - a path to a local file
+            #   containing the metadata provided by the IdP. This or
+            #   `metadata_url` must be provided.
+            # * `description` (string, optional) - a description for the IdP
+            #   that will show up in resource tags
+            # * `attribute_map`:
+            #   a mapping of cognito attributes to IdP provided attributes
+            # idps: []
+            # TODO: the file-based xml metadata has not really been tested. we 
+            #       only have one available external idp to test with, and aws 
+            #       doesn't seem to play well with >1 IdPs configured with the 
+            #       same info for everything other than names
+            idps:
+            # `idps_extra` (string, optional)
+            # Path to a yaml file containing deployment-specific SAML idp
+            # configuration for items that for whatever reason should not be in
+            # this config. May be a full path or relative to repo root. This
+            # file can be keps out of the repo using something like the
+            # assets-untracked mechanism discussed in the readme.
+            # This file is a list of mappings, and each mapping is expected to
+            # contain the same keys as the items in the `idps` list in this
+            # config
+            idps_extra: "./assets-untracked/principals/external_idps.yaml"
             # `groups`  (mapping[], required)
             # Contains group specifications that are required for all cape
             # deployments. Each list item will have the following keys
