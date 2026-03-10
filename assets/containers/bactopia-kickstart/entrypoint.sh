@@ -43,7 +43,7 @@ BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
     run "${PIPELINE}" ${PIPELINE_VERSION} \
     -profile aws \
     -work-dir s3://"${BUCKET_TEMP_NAME}" \
-    --aws_cli_path /home/ec2-user/miniconda/bin/aws \
+    --aws_cli_path /usr/bin/aws \
     --aws_region ${AWS_REGION} \
     ${NF_OPTS}
 
