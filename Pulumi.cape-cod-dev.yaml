@@ -155,9 +155,9 @@ config:
             # * `attribute_map`:
             #   a mapping of cognito attributes to IdP provided attributes
             # idps: []
-            # TODO: the file-based xml metadata has not really been tested. we 
-            #       only have one available external idp to test with, and aws 
-            #       doesn't seem to play well with >1 IdPs configured with the 
+            # TODO: the file-based xml metadata has not really been tested. we
+            #       only have one available external idp to test with, and aws
+            #       doesn't seem to play well with >1 IdPs configured with the
             #       same info for everything other than names
             idps:
             # `idps_extra` (string, optional)
@@ -1215,7 +1215,7 @@ config:
                 #   configured.
                 environments:
                     - name: workflows
-                      image: ami-0cfe23bad78a802ea
+                      image: ami-06f42fc2d65ef5b59
                       subnet_types:
                           - compute
                       resources:
@@ -1227,7 +1227,7 @@ config:
                           desired_vcpus: 2
                           max_vcpus: 4
                     - name: analysis
-                      image: ami-0cfe23bad78a802ea
+                      image: ami-06f42fc2d65ef5b59
                       subnet_types:
                           - compute
                       resources:
