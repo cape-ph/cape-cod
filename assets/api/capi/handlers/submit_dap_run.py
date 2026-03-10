@@ -24,9 +24,9 @@ def index_handler(event, context):
     # workflow_queue_name = os.getenv("WORKFLOW_QUEUE_NAME")
     # nextflow_job_definition = os.getenv("NEXTFLOW_JOB_DEFINITION_NAME")
     # job_queue_name = os.getenv("JOB_QUEUE_NAME")
-    workflow_queue_name = "ccd-pvsl-workflows-btch-jobq-1ddc965"
+    workflow_queue_name = "ccd-pvsl-workflows-btch-jobq-e326d2f"
     nextflow_job_definition = "ccd-pvsl-nextflow-jobdef"
-    job_queue_name = "ccd-pvsl-analysis-btch-jobq-6431fe1"
+    job_queue_name = "ccd-pvsl-analysis-btch-jobq-d740dd5"
 
     # obligatory data validation
     if None in [workflow_queue_name, nextflow_job_definition, job_queue_name]:

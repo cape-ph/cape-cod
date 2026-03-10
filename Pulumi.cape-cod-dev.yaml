@@ -1298,7 +1298,7 @@ config:
                 #   configured.
                 environments:
                     - name: workflows
-                      image: ami-0cfe23bad78a802ea
+                      image: ami-0ad4ff177982b3e5e
                       subnet_types:
                           - compute
                       resources:
@@ -1310,7 +1310,7 @@ config:
                           desired_vcpus: 2
                           max_vcpus: 4
                     - name: analysis
-                      image: ami-0cfe23bad78a802ea
+                      image: ami-0ad4ff177982b3e5e
                       subnet_types:
                           - compute
                       resources:
