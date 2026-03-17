@@ -5,11 +5,14 @@ import json
 import os
 from enum import Enum
 from typing import Any
+from xml.etree import ElementTree
 
 import pulumi_aws as aws
+import yaml
 from boto3.dynamodb.types import TypeSerializer
 from pulumi import (
     AssetArchive,
+    Config,
     FileArchive,
     FileAsset,
     Output,
@@ -198,6 +201,16 @@ class CapePy(CapeComponentResource):
         )
 
 
+# TODO: this class name made sense when we were just adding users and groups
+#       with a user pool. now that we're adding external identity providers it's
+#       less ideal of a name (though principals is still fine for the user/group
+#       part of what this does. That said we have a lot going on on a couple of
+#       branches that already make it hard to see what's changing between
+#       deployments, and this would add to the noise by changing the
+#       "capeinfra:meta:capemeta:CapePrincipals" namespace which then changes a
+#       bunch of sub components. so for now we'll leave the name and add IdPs to
+#       this. then when things calm down a little we can look at renaming this
+#       to make sense.
 class CapePrincipals(CapeComponentResource):
     """Class that handles config-based local user and group creation/association."""
 
@@ -212,6 +225,7 @@ class CapePrincipals(CapeComponentResource):
             The default config dict for the user/group config
         """
         return {
+            "idps": [],
             "groups": {
                 "Admins": {
                     "description": "CAPE administrators group.",
@@ -259,12 +273,22 @@ class CapePrincipals(CapeComponentResource):
             },
             auto_verified_attributes=["email"],
             username_attributes=["email"],
+            # TODO: ISSUE 327
+            #       we'll use the lambda_config member to setup the post-authn
+            #       trigger that will write a user record to our CAPE database.
+            #       see: https://www.pulumi.com/registry/packages/aws/api-docs/cognito/userpool/#userpoollambdaconfig
+            #       obviously we'll need to setup the function and role for it
+            #       as well.
         )
         self.user_pool_domain = aws.cognito.UserPoolDomain(
             f"{capeinfra.stack_ns}-cape-users-domain",
             domain=f"{capeinfra.stack_ns}-cape-users",
             user_pool_id=self.user_pool.id,
         )
+
+        # Create a placeholder for user pool identity providers
+        self.idps = {}
+
         # Create a placeholder for user pool clients
         self.clients = {}
 
@@ -274,6 +298,140 @@ class CapePrincipals(CapeComponentResource):
 
         # make the DDB table for the user attributes
         self.create_user_attribute_store()
+
+    def _handle_idpcfg(
+        self, idpcfg: dict[Any, Any]
+    ) -> aws.cognito.IdentityProvider | None:
+        """Create and return an external identity provider.
+
+        Args:
+            idpcfg: The Config dict for the IdP
+
+        Returns: The aws.cognito.IdentityProvider object or None on error
+        """
+        idpname = idpcfg["name"]
+        idptype = idpcfg["type"]
+
+        if idpname in self.idps:
+            log.error(
+                f"Attempt to create an external identity provider named "
+                f"{idpname} but one already exists. Ignoring redundant "
+                f"configuration."
+            )
+            return None
+
+        provider_details = None
+
+        # provider details changes depending on the type of provider
+        match idptype:
+            case "SAML":
+                provider_details = self._construct_saml_provider_details(idpcfg)
+            case _:
+                # log an error if we don't know this type, but don't halt
+                # config
+                log.error(
+                    f"Unknown external IdP type specified in configuration: "
+                    f"{idptype}"
+                )
+
+                return None
+
+        if provider_details is None:
+            log.error(
+                f"An error occurred creating the provider details for "
+                f"{idpname}. This identity provider will not be created."
+            )
+            return None
+
+        return aws.cognito.IdentityProvider(
+            f"cape-idp-{idptype}-{idpname}",
+            provider_details=provider_details,
+            provider_name=idpname,
+            provider_type=idptype,
+            user_pool_id=self.user_pool.id,
+            attribute_mapping=idpcfg["attribute_map"],
+            # These are friendly ids that can be used in addition to the IdP
+            # name to reference this IdP. may or may not actually want to use
+            # this.
+            idp_identifiers=idpcfg.get("identifiers", []),
+            # TODO: do we need to specify region here? had it, but then a recent
+            #       refactor removed that from CapeMeta and CapePrincipals
+            opts=ResourceOptions(parent=self),
+        )
+
+    def _construct_saml_provider_details(
+        self, idpcfg: dict[Any, Any]
+    ) -> dict[str, str] | None:
+        """Provider helper to make provider_details for SAML IdPs.
+
+        Args:
+            idpcfg: The Config dict for the IdP
+
+        Returns: The SAML provider_details dict for the IdP or None on error.
+        """
+        # NOTE: It would be awesome to just have the yaml for the IdP contain
+        #       all the provider details and pass them straight to the
+        #       IdentityProvider constructor. That would work if we'd be ok
+        #       embedding the content of a metadata file in the metadata config
+        #       in the case where we provide the metadata document. otherwise we
+        #       need to read the file pointed to and embed it ourselves
+
+        mdfile = idpcfg.get("metadata_file")
+        mdurl = idpcfg.get("metadata_url")
+        mdset = set((mdfile, mdurl))
+
+        if len(mdset) == 1 or None not in mdset:
+            # the mdset should contain a None value and a string as only one of
+            # these values should (and must) be specified. so if we have one
+            # element (meaning both values are the same) or one of the 2 values
+            # is not None, we have a problem
+            log.error(
+                f"Error creating external SAML IdP {idpcfg['name']}: "
+                f"One and only one of `metadata_url` or `metadata_file` "
+                f"must be specified."
+            )
+            return None
+
+        # NOTE: CAPE doesn't support IdP initiated SAML at this time
+        provider_details = {"IDPInit": "false"}
+
+        if mdfile:  # metadata file
+            # according to the AWS docs, the provider details for a metadata
+            # document needs plaintext xml with quotes backslash escaped...
+            # https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_CreateIdentityProvider.html#API_CreateIdentityProvider_RequestSyntax
+            et = ElementTree.parse(mdfile)
+            xmlcontent = ElementTree.tostring(et.getroot())
+            escaped_xml = xmlcontent.decode("utf-8").replace('"', '"')
+            provider_details = {"MetadataFile": escaped_xml}
+        # NOTE: using else here made the typechecker unhappy
+        elif mdurl:  # metadata url
+            provider_details = {"MetadataURL": mdurl}
+
+        return provider_details
+
+    def add_idps(self):
+        """Add identity providers based on pulumi configuration."""
+
+        for idpcfg in self.config.get("idps", default=[]):
+            idp = self._handle_idpcfg(idpcfg)
+            if idp:
+                self.idps[idpcfg["name"]] = idp
+
+        extra_idps_file = self.config.get("idps_extra", default=None)
+        if extra_idps_file:
+            try:
+                with open(extra_idps_file, "r") as idpfile:
+                    extra_idpcfgs = yaml.safe_load(idpfile)
+                for idpcfg in extra_idpcfgs:
+                    idp = self._handle_idpcfg(idpcfg)
+                    if idp:
+                        self.idps[idpcfg["name"]] = idp
+            except FileNotFoundError as fnfe:
+                log.error(
+                    f"Could not find extra IdP configuration file "
+                    f"{extra_idps_file}. Skipping file-based external IdP "
+                    f"configuration. {fnfe}"
+                )
 
     def add_principals(self):
         """"""
@@ -305,11 +463,6 @@ class CapePrincipals(CapeComponentResource):
         # now that we have all the users and groups parsed, add the user
         # attributes table items
         self._add_user_attrs_items()
-
-        # TODO: configure external providers with IdentifyProvider
-        # aws.cognito.IdentityProvider("name", user_pool_id=self.user_pool.id,
-        #                              provider_name="GTRI", provider_type="OIDC",
-        #                              ...)
 
         # TODO: Create identity pool cape-identities
 
@@ -735,13 +888,24 @@ class CapePrincipals(CapeComponentResource):
             `callback_urls` and `allowed_oauth_scopes`
             name: the client name to register
         """
+        # we'll allow the user pool clients to login with any configured IdP,
+        # be they the internal cognito or external.
+        # THIS MAY CHANGE IN THE FUTURE
+        # COGNITO is a special AWS provider name, the others are the names of
+        # the configured IdPs
+        idp_names = ["COGNITO"] + [k for k in self.idps.keys()]
+
+        log.info(
+            f"Adding app client {name} and setting supported_identity_providers={idp_names}"
+        )
+
         self.clients[name] = aws.cognito.UserPoolClient(
             f"client={name}",
             name=name,
             user_pool_id=self.user_pool.id,
             allowed_oauth_flows_user_pool_client=True,
             allowed_oauth_flows=["code"],
-            supported_identity_providers=["COGNITO"],
+            supported_identity_providers=idp_names,
             **options,  # pyright: ignore
         )
 
