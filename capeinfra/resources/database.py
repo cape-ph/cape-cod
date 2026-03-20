@@ -237,7 +237,7 @@ class RDSInstance(CapeComponentResource):
         # - backups? delete protection?
         # - sizing (storage initial and max)
         # - certs
-        # - maint windows (and by extention apply_immediately)?
+        # - maint windows (and by extension apply_immediately)?
         # - storage encryption?
         # - vpc sec groups
         # - there is an `apply_immediately` arg available here. after initial
@@ -246,7 +246,7 @@ class RDSInstance(CapeComponentResource):
         #   true for the initial deploy. not sure yet.
         # - we currently allow the minor version to be upgraded, but not major
         # - we do not have backup specified. we should allow any valid pulumi
-        #   arg for the instance to pass through, so this can be condfigured if
+        #   arg for the instance to pass through, so this can be configured if
         #   needed
         # - if we want to specify a specific IAM ec2 instance profile, use
         #   `custom_iam_instance_profile`
@@ -311,7 +311,7 @@ class RDSInstance(CapeComponentResource):
                 list[aws.iam.GetPolicyDocumentStatementArgsDict],
             ]()
             # TODO: most of these actions have dependent perms. may need to to
-            #       add thise explicitly here. they are listed here:
+            #       add this explicitly here. they are listed here:
             # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonrds.html
 
             self._policies[self.PolicyEnum.createdbinstance] = [
