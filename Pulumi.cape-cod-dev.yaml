@@ -572,6 +572,20 @@ config:
                 # The Pulumi Instance parameter documentation is found here:
                 # https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/#inputs
                 extra-rds-values:
+                    # NOTE: RE: database passwords...
+                    #       at this time are allowing AWS to manage the master password
+                    #       in SecretsManager using the default KMS key. There are 2
+                    #       other routes supported as follows:
+                    #       - use a specific kms key by specifying the
+                    #        `master_user_secret_kms_key_id` in `extra-rds-values` in
+                    #        the CAPE pulumi config. Please see the docs here:
+                    #        https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/#managed-master-passwords-via-secrets-manager-specific-kms-key
+                    #       - forego AWS password management and use a specific
+                    #         password. This would need to be specified as the value of
+                    #         the `password` key in `extra-rds-values` in the CAPE
+                    #         pulumi config. If this route is chosen the password also
+                    #         must be specified in the cape-cod-env repo prior to
+                    #         deploying the cape environmenton this infrastructure.
                     allocated_storage: 20
                     ca_cert_identifier: "rds-ca-rsa2048-g1"
                     database_insights_mode: "standard"
