@@ -4,6 +4,7 @@ Currently this is geared toward REST apis on AWS API Gateway. HTTP apis are not
 yet supported.
 """
 
+import hashlib
 import json
 from collections import defaultdict
 from collections.abc import Mapping
@@ -508,10 +509,32 @@ class CapeRestApi(CapeComponentResource):
             domain_name: The domain name (e.g. api.cape-dev.org) on which this
                          API will reside.
         """
+        # For aws v1 (rest) apis, once a deployment has been made and
+        # associated with a stage, changes don't necessarily get picked up and
+        # redeployed. In fact in research it seems they rarely do.
+        # Pulumi has this nifty `triggers` concept that appears to be their own
+        # thing they put on top the CloudFormation Deployment concept to address
+        # this problem. You define a mapping of keys and values, and changes to
+        # any of the values causes a redeployment.
+        # We don't want to redeploy unless there has been an actual change of
+        # some sort, so triggering off timestamp (a common pattern for dealing
+        # with this in CloudFormation) in the deployment ID deosn't make too
+        # much sense. So we take the rendered OpenAPI spec that we build our
+        # API from and calculate a sha256 digest from it. We then set that as a
+        # value in the triggers map and anytime there is a change, we redeploy.
+        # This has the downside that *any* change to the OpenAPI spec causes a
+        # redeploy. Even things like comments or whitespace. So keep that in
+        # mind.
+
+        api_sha256 = self._spec.apply(
+            lambda s: hashlib.sha256(f"{s}".encode("utf-8")).hexdigest()
+        )
+
         api_deployment = aws.apigateway.Deployment(
             f"{self.name}-restapi-dplymnt",
             rest_api=self.restapi.id,
-            # TODO: ISSUE #65
+            # ANY change to the value of api_sha256 will cause a redeployment.
+            triggers={"redeploy_on_openapi_spec_sha256_change": api_sha256},
             opts=ResourceOptions(
                 parent=self,
             ),
