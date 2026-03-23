@@ -26,6 +26,7 @@ from capeinfra.pipeline.dapregistry import DAPRegistry
 #       handling.
 from capeinfra.resources.api import CapeRestApi
 from capeinfra.resources.certs import BYOCert
+from capeinfra.resources.database import RDSInstance
 from capeinfra.resources.objectstorage import Bucket, VersionedBucket
 from capeinfra.swimlane import ScopedSwimlane, SubnetType
 from capeinfra.util.file import file_as_string
@@ -64,6 +65,16 @@ class PrivateSwimlane(ScopedSwimlane):
             #       pulumi to fail if this is not provided.
             "tls": None,
             "subnets": [{"name": "public", "cidr-block": "10.0.1.0/24"}],
+            "env-db-rds": {
+                "availability_zone": "us-east-2b",
+                "db_name": "cape_env_db",
+                "engine": "postgres",
+                "engine_version": "18.2",
+                "instance_class": aws.rds.InstanceType.T4_G_SMALL,
+                "port": 5432,
+                "username": "postgres",
+                "extra-rds-values": {},
+            },
             "static-apps": [],
             "api": {
                 "subdomain": "api",
@@ -139,6 +150,8 @@ class PrivateSwimlane(ScopedSwimlane):
                 "type": "table",
             },
         )
+        self.create_env_rds_instance()
+
         # create our identity providers from the configuration. we need these
         # defined before we can add app clients that will use them to log in.
         capeinfra.meta.principals.add_idps()
@@ -216,6 +229,45 @@ class PrivateSwimlane(ScopedSwimlane):
             config=self.apis[api_name]["spec"],
             desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),
+        )
+
+    def create_env_rds_instance(self):
+        """Creates the CAPE environment RDS instance."""
+
+        rds_config = self.config.get("env-db-rds")
+
+        db_subnet_group = aws.rds.SubnetGroup(
+            "cape-env-db-subnetgrp",
+            # TODO: we're currently hard-coding to compute subnets. this should
+            #       be configurable to support adding a db specific subnet or
+            #       moving to some other subnet
+            subnet_ids=[
+                s.id
+                for _, s in self.get_subnets_by_type(SubnetType.COMPUTE).items()
+            ],
+            opts=ResourceOptions(parent=self),
+            tags={
+                "desc_name": (f"{self.desc_name} Analysis Pipeline Registry"),
+            },
+        )
+
+        # TODO: make a subnet group for this so we get our dual redundancy. For
+        #       now we're just using the default group. we may want to consider
+        #       making a subnet for DBs, but we would also throw them in compute
+        #       or services SNs that already exist. that should also handle the
+        #       az so we don't need to spec it here
+        #
+        self.env_rds_inst = RDSInstance(
+            f"{self.basename}-env-rds",
+            db_subnet_group,
+            db_name=rds_config["db_name"],
+            instance_class=rds_config["instance_class"],
+            engine=rds_config["engine"],
+            engine_version=rds_config["engine_version"],
+            port=rds_config["port"],
+            username=rds_config["username"],
+            extra_rds_kwargs=rds_config.get("extra-rds-values", default={}),
+            desc_name=f"{self.desc_name} RDS Instance",
         )
 
     def create_analysis_pipeline_registry(self):

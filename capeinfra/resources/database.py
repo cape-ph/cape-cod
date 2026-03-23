@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any
 
 import pulumi_aws as aws
-from pulumi import Output, ResourceOptions
+from pulumi import Output, ResourceOptions, info, warn
 
 from capepulumi import CapeComponentResource
 
@@ -125,3 +125,241 @@ class DynamoTable(CapeComponentResource):
             item=Output.json_dumps(item),
             opts=ResourceOptions(parent=self),
         )
+
+
+class RDSInstance(CapeComponentResource):
+    """An RDS EC2 Instance."""
+
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        # TODO: these will need updated as we deal with new things like
+        #       snapshotting (create/restore), clustering (if needed), etc
+
+        # write access
+        createdbinstance = "createdbinstance"
+        deletedbinstance = "deletedbinstance"
+        modifydbinstance = "modifybinstance"
+        rebootdbinstance = "rebootdbinstance"
+        startdbinstance = "startdbinstance"
+
+        # list access
+        describedbinstances = "describebinstances"
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:resources:database:RDSInstance"
+
+    def __init__(
+        self,
+        name,
+        subnet_group,
+        db_name="cape_env_db",
+        instance_class=aws.rds.InstanceType.T4_G_SMALL,
+        engine="postgres",
+        engine_version="18.2",
+        port=5432,
+        username="postgres",
+        extra_rds_kwargs=None,
+        **kwargs,
+    ):
+
+        # This maintains parental relationships within the pulumi stack
+        super().__init__(name, **kwargs)
+
+        self.name = name
+        # setup our kwargs for the RDS instance based on named kwargs in the
+        # RDSInstance constructor. we can update that with values from
+        # extra_rds_kwargs. keys in the rds_kwargs dict **cannot** be
+        # overwritten with extra_rds_kwargs
+        rds_kwargs = {
+            # TODO: specifying an az is not compatible with multi-az. need to
+            #       figure out which is more important.
+            # "availability_zone": availability_zone,
+            "db_name": db_name,
+            "db_subnet_group_name": subnet_group.name,
+            "enabled_cloudwatch_logs_exports": [
+                "postgresql",
+                "upgrade",
+                "iam-db-auth-error",
+            ],
+            "engine": engine,
+            "engine_version": engine_version,
+            "identifier": f"{self.name}-rdsinst",
+            "instance_class": instance_class,
+            "manage_master_user_password": True,
+            "port": port,
+            "username": username,
+            "opts": ResourceOptions(parent=self),
+            "tags": {
+                "desc_name": self.desc_name,
+            },
+        }
+
+        if extra_rds_kwargs is not None:
+            # pop any rds_kwargs keys from extra_rds_kwargs as we don't allow
+            # those to be overeridden here
+            for k in rds_kwargs.keys():
+                if k in extra_rds_kwargs:
+                    warn(
+                        f"Ignoring configured RDS extra_rds_kwarg key {k}. "
+                        f"This value key is either a named parameter to "
+                        f"the CAPE RDSInstance constructor or is not allowed "
+                        f"to be overridden from our default."
+                    )
+                    extra_rds_kwargs.pop(k)
+
+            # now we need to see if a password is specified in the extra
+            # kwargs. If so we will remove all the stuff that tells AWS to
+            # manage the password.
+            if "password" in extra_rds_kwargs:
+                info(
+                    "`password` is specified in RDS configuration. Turning "
+                    "off AWS password management. The password will need to "
+                    "be specified in the cape-cod-env deployment repo as well."
+                )
+
+                rds_kwargs.pop("manage_master_user_password")
+
+                if "master_user_secret_kms_key_id" in extra_rds_kwargs:
+                    warn(
+                        "`master_user_secret_kms_key_id` is specified in RDS "
+                        "config with a password. These are mutually exclusive "
+                        "and the KMS key will be ignored."
+                    )
+                    extra_rds_kwargs.pop("master_user_secret_kms_key_id")
+
+            # now update the rds_kwargs dict with the extra configged values
+            rds_kwargs.update(extra_rds_kwargs)
+
+        # TODO:
+        # - backups? delete protection?
+        # - sizing (storage initial and max)
+        # - certs
+        # - maint windows (and by extension apply_immediately)?
+        # - storage encryption?
+        # - vpc sec groups
+        # - there is an `apply_immediately` arg available here. after initial
+        #   deployment and definition of maintenance windows this should
+        #   probably be false (which is also the default), but may need to be
+        #   true for the initial deploy. not sure yet.
+        # - we currently allow the minor version to be upgraded, but not major
+        # - we do not have backup specified. we should allow any valid pulumi
+        #   arg for the instance to pass through, so this can be configured if
+        #   needed
+        # - if we want to specify a specific IAM ec2 instance profile, use
+        #   `custom_iam_instance_profile`
+        # - param group is where we define postgresql settings:
+        #   https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.PostgreSQL.CommonDBATasks.Parameters.html
+        # - storage defaults to gp2 which is what we used in manual testing. we
+        #   can change as needs require.
+        # - when we have good security groups in the vpc, we'll want to pass one
+        #   in here and pass it to the instance constructor with
+        #   `vpc_security_group_id`
+        # - do we need:
+        #       - iam_database_authentication_enabled (we don't support this at
+        #       this time)
+        #       - maintenance_window
+        # deletion_protection - this is an arguable one. we def don't want this
+        #                       deleted in prod, but there may be cases where
+        #                       we need this deletable (like if we change params
+        #                       that require a reprovision, it might need to be
+        #                       deleted/recreated. dunno if deletion protection
+        #                       stops that)
+
+        # NOTE: There are a ton of params we don't explicitly use for this. If
+        #       they're in the config we'll silently pass them on tho. more
+        #       info at the following links:
+        # * https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance
+        # * https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_CreateDBInstance.html
+        self.rds_instance = aws.rds.Instance(
+            f"{self.name}-rdsinst",
+            **rds_kwargs,
+        )
+
+        # if AWS is managing the master user password for the instance, report
+        # the ARN to the user
+        def get_rds_secret_names(secrets):
+            """Returns a list of secret names.
+
+            The RDS instance Output master_user_secrets is of type
+            Sequence[InstanceMasterUserSecret]. This type contains a secret_arn
+            value which this function uses to get the name of the secret.
+            """
+            return [
+                aws.secretsmanager.get_secret(s.secret_arn).name
+                for s in secrets
+            ]
+
+        if self.rds_instance.manage_master_user_password:
+            self.rds_instance.master_user_secrets.apply(
+                lambda us: info(
+                    f"AWS manages {self.name} RDS Instance Secrets: "
+                    f"{get_rds_secret_names(us)}"
+                )
+            )
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            # TODO: most of these actions have dependent perms. may need to to
+            #       add this explicitly here. they are listed here:
+            # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonrds.html
+
+            self._policies[self.PolicyEnum.createdbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:CreateDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.deletedbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:DeleteDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.modifydbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:ModifyDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.rebootdbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:RebootDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.startdbinstance] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:StartDBInstance",
+                    ],
+                }
+            ]
+            self._policies[self.PolicyEnum.describedbinstances] = [
+                {
+                    "effect": "Allow",
+                    "actions": [
+                        "rds:DescribeDBInstances",
+                    ],
+                }
+            ]
+        return self._policies

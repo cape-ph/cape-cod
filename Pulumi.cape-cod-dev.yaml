@@ -155,9 +155,9 @@ config:
             # * `attribute_map`:
             #   a mapping of cognito attributes to IdP provided attributes
             # idps: []
-            # TODO: the file-based xml metadata has not really been tested. we 
-            #       only have one available external idp to test with, and aws 
-            #       doesn't seem to play well with >1 IdPs configured with the 
+            # TODO: the file-based xml metadata has not really been tested. we
+            #       only have one available external idp to test with, and aws
+            #       doesn't seem to play well with >1 IdPs configured with the
             #       same info for everything other than names
             idps:
             # `idps_extra` (string, optional)
@@ -517,6 +517,89 @@ config:
                   type: service
                   routes:
                       - "nataz1"
+            # `env-db` (mapping, required)
+            # Contains the configuration for the main CAPE environment database
+            # RDS instance.
+            # TODO:
+            # - though not really an instance app, there are a lot of
+            #   smiliarities here to specifying EC2 instances for apps. Can
+            #   they be combined or something?
+            env-db-rds:
+                # `availability_zone` (string, optional)
+                # The name of the availability zone the RDS instance will be
+                # in. Defaults to "us-east-2b"
+                # TODO: multi_az is not compatible with specifying an
+                #       availability zone. need to determine which is
+                #       more important. For now we're just going to
+                #       put the DB as multi az
+                #availability_zone: "us-east-2b"
+                #
+                # `db_name` (string, optional)
+                # Name of the main CAPE environment DB. this must match any software
+                # configuration that uses a database name in a connection parameter
+                db_name: "cape_env_db"
+                # `engine` (string, optional)
+                # The database engine to use. We have only tested and configured on
+                # postgres >=18.x.
+                engine: "postgres"
+                # `engine_version` (string, optional)
+                # The database engine version to use. We have only tested and
+                # configured on postgres >=18.x.
+                engine_version: "18.2"
+                # `instance_class` (string, optional)
+                # The machine class the RDS instance will live on. Should map to
+                # values here:
+                # https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/#instancetype
+                instance_class: "db.t4g.small"
+                # `port` (string, optional)
+                # The port to expose the database on.
+                port: 5432
+                # `username` (string, optional)
+                # Name of the master user of the RDS Instance. Defaults to `postgres`
+                username: "postgres"
+                # `extra-rds-values` (mapping, optional)
+                # This is a mapping of keys and values that will be passed
+                # verbatim to the Pulumi RDS Instance constructor. Any valid
+                # constructor parameter can be given a value here, **except**
+                # those captured in the env-db-rds mapping already and those
+                # that have values we do not currently allow overriding (e.g.
+                # `identifier`. A warning will be printed during pulumi
+                # operations for any keys fitting those rules and the values
+                # will be ignored.
+                # parameters not defined here and not captured in the mapping
+                # above will be allowed to default to the Pulumi or AWS
+                # default values.
+                # The Pulumi Instance parameter documentation is found here:
+                # https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/#inputs
+                extra-rds-values:
+                    # NOTE: RE: database passwords...
+                    #       at this time are allowing AWS to manage the master password
+                    #       in SecretsManager using the default KMS key. There are 2
+                    #       other routes supported as follows:
+                    #       - use a specific kms key by specifying the
+                    #        `master_user_secret_kms_key_id` in `extra-rds-values` in
+                    #        the CAPE pulumi config. Please see the docs here:
+                    #        https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/#managed-master-passwords-via-secrets-manager-specific-kms-key
+                    #       - forego AWS password management and use a specific
+                    #         password. This would need to be specified as the value of
+                    #         the `password` key in `extra-rds-values` in the CAPE
+                    #         pulumi config. If this route is chosen the password also
+                    #         must be specified in the cape-cod-env repo prior to
+                    #         deploying the cape environmenton this infrastructure.
+                    allocated_storage: 20
+                    ca_cert_identifier: "rds-ca-rsa2048-g1"
+                    database_insights_mode: "standard"
+                    deletion_protection: False
+                    # setting this to 0 turns off autoscaling. which is fine for the
+                    # test case.
+                    max_allocated_storage: 0
+                    # TODO: multi_az is not compatible with specifying an
+                    #       availability zone. need to determine which is
+                    #       more important. For now we're just going to
+                    #       put the DB as multi az
+                    multi_az: True
+                    # TODO: we'll want true eventually
+                    storage_encrypted: False
             # `api` (mapping, optional)
             # Contains the configuration for apis and the API application load
             # balancer. If this is not included, a default configuration will be
