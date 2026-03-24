@@ -1,6 +1,7 @@
 """Lambda function for handling a post of a new analysis pipeline run."""
 
 import json
+from decimal import Decimal
 
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import PipelineTable
@@ -23,6 +24,26 @@ def bad_param_response():
         },
         400,
     )
+
+
+# TODO: this should probably go elsewhere. issue is you can't json serialize
+#       Decimal values, and some of the values coming back from dynamo in the
+#       pipeline profile spec are Decimal. So this shims them to floats.
+def json_serialize_the_unserializable(val):
+    """Serialze a value (e.g. Decimal) that is otherwise not json serializable.
+
+    Right now this just handles Decimal, but can be updated as needed.
+
+    :param val: The value to serialize.
+    :return: the serialized value.
+    :raises: TypeError if even this function cannot serialize.
+    """
+    if isinstance(val, Decimal):
+        # this results in a reduction of precision which can cause issues. In
+        # our case (for now at least) it's ok, but we may want to consider other
+        # mechanisms like string conversions or forcing some rounding.
+        return float(val)
+    raise TypeError(f"Value {val} of type {type(val)} is not json serializable")
 
 
 def index_handler(event, context):
@@ -58,9 +79,11 @@ def index_handler(event, context):
                         {
                             "key": prof["key"],
                             "profileName": prof["display_name"],
+                            "schema": prof["contents"],
                         }
                         for prof in dap["profiles"]
                     ]
+                    print(f"resp_data: {resp_data}")
         # And return our response as a 200
         return {
             "statusCode": resp_status,
@@ -80,7 +103,9 @@ def index_handler(event, context):
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "OPTIONS,GET",
             },
-            "body": json.dumps(resp_data),
+            "body": json.dumps(
+                resp_data, default=json_serialize_the_unserializable
+            ),
         }
     except ClientError as err:
         code, message = decode_error(err)
