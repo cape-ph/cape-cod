@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pulumi_aws as aws
+from boto3.dynamodb.types import TypeSerializer
 from pulumi import FileAsset, Output, ResourceOptions, log
 
 from capeinfra.resources.objectstorage import VersionedBucket
@@ -204,12 +205,27 @@ class DAPRegistry(CapeComponentResource):
                                 source=FileAsset(prof_pth),
                             )
 
+                            prof_json = None
+                            with open(prof_pth) as profilejson:
+                                prof_json = json.load(profilejson)
+
+                            if prof_json is None:
+                                log.warn(
+                                    "Could not ingest data analysis pipeline "
+                                    f"profile {prof_pth}. Setting profile "
+                                    "contents to empty mapping"
+                                )
+                                prof_json = {}
+
                             uploaded_profiles.append(
                                 {
                                     "key": {"S": objkey},
                                     "display_name": {
                                         "S": profile["display_name"]
                                     },
+                                    "contents": TypeSerializer().serialize(
+                                        prof_json
+                                    ),
                                 }
                             )
 
