@@ -47,7 +47,7 @@ def json_serialize_the_unserializable(val):
 
 
 def index_handler(event, context):
-    """Handler for the GET of available profiles for a DAP version.
+    """Handler for the GET of the profile of a DAP version.
 
     :param event: The event object that contains the HTTP request and json
                   data.
@@ -75,14 +75,7 @@ def index_handler(event, context):
                 resp_data = []
                 resp_status = 200
                 if dap:
-                    resp_data = [
-                        {
-                            "key": prof["key"],
-                            "profileName": prof["display_name"],
-                            "schema": prof["contents"],
-                        }
-                        for prof in dap["profiles"]
-                    ]
+                    resp_data = dap["profile"]
                     print(f"resp_data: {resp_data}")
         # And return our response as a 200
         return {

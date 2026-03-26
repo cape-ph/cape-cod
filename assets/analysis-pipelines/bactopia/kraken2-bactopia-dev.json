@@ -1,0 +1,47 @@
+{
+    "pipelineType": "nextflow",
+    "pipelineName": "Bactopia Kraken2",
+    "project": "bactopia/bactopia",
+    "version": "dev",
+    "inherits": ["bactopia-base-dev"],
+    "parametersSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "allOf": [{ "$ref": "#/$defs/bactopia-base-dev" }],
+        "properties": {
+            "--wf": {
+                "const": "kraken2",
+                "default": "kraken2"
+            },
+            "--max_cpus": {
+                "type": "integer",
+                "title": "Max CPUs",
+                "minimum": 1,
+                "default": 2
+            },
+            "--max_memory": {
+                "type": "string",
+                "title": "Max Memory",
+                "default": "8.GB"
+            },
+            "--bactopia": {
+                "type": "string",
+                "title": "Bactopia Output Directory"
+            }
+        },
+        "unevaluatedProperties": false,
+        "required": ["--bactopia"]
+    },
+    "uiSchema": {
+        "type": "VerticalLayout",
+        "elements": [
+            { "type": "Control", "scope": "#/properties/--max_cpus" },
+            { "type": "Control", "scope": "#/properties/--max_memory" },
+            { "type": "Control", "scope": "#/properties/--bactopia" }
+        ]
+    },
+    "submission": {
+        "optionsFieldName": "nextflowOptions",
+        "encoding": "cli-string"
+    }
+}

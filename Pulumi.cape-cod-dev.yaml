@@ -781,9 +781,9 @@ config:
                                 description: "getdaps Lambda Funnction"
                                 memory_size: 128
                                 timeout: 3
-                          - id: "get_dap_profiles_handler"
-                            name: "getdapprofiles"
-                            code: "assets/api/capi/handlers/get_dap_profiles.py"
+                          - id: "get_dap_profile_handler"
+                            name: "getdapprofile"
+                            code: "assets/api/capi/handlers/get_dap_profile.py"
                             layers:
                                 - capi-all
                             funct_args:

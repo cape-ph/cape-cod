@@ -5,10 +5,9 @@ from pathlib import Path
 
 import pulumi_aws as aws
 from boto3.dynamodb.types import TypeSerializer
-from pulumi import FileAsset, Output, ResourceOptions, log
+from pulumi import Output, ResourceOptions, log
 
-from capeinfra.resources.objectstorage import VersionedBucket
-from capeinfra.util.naming import disemvowel
+from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
 
@@ -55,7 +54,7 @@ class DAPRegistry(CapeComponentResource):
         return {
             # path in the deployment repo to the directory containing the
             # analysis pipeline fxiture json and a subdirectory of profiles
-            "dap-assets": "./assets/analysis-pipelines",
+            "pipelines": "./assets/analysis-pipelines",
         }
 
     @property
@@ -79,24 +78,10 @@ class DAPRegistry(CapeComponentResource):
         super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
-        self.dap_assets = Path(self.config["dap-assets"])
+        self.dap_pipelines = Path(self.config["pipelines"])
 
-        self.create_dap_objstore()
         self.create_dap_registry_table()
         self.load_pipeline_assets()
-
-    def create_dap_objstore(self):
-        """Set up an analysis pipeline object store."""
-
-        # bucket for hosting static web application
-        self.dap_assets_bucket = VersionedBucket(
-            f"{self.name}-assets-vbkt",
-            bucket_name="cape-dap-assets",
-            desc_name=(f"{self.desc_name} analysis pipeline assets bucket"),
-            opts=ResourceOptions(parent=self),
-        )
-
-        # if we need bucket policies or anything, add them here
 
     def create_dap_registry_table(self):
         """Set up an analysis pipeline registry database table."""
@@ -145,114 +130,85 @@ class DAPRegistry(CapeComponentResource):
 
     def load_pipeline_assets(self):
         """Load local assets into the registry bucket and table."""
-        dap_fixture_pth = self.dap_assets / self.DAP_FIXTURE
 
         # make sure we have a json file that defines all the deploy time
         # pipelines
-        if not dap_fixture_pth.exists():
+        if not self.dap_pipelines.exists():
             log.warn(
                 (
                     f"Unable to locate analysis pipeline fixtures file: "
-                    f"{dap_fixture_pth}. No analysis pipelines will be "
+                    f"{self.dap_pipelines}. No analysis pipelines will be "
                     f"deployed."
                 ),
                 self,
             )
             return
 
-        # load up the json
-        self.dap_fixtures = {}
-        with open(dap_fixture_pth) as f:
-            self.dap_fixtures = json.load(f)
-
-        # pipeline spec file starts with an outer list of objects defining
-        # pipeline types (e.g. nextflow). inner objects define the pipelines
-        # for the type
-        for pipeline_type_spec in self.dap_fixtures:
-            pltype = pipeline_type_spec.get("type", None)
-            # TODO: for now we limit to nextflow pipelines explicitly. this will
-            #       have to change eventually
-            if pltype == "nextflow":
-                # now iterate the pipelines for the type
-                for pipeline in pipeline_type_spec.get("pipelines", None):
-                    # and the versions for the pipeline
-                    for version in pipeline.get("versions", []):
-                        display_name = pipeline["display_name"]
-                        pipeline_name = pipeline["pipeline_name"]
-                        version_id = version["version"]
-                        profile_root = pipeline["profile_root"]
-                        # profile_id e.g. becomes 'bactopia' for profile root
-                        # 'profiles/bactopia'
-                        profile_id = profile_root.split("/")[-1]
-                        profiles = version.get("profiles", [])
-
-                        uploaded_profiles = []
-
-                        # first upload the profiles for the (pipeline, version)
-                        # so we can build a list of dicts of successful uploads
-                        # to go into dynamodb
-                        for profile in profiles:
-                            objkey = (
-                                f"{profile_id}/{version_id}/{profile['file']}"
-                            )
-                            prof_pth = (
-                                self.dap_assets / profile_root / profile["file"]
-                            )
-
-                            self.dap_assets_bucket.add_object(
-                                f"{profile_id}-{version_id}-{profile['file']}",
-                                key=objkey,
-                                source=FileAsset(prof_pth),
-                            )
-
-                            prof_json = None
-                            with open(prof_pth) as profilejson:
-                                prof_json = json.load(profilejson)
-
-                            if prof_json is None:
-                                log.warn(
-                                    "Could not ingest data analysis pipeline "
-                                    f"profile {prof_pth}. Setting profile "
-                                    "contents to empty mapping"
-                                )
-                                prof_json = {}
-
-                            uploaded_profiles.append(
-                                {
-                                    "key": {"S": objkey},
-                                    "display_name": {
-                                        "S": profile["display_name"]
-                                    },
-                                    "contents": TypeSerializer().serialize(
-                                        prof_json
-                                    ),
-                                }
-                            )
-
-                        # and create a dynamodb entry for the (pipeline, version)
-                        aws.dynamodb.TableItem(
-                            f"{self.name}-{disemvowel(display_name)}-{version_id}-ddbitem",
-                            table_name=self.analysis_pipeline_registry_ddb_table.name,
-                            hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
-                            range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
-                                lambda rk: f"{rk}"
-                            ),
-                            item=Output.json_dumps(
-                                {
-                                    "display_name": {"S": display_name},
-                                    "pipeline_name": {"S": pipeline_name},
-                                    "version": {"S": version_id},
-                                    "pipeline_type": {"S": "nextflow"},
-                                    "nextflow_config": self.DEFAULT_NEXTFLOW_CONFIG,
-                                    "profiles": {
-                                        "L": [
-                                            {
-                                                "M": up
-                                                for up in uploaded_profiles
-                                            }
-                                        ]
-                                    },
-                                }
-                            ),
-                            opts=ResourceOptions(parent=self),
+        # final pipelines in the registry
+        pipelines = {}
+        # pipeline profiles that need to be validated and resolved
+        to_process_pipelines: list[tuple[str, dict]] = []
+        # iterate over all JSON files in the DAP pipelines directory
+        for path in self.dap_pipelines.glob("**/*.json"):
+            # render JSON file as jinja template and load as JSON
+            pipeline_template = get_j2_template_from_path(str(path))
+            to_process_pipelines.append(
+                (
+                    path.stem,
+                    json.loads(
+                        pipeline_template.render(
+                            # currently only pass AWS region, can be expanded later
+                            aws_region=aws.get_region().region
                         )
+                    ),
+                )
+            )
+
+        while len(to_process_pipelines) > 0:
+            new_to_process = []
+            for stem, profile in to_process_pipelines:
+                inherited_pipelines = profile.get("inherits", [])
+                if all(
+                    pipeline in pipelines for pipeline in inherited_pipelines
+                ):
+                    parameter_schema = profile.get("parametersSchema")
+                    if parameter_schema:
+                        parameter_schema["$defs"] = {}
+                        for inherited_stem in inherited_pipelines:
+                            parameter_schema["$defs"][inherited_stem] = (
+                                pipelines[inherited_stem].get(
+                                    "parametersSchema", {}
+                                )
+                            )
+                    pipelines[stem] = profile
+                    # Add resolved pipeline to the DynamoDB table
+                    aws.dynamodb.TableItem(
+                        f"{self.name}-{stem}-ddbitem",
+                        table_name=self.analysis_pipeline_registry_ddb_table.name,
+                        hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
+                        range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
+                            lambda rk: f"{rk}"
+                        ),
+                        item=Output.json_dumps(
+                            {
+                                "pipeline_name": {"S": profile["pipelineName"]},
+                                "version": {"S": profile["version"]},
+                                "project": {"S": profile["project"]},
+                                "pipeline_type": {"S": profile["pipelineType"]},
+                                "profile": TypeSerializer().serialize(profile),
+                                "nextflow_config": self.DEFAULT_NEXTFLOW_CONFIG,  # TODO: CURRENTLY AN UNUSED PLACEHOLDER
+                            }
+                        ),
+                        opts=ResourceOptions(parent=self),
+                    )
+                else:
+                    new_to_process.append((stem, profile))
+            if len(to_process_pipelines) == len(new_to_process):
+                log.warn(
+                    f"Unable to resolve all pipeline inheritances. The following"
+                    f"pipelines are unavailable:"
+                    f"{json.dumps(to_process_pipelines)}"
+                )
+                break
+            else:
+                to_process_pipelines = new_to_process

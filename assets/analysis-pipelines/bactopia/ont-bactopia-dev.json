@@ -1,0 +1,48 @@
+{
+    "pipelineType": "nextflow",
+    "pipelineName": "Bactopia ONT Sample",
+    "project": "bactopia/bactopia",
+    "version": "dev",
+    "inherits": ["bactopia-base-dev"],
+    "parametersSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "allOf": [{ "$ref": "#/$defs/bactopia-base-dev" }],
+        "properties": {
+            "--max_cpus": {
+                "type": "integer",
+                "title": "Max CPUs",
+                "minimum": 1,
+                "default": 8
+            },
+            "--max_memory": {
+                "type": "string",
+                "title": "Max Memory",
+                "default": "24.GB"
+            },
+            "--ont": {
+                "type": "string",
+                "title": "ONT"
+            },
+            "--sample": {
+                "type": "string",
+                "title": "Sample Name"
+            }
+        },
+        "unevaluatedProperties": false,
+        "required": ["--sample"]
+    },
+    "uiSchema": {
+        "type": "VerticalLayout",
+        "elements": [
+            { "type": "Control", "scope": "#/properties/--max_cpus" },
+            { "type": "Control", "scope": "#/properties/--max_memory" },
+            { "type": "Control", "scope": "#/properties/--ont" },
+            { "type": "Control", "scope": "#/properties/--sample" }
+        ]
+    },
+    "submission": {
+        "optionsFieldName": "nextflowOptions",
+        "encoding": "cli-string"
+    }
+}

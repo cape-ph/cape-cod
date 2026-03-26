@@ -37,7 +37,7 @@ def index_handler(event, context):
     try:
         body = json.loads(event["body"])
 
-        pipeline_name = body["pipelineName"]
+        pipeline_project = body["pipelineProject"]
         pipeline_version = body["pipelineVersion"]
         output_path = body["outputPath"]
         nf_opts = body["nextflowOptions"]
@@ -51,7 +51,7 @@ def index_handler(event, context):
             jobDefinition=nextflow_job_definition,
             containerOverrides={
                 "environment": [
-                    {"name": "PIPELINE", "value": pipeline_name},
+                    {"name": "PIPELINE", "value": pipeline_project},
                     {"name": "PIPELINE_VERSION", "value": pipeline_version},
                     {"name": "NF_OPTS", "value": nf_opts},
                 ]
