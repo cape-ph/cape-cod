@@ -1,6 +1,7 @@
 {
     "pipelineType": "nextflow",
     "pipelineName": "Bactopia Kraken2",
+    "pipelineDescription": "Execute Bactopia's Kraken2 workflow with the development release",
     "project": "bactopia/bactopia",
     "version": "dev",
     "inherits": ["bactopia-base-dev"],

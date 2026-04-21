@@ -1,6 +1,7 @@
 {
     "pipelineType": "nextflow",
     "pipelineName": "Bactopia",
+    "pipelineDescription": "Execute Bactopia v3.2.0",
     "project": "bactopia/bactopia",
     "version": "v3.2.0",
     "parametersSchema": {
