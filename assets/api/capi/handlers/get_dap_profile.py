@@ -30,7 +30,7 @@ def bad_param_response():
 #       Decimal values, and some of the values coming back from dynamo in the
 #       pipeline profile spec are Decimal. So this shims them to floats.
 def json_serialize_the_unserializable(val):
-    """Serialze a value (e.g. Decimal) that is otherwise not json serializable.
+    """Serialize a value (e.g. Decimal) that is otherwise not json serializable.
 
     Right now this just handles Decimal, but can be updated as needed.
 
