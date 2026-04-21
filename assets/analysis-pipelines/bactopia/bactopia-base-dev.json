@@ -1,0 +1,29 @@
+{
+    "pipelineType": "nextflow",
+    "pipelineName": "Bactopia",
+    "pipelineDescription": "Execute Bactopia development release",
+    "project": "bactopia/bactopia",
+    "version": "dev",
+    "parametersSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "-profile": {
+                "const": "aws",
+                "default": "aws"
+            },
+            "--aws_cli_path": {
+                "const": "/home/ec2-user/miniconda/bin/aws",
+                "default": "/home/ec2-user/miniconda/bin/aws"
+            },
+            "--aws_region": {
+                "const": "{{ aws_region }}",
+                "default": "{{ aws_region }}"
+            }
+        }
+    },
+    "submission": {
+        "optionsFieldName": "nextflowOptions",
+        "encoding": "cli-string"
+    }
+}

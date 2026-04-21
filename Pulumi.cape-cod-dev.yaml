@@ -781,9 +781,9 @@ config:
                                 description: "getdaps Lambda Funnction"
                                 memory_size: 128
                                 timeout: 3
-                          - id: "get_dap_profiles_handler"
-                            name: "getdapprofiles"
-                            code: "assets/api/capi/handlers/get_dap_profiles.py"
+                          - id: "get_dap_profile_handler"
+                            name: "getdapprofile"
+                            code: "assets/api/capi/handlers/get_dap_profile.py"
                             layers:
                                 - capi-all
                             funct_args:
@@ -1298,7 +1298,7 @@ config:
                 #   configured.
                 environments:
                     - name: workflows
-                      image: ami-0cfe23bad78a802ea
+                      image: ami-0ad4ff177982b3e5e
                       subnet_types:
                           - compute
                       resources:
@@ -1310,7 +1310,7 @@ config:
                           desired_vcpus: 2
                           max_vcpus: 4
                     - name: analysis
-                      image: ami-0cfe23bad78a802ea
+                      image: ami-0ad4ff177982b3e5e
                       subnet_types:
                           - compute
                       resources:

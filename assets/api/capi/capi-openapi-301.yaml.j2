@@ -85,7 +85,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -147,7 +147,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -195,9 +195,9 @@ paths:
                 "500":
                     description:
                         "Server Error - Unable to fetch user attributes"
-                # TODO: This default isn't supported by AWS API Gateway. It's 
-                #       not breaking anything, but will not do anything. We 
-                #       need to specify all expected/known status codes 
+                # TODO: This default isn't supported by AWS API Gateway. It's
+                #       not breaking anything, but will not do anything. We
+                #       need to specify all expected/known status codes
                 #       explicitly
                 "default":
                     description: "Client Error"
@@ -221,7 +221,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -264,9 +264,9 @@ paths:
                 "500":
                     description:
                         "Server Error - Unable to fetch user attributes"
-                # TODO: This default isn't supported by AWS API Gateway. It's 
-                #       not breaking anything, but will not do anything. We 
-                #       need to specify all expected/known status codes 
+                # TODO: This default isn't supported by AWS API Gateway. It's
+                #       not breaking anything, but will not do anything. We
+                #       need to specify all expected/known status codes
                 #       explicitly
                 "default":
                     description: "Client Error"
@@ -290,7 +290,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -367,7 +367,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -430,7 +430,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -482,7 +482,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -548,18 +548,18 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}?uploads"
-                requestParameters: 
+                requestParameters:
                     integration.request.path.bucket: method.request.querystring.bucket
                     integration.request.path.key: method.request.querystring.key
-                responses: 
-                    default: 
+                responses:
+                    default:
                         statusCode: "200"
-                        responseParameters: 
+                        responseParameters:
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -588,7 +588,7 @@ paths:
                   name: key
                   schema:
                     type: string
-                    description: 
+                    description:
                         "The object key the reassembled parts will yield
                         limited to"
                 - in: query
@@ -598,7 +598,7 @@ paths:
                     description: "The id of the previously created multipart upload"
                   required: true
                 - in: query
-                  name: numParts 
+                  name: numParts
                   schema:
                     type: integer
                     description: "The number of parts the MPU will consist of"
@@ -614,7 +614,7 @@ paths:
                                 items:
                                     type: object
                                     description:
-                                        "An object containing the PUT URL and 
+                                        "An object containing the PUT URL and
                                         part number associated with it."
                                     properties:
                                         url:
@@ -635,7 +635,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -685,14 +685,14 @@ paths:
                                 type: object
                                 properties:
                                     PartNumber:
-                                        type: string 
+                                        type: string
                                         description: Part number of a previously uploaded part
                                     ETag:
                                         type: string
                                         description: ETag of a previously uploaded part
                                 xml:
                                     name: Part
-                            xml: 
+                            xml:
                                 name: CompleteMultipartUpload
             responses:
                 "200":
@@ -707,8 +707,8 @@ paths:
                             schema:
                                 type: object
                                 description : >
-                                    An object containing information about the MPU. 
-                                    Fields are the same as AWS documentation, which can be found here: 
+                                    An object containing information about the MPU.
+                                    Fields are the same as AWS documentation, which can be found here:
                                     https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
                                 properties:
                                     location:
@@ -740,19 +740,19 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
-                requestParameters: 
+                requestParameters:
                     integration.request.path.bucket: method.request.querystring.bucket
                     integration.request.path.key: method.request.querystring.key
                     integration.request.querystring.uploadId: method.request.querystring.uploadId
-                responses: 
-                    default: 
+                responses:
+                    default:
                         statusCode: "200"
-                        responseParameters: 
+                        responseParameters:
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -806,19 +806,19 @@ paths:
                 # integrations are post
                 httpMethod: "POST"
                 uri: "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
-                requestParameters: 
+                requestParameters:
                     integration.request.path.bucket: method.request.querystring.bucket
                     integration.request.path.key: method.request.querystring.key
                     integration.request.querystring.uploadId: method.request.querystring.uploadId
-                responses: 
-                    default: 
+                responses:
+                    default:
                         statusCode: "204"
-                        responseParameters: 
+                        responseParameters:
                             method.response.header.Access-Control-Allow-Origin: "'*'"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -854,7 +854,7 @@ paths:
                   name: format
                   schema:
                     type: string
-                    description: 
+                    description:
                         "The requested report format. Defaults to `html` if not provided"
             responses:
                 "200":
@@ -863,8 +863,8 @@ paths:
                         application/octet-stream:
                             schema:
                                 type: string
-                                description: 
-                                    The report contents as a binary octet 
+                                description:
+                                    The report contents as a binary octet
                                     stream. The bytes will be for the requested
                                     format or HTML if no format was requested.
                                 format: binary
@@ -879,7 +879,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -913,32 +913,30 @@ paths:
                                 items:
                                     type: object
                                     properties:
-                                        display_name:
-                                            type: string
-                                            description: The pipeline name for display
                                         pipeline_name:
                                             type: string
-                                            description: The pipeline name
+                                            description: The pipeline name for display
                                         pipeline_type:
                                             type: string
                                             description:
                                                 The type of pipeline execution
                                                 environment (e.g. 'nextflow')
+                                        project:
+                                            type: string
+                                            description: The pipeline project to run
                                         version:
                                             type: string
                                             description: The pipeline version
-                                        profiles:
-                                            type: array
-                                            description: array of profiles available for a pipeline
-                                            items:
-                                                type: object
-                                                properties:
-                                                    key:
-                                                        type: string
-                                                        description: The key for the profile in object storage
-                                                    profile_name:
-                                                        type: string
-                                                        description: A display name for the profile
+                                        profile:
+                                            type: object
+                                            description: The pipeline profile
+                                            properties:
+                                                key:
+                                                    type: string
+                                                    description: The key for the profile in object storage
+                                                profile_name:
+                                                    type: string
+                                                    description: A display name for the profile
 
                 "500":
                     description:
@@ -951,7 +949,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -968,20 +966,20 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "mock"
-    /dap/pipelineprofiles:
+    /dap/pipelineprofile:
         get:
             parameters:
                 - in: query
                   name: pipeline
                   schema:
                     type: string
-                    description: "The name of the pipeline profiles are being fetched for"
+                    description: "The name of the pipeline profile is being fetched for"
                   required: true
                 - in: query
                   name: version
                   schema:
                     type: string
-                    description: "The version of the pipeline profiles are being fetched for"
+                    description: "The version of the pipeline profile is being fetched for"
                   required: true
             responses:
                 "200":
@@ -989,18 +987,16 @@ paths:
                     content:
                         application/json:
                             schema:
-                                type: array
                                 description:
-                                    "An array of available profiles for the pipeline/version pair"
-                                items:
-                                    type: object
-                                    properties:
-                                        key:
-                                            type: string
-                                            description: The key for the profile in object storage
-                                        profileName:
-                                            type: string
-                                            description: A display name for the profile
+                                    "The available profile for the pipeline/version pair"
+                                type: object
+                                properties:
+                                    key:
+                                        type: string
+                                        description: The key for the profile in object storage
+                                    profileName:
+                                        type: string
+                                        description: A display name for the profile
                 {# TODO: default response (for 4xx) #}
                 "500":
                     description:
@@ -1009,11 +1005,11 @@ paths:
                 # this is the integration http method, not the endpoint http method. all lambda backed
                 # integrations are post
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_dap_profiles_handler'] }}/invocations"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_dap_profile_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -1115,7 +1111,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -1199,7 +1195,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
@@ -1273,7 +1269,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
-        options: 
+        options:
             responses:
                 "200":
                     $ref: "#/components/responses/200OptionsCors"
