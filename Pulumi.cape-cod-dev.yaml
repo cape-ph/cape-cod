@@ -1,7 +1,7 @@
 # `encryptionsalt` (string, required)
 # This key is added and managed by pulumi. this should not be modified outside
 # of that context, and is specific to your pulumi setup
-encryptionsalt: v1:PZ8pzBjNSVk=:v1:SGEZ1sCsg7aCAu5i:Ntz5ud8IjMsY1H5RLI/n6zmuuIK9sQ==
+encryptionsalt: v1:3HveDi+qPzY=:v1:+TvnujX7jIHTmfYs:7gSzH9HS5U2898fkGpKwiPMMgm9pvw==
 # `config` (mapping, required)
 # This is the top-level config mapping and is required of all pulumi configs
 config:

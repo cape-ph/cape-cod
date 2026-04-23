@@ -39,7 +39,6 @@ def index_handler(event, context):
             "pipeline_type",
             "project",
             "version",
-            "profile",
         )
         resp_data = [dict((k, r[k]) for k in keys) for r in pipeline_records]
 
