@@ -1272,55 +1272,132 @@ config:
             # CAPE. If this is not provided, an empty configuration will be used
             # and no compute environments will be deployed
             compute:
-                # `environments` (mapping[], optional)
-                # A list of mappings, each containing the configuration of a
-                # specific compute environment. Each mapping in the list has the
-                # following schema:
+                # `environments` (mapping, optional)
+                # Environments for aws batch and mwaa (aairflow) are configured
+                # in this section. There are mappings for both types of
+                # environments, and both mappings contain lists of mappings.
+                #
+                # Both types have some shared config keys and then keys specific
+                # to that type. Shared keys are as follows:
+                #
                 # * `name` (string, required)
                 #   A name for the environment. Used for bookkeeping and must be
                 #   unique across all compute environments.
-                # * `image` (string, required)
-                #   The ID of the AWS AMI to launce the instances with. This
-                #   image must exist in AWS already.
-                # * `subnets` (string[], required)
-                #   A list of subnet names in which compute resources will be
-                #   launched. The subnet names must match the names of swimlane
-                #   subnets in this config file. At least one subnet must be
-                #   defined here.
-                # * `resources` (mapping, required)
-                #   A mapping of compute environment resource arguments to be
-                #   passed *as-is* to the compute environment constructor. The
-                #   key must exist, but the value may be empty if there are no
-                #   arguments to pass. The argument names must match those
-                #   expected in the pulumi docs:
-                #   https://www.pulumi.com/registry/packages/aws/api-docs/batch/computeenvironment/#computeenvironmentcomputeresources
-                #   Any supported argument listed here will be passed on as
-                #   configured.
+                # * `subnets_types` (string[], required)
+                #   A list of subnet types in which compute resources will be
+                #   launched. The subnet types must match one of the types
+                #   specified in the [swimlane_name]/subnets section in this
+                #   config file. At least one subnet must be defined here.
+                #
                 environments:
-                    - name: workflows
-                      image: ami-0ad4ff177982b3e5e
-                      subnet_types:
-                          - compute
-                      resources:
-                          instance_types:
-                              - m4.large
-                              - m5.large
-                              - c4.large
-                          min_vcpus: 1
-                          desired_vcpus: 2
-                          max_vcpus: 4
-                    - name: analysis
-                      image: ami-0ad4ff177982b3e5e
-                      subnet_types:
-                          - compute
-                      resources:
-                          instance_types:
-                              - c4.large
-                              - c4.xlarge
-                              - c4.2xlarge
-                              - c4.4xlarge
-                              - c4.8xlarge
-                          max_vcpus: 16
+                    # Each mwaa mapping in the list has the
+                    # following schema in addition to the shared keys mentioned
+                    # above:
+                    # * `dag_path` (string, required)
+                    #    The path in the CAPE meta assets s3 bucket where dags
+                    #    will be stored for airflow to load. MWAA syncs these
+                    #    every 30 seconds once the environment is configured
+                    #    and deployed
+                    # * `airflow_version` (string, optional)
+                    #   The version of airflow to use. Allowable values are
+                    #   dictated by what's available in AWS. If not specified,
+                    #   this will default to the latest version supported by
+                    #   AWS
+                    # * `airflow_config` (mapping, optional)
+                    #   This is a mapping of airflow configuration options that
+                    #   is passed *as is* directly to the Environment
+                    #   configuration. Keys and allowable values are described
+                    #   here: https://docs.aws.amazon.com/mwaa/latest/userguide/configuring-env-variables.html#configuring-env-variables-reference
+                    # * `environment_class` (string, optional)
+                    #   The class of EC2 instance to use in the environment
+                    #   cluster (for webserver, scheduler, workers). Allowable
+                    #   values are mw1.[micro|small|medium|large]. Defaults to
+                    #   mw1.small
+                    # * extra_env_args (mapping, optional)
+                    #   A catch all mapping for additional MWAA environment
+                    #   config that is not explicitly handled otherwise. This
+                    #   mapping will be passed *as-is* as kwargs to the pulumi
+                    #   mwaa environment constructor. This config shows an
+                    #   example of usage with the logging config for the entire
+                    #   MWAA cluster.
+                    #   NOTE: if you place keys in this mapping that conflict
+                    #         with other explicit keys, the values in the
+                    #         extra_env_args will overwrite the explicit keys
+                    #
+                    # NOTE: There are a number of args that pulumi supports for
+                    #       the environment resource. We are allowing them to
+                    #       default unless specified here. They may get added
+                    #       as top-level keys eventually, but can be set in the
+                    #       `extra_env_args` key if needed. These can be found
+                    #       here:
+                    #       https://www.pulumi.com/registry/packages/aws/api-docs/mwaa/environment/
+                    mwaa:
+                        - name: airflow-env
+                          dag_path: airflow/dags
+                          airflow_version: 3.2.1
+                          airflow_config:
+                              core.default_task_retries: 2
+                              core.parallelism: 20
+                          environment_class: mw1.small
+                          subnet_types:
+                              - compute
+                          extra_env_args:
+                              logging_configuration:
+                                  dag_processing_logs:
+                                      enabled: True
+                                      log_level: INFO
+                                  scheduler_logs:
+                                      enabled: True
+                                      log_level: INFO
+                                  task_logs:
+                                      enabled: True
+                                      log_level: INFO
+                                  webserver_logs:
+                                      enabled: True
+                                      log_level: INFO
+                                  worker_logs:
+                                      enabled: True
+                                      log_level: INFO
+                    # Each batch mapping in the list has the
+                    # following schema in addition to the shared keys mentioned
+                    # above:
+                    # * `image` (string, required)
+                    #   The ID of the AWS AMI to launce the instances with. This
+                    #   image must exist in AWS already.
+                    # * `resources` (mapping, required)
+                    #   A mapping of compute environment resource arguments to be
+                    #   passed *as-is* to the compute environment constructor. The
+                    #   key must exist, but the value may be empty if there are no
+                    #   arguments to pass. The argument names must match those
+                    #   expected in the pulumi docs:
+                    #   https://www.pulumi.com/registry/packages/aws/api-docs/batch/computeenvironment/#computeenvironmentcomputeresources
+                    #   Any supported argument listed here will be passed on as
+                    #   configured.
+                    batch:
+                        - name: workflows
+                          image: ami-0ad4ff177982b3e5e
+                          subnet_types:
+                              - compute
+                          resources:
+                              instance_types:
+                                  - m4.large
+                                  - m5.large
+                                  - c4.large
+                              min_vcpus: 1
+                              desired_vcpus: 2
+                              max_vcpus: 4
+                        - name: analysis
+                          image: ami-0ad4ff177982b3e5e
+                          type: batch
+                          subnet_types:
+                              - compute
+                          resources:
+                              instance_types:
+                                  - c4.large
+                                  - c4.xlarge
+                                  - c4.2xlarge
+                                  - c4.4xlarge - c4.8xlarge
+                              max_vcpus: 16
                 container_images:
                     nextflow_kickstart:
                         context: ./assets/containers/bactopia-kickstart
