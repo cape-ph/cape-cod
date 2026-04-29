@@ -42,6 +42,10 @@ def index_handler(event, context):
         output_path = body["outputPath"]
         nf_opts = body["nextflowOptions"]
         nf_opts = (
+            # TODO: REMOVE THESE BACTOPIA SPECIFIC THINGS SOMEHOW
+            # - outdir is pretty natural, it can be passed in with nf_opts
+            # - aws_queue maybe should be passed with an environment variable
+            #   evaluated automatically with something like `${NF_OPTS@P}` (bash v4.4+)
             f"--outdir {output_path} --aws_queue {job_queue_name} {nf_opts}"
         )
 
@@ -53,6 +57,7 @@ def index_handler(event, context):
                 "environment": [
                     {"name": "PIPELINE", "value": pipeline_project},
                     {"name": "PIPELINE_VERSION", "value": pipeline_version},
+                    {"name": "PIPELINE_QUEUE", "value": job_queue_name},
                     {"name": "NF_OPTS", "value": nf_opts},
                 ]
             },
