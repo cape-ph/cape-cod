@@ -56,6 +56,8 @@ aws {
 EOF
 
 # Execute Nextflow
+# TODO: remove abctopia cachedir environment variable? We would have to move it
+# somewhere butit doesn't pose any issues with other workflows for now
 BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
     run "${PIPELINE}" ${PIPELINE_VERSION} \
     -c /nextflow.config \

@@ -28,10 +28,14 @@
             "--sample": {
                 "type": "string",
                 "title": "Sample Name"
+            },
+            "--outdir": {
+                "type": "string",
+                "title": "S3 Location of the output directory"
             }
         },
         "unevaluatedProperties": false,
-        "required": ["--sample"]
+        "required": ["--sample", "--ont", "--outdir"]
     },
     "uiSchema": {
         "type": "VerticalLayout",
