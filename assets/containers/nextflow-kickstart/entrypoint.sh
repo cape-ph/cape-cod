@@ -13,6 +13,7 @@ fi
 if [[ -n ${PIPELINE_VERSION} ]]; then
     PIPELINE_VERSION="-r ${PIPELINE_VERSION}"
 fi
+PIPELINE_QUEUE=${PIPELINE_QUEUE}
 NF_OPTS=${NF_OPTS}
 
 # Get AWS Region if not already set
@@ -38,9 +39,28 @@ cd /scratch
 BUCKET_TEMP_NAME=nextflow-spot-batch-temp-${AWS_BATCH_JOB_ID}
 aws --region "${AWS_REGION}" s3 mb s3://"${BUCKET_TEMP_NAME}"
 
+# TODO: allow user to pass in a specific nextflow config string and use that
+# instead, evaluating environment variables with something like
+# `${NEXTFLOW_CONFIG@P} (requires bash v4.4+)
+cat >/nextflow.config <<EOF
+process {
+    executor = 'awsbatch'
+    queue = '${PIPELINE_QUEUE}'
+}
+aws {
+    region = '${AWS_REGION}'
+    batch {
+        cliPath = '/home/ec2-user/miniconda/bin/aws'
+    }
+}
+EOF
+
 # Execute Nextflow
+# TODO: remove bactopia cachedir environment variable? We would have to move it
+# somewhere but it doesn't pose any issues with other workflows for now
 BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
     run "${PIPELINE}" ${PIPELINE_VERSION} \
+    -c /nextflow.config \
     -work-dir s3://"${BUCKET_TEMP_NAME}" \
     ${NF_OPTS}
 

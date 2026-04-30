@@ -1,7 +1,7 @@
 {
     "pipelineType": "nextflow",
-    "pipelineName": "Bactopia ONT Sample",
-    "pipelineDescription": "Execute Bactopia's ONT sample sequencing workflow with v3.2.0",
+    "pipelineName": "Bactopia Kraken2",
+    "pipelineDescription": "Execute Bactopia's Kraken2 workflow with the development release",
     "project": "bactopia/bactopia",
     "version": "v3.2.0",
     "inherits": ["bactopia-base-3.2.0"],
@@ -10,40 +10,35 @@
         "type": "object",
         "allOf": [{ "$ref": "#/$defs/bactopia-base-3.2.0" }],
         "properties": {
+            "--wf": {
+                "const": "kraken2",
+                "default": "kraken2"
+            },
             "--max_cpus": {
                 "type": "integer",
                 "title": "Max CPUs",
                 "minimum": 1,
-                "default": 8
+                "default": 2
             },
             "--max_memory": {
                 "type": "string",
                 "title": "Max Memory",
-                "default": "24.GB"
+                "default": "8.GB"
             },
-            "--ont": {
+            "--bactopia": {
                 "type": "string",
-                "title": "ONT"
-            },
-            "--sample": {
-                "type": "string",
-                "title": "Sample Name"
-            },
-            "--outdir": {
-                "type": "string",
-                "title": "S3 Location of the output directory"
+                "title": "Bactopia Output Directory"
             }
         },
         "unevaluatedProperties": false,
-        "required": ["--sample", "--ont", "--outdir"]
+        "required": ["--bactopia"]
     },
     "uiSchema": {
         "type": "VerticalLayout",
         "elements": [
             { "type": "Control", "scope": "#/properties/--max_cpus" },
             { "type": "Control", "scope": "#/properties/--max_memory" },
-            { "type": "Control", "scope": "#/properties/--ont" },
-            { "type": "Control", "scope": "#/properties/--sample" }
+            { "type": "Control", "scope": "#/properties/--bactopia" }
         ]
     },
     "submission": {

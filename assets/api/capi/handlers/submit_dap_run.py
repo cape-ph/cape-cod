@@ -39,11 +39,7 @@ def index_handler(event, context):
 
         pipeline_project = body["pipelineProject"]
         pipeline_version = body["pipelineVersion"]
-        output_path = body["outputPath"]
         nf_opts = body["nextflowOptions"]
-        nf_opts = (
-            f"--outdir {output_path} --aws_queue {job_queue_name} {nf_opts}"
-        )
 
         response = batch_client.submit_job(
             jobName=f"nextflow-{context.aws_request_id}",
@@ -53,6 +49,7 @@ def index_handler(event, context):
                 "environment": [
                     {"name": "PIPELINE", "value": pipeline_project},
                     {"name": "PIPELINE_VERSION", "value": pipeline_version},
+                    {"name": "PIPELINE_QUEUE", "value": job_queue_name},
                     {"name": "NF_OPTS", "value": nf_opts},
                 ]
             },

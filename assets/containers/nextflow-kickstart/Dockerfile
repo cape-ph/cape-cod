@@ -1,6 +1,7 @@
 FROM amazoncorretto:21.0.8
 
 # Install Nextflow
+ENV NXF_VER=25.10.4
 RUN curl -s https://get.nextflow.io | bash
 RUN chmod +x nextflow
 RUN mv nextflow /usr/local/bin
