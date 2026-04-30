@@ -11,14 +11,6 @@
             "-profile": {
                 "const": "aws",
                 "default": "aws"
-            },
-            "--aws_cli_path": {
-                "const": "/home/ec2-user/miniconda/bin/aws",
-                "default": "/home/ec2-user/miniconda/bin/aws"
-            },
-            "--aws_region": {
-                "const": "{{ aws_region }}",
-                "default": "{{ aws_region }}"
             }
         }
     },

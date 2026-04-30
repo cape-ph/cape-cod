@@ -200,7 +200,7 @@ class ScopedSwimlane(CapeComponentResource):
             az: The name of the availability zone to create the nat in.
             subnet: The subnet to associate with an internet facing NAT GW.
         Returns:
-            A new list of routes for the subent with the internet egress route
+            A new list of routes for the subnet with the internet egress route
             first in the list.
         """
 
