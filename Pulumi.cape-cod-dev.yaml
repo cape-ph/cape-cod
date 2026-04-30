@@ -1323,7 +1323,7 @@ config:
                           max_vcpus: 16
                 container_images:
                     nextflow_kickstart:
-                        context: ./assets/containers/bactopia-kickstart
+                        context: ./assets/containers/nextflow-kickstart
                         platform: linux/amd64
                 jobs:
                     nextflow:

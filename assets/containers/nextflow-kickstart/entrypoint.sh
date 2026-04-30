@@ -39,7 +39,7 @@ cd /scratch
 BUCKET_TEMP_NAME=nextflow-spot-batch-temp-${AWS_BATCH_JOB_ID}
 aws --region "${AWS_REGION}" s3 mb s3://"${BUCKET_TEMP_NAME}"
 
-# TODO: allow user to pass in a specific nextflow confix string and use that
+# TODO: allow user to pass in a specific nextflow config string and use that
 # instead, evaluating environment variables with something like
 # `${NEXTFLOW_CONFIG@P} (requires bash v4.4+)
 cat >/nextflow.config <<EOF
@@ -56,8 +56,8 @@ aws {
 EOF
 
 # Execute Nextflow
-# TODO: remove abctopia cachedir environment variable? We would have to move it
-# somewhere butit doesn't pose any issues with other workflows for now
+# TODO: remove bactopia cachedir environment variable? We would have to move it
+# somewhere but it doesn't pose any issues with other workflows for now
 BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
     run "${PIPELINE}" ${PIPELINE_VERSION} \
     -c /nextflow.config \
