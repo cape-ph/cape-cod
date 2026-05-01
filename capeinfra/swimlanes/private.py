@@ -3,6 +3,7 @@
 This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
+import itertools
 import json
 
 import pulumi_aws as aws
@@ -20,7 +21,8 @@ from capeinfra.iam import (
     get_instance_profile,
     get_vpce_api_invoke_policy,
 )
-from capeinfra.pipeline.dapregistry import DAPRegistry
+from capeinfra.pipeline.airflow import MwaaEnvironment
+from capeinfra.pipeline.dapregistry import DAPRegistry, WorkflowMetaRegistry
 
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
@@ -157,6 +159,8 @@ class PrivateSwimlane(ScopedSwimlane):
         capeinfra.meta.principals.add_idps()
 
         self.create_analysis_pipeline_registry()
+        self.create_workflow_meta_registry()
+        self.create_airflow_compute_environment()
         self.create_static_web_resources()
         self.create_application_instances()
         # static and instance apps share an alb
@@ -231,6 +235,43 @@ class PrivateSwimlane(ScopedSwimlane):
             opts=ResourceOptions(parent=self),
         )
 
+    def create_airflow_compute_environment(self):
+        """Setup the airflow environment for the swimlane.
+
+        For the execution role, airflow will need to have resources added as
+        they become needed. This can be handled manually in the AWS console for
+        immediate needs or for testing, but need to be added here to persist
+        between deployments.
+        """
+
+        # in reality there will probably only ever be zero or one airflow
+        # environments. but we support more if needed. for now we assume they
+        # will have the same set of policies.
+
+        for env in self.config.get(
+            "compute", "environments", "mwaa", default=[]
+        ):
+            name = env.get("name")
+
+            env_subnets = dict[str, aws.ec2.Subnet]()
+            for st in env.get("subnet_types"):
+                env_subnets.update(self.get_subnets_by_type(st))
+
+            ingress_subnets = dict[str, aws.ec2.Subnet]()
+            for st in env.get("ingress_subnet_types"):
+                ingress_subnets.update(self.get_subnets_by_type(st))
+
+            self.mwaa_compute_environments[name] = MwaaEnvironment(
+                f"{self.basename}-{name}-mwaa",
+                vpc=self.vpc,
+                subnets=env_subnets,
+                ingress_subnets=ingress_subnets,
+                config=env,
+                aws_region=capeinfra.data_lakehouse.aws_region,
+                # TODO: add policy attachments
+                extra_policy_statements=None,
+            )
+
     def create_env_rds_instance(self):
         """Creates the CAPE environment RDS instance."""
 
@@ -287,6 +328,20 @@ class PrivateSwimlane(ScopedSwimlane):
                 "resource_name": self.analysis_pipeline_registry.analysis_pipeline_registry_ddb_table.name,
                 "type": "table",
             },
+        )
+
+    def create_workflow_meta_registry(self):
+        """Sets up the workflow metadata registry table.
+
+        This registry is only created as infrastructure. Population happens in a
+        different repo (cape-cod-env).
+        """
+        self.workflow_meta_registry = WorkflowMetaRegistry(
+            opts=ResourceOptions(parent=self),
+            desc_name=(
+                f"{self.desc_name} Resources for Apache Airflow workflow "
+                "metadata in the CAPE infrastructure"
+            ),
         )
 
     # TODO: ISSUE #126
