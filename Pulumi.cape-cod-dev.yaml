@@ -1334,13 +1334,16 @@ config:
                     mwaa:
                         - name: airflow-env
                           dag_path: airflow/dags
-                          airflow_version: 3.2.1
+                          airflow_version: 3.0.6
                           airflow_config:
                               core.default_task_retries: 2
                               core.parallelism: 20
                           environment_class: mw1.small
                           subnet_types:
                               - compute
+                          ingress_subnet_types:
+                              - compute
+                              - vpn
                           extra_env_args:
                               logging_configuration:
                                   dag_processing_logs:
