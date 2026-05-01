@@ -7,6 +7,7 @@ import pulumi_aws as aws
 from boto3.dynamodb.types import TypeSerializer
 from pulumi import Output, ResourceOptions, log
 
+from capeinfra.resources.database import DynamoTable
 from capeinfra.util.jinja2 import get_j2_template_from_path
 from capepulumi import CapeComponentResource
 
@@ -212,3 +213,68 @@ class DAPRegistry(CapeComponentResource):
                 break
             else:
                 to_process_pipelines = new_to_process
+
+
+class WorkflowMetaRegistry(CapeComponentResource):
+    """Class representing the workflow metadata registry.
+
+    In CAPE, a workflow refers to an ApacheAirflow workflow (DAG). This registry
+    is a mapping of workflow ids (`dag_id` for each DAG) to a listing of data
+    analysis pipelines (DAPs) used by the workflow and their specific versions.
+
+    The main use case for this registry is to have a way to query for a list of
+    DAP@version entries for a workflow in order to determine which DAP profiles
+    (mainly for `parameterSchema` information) are in use. As other metadata is
+    identified as being needed, it will be added here.
+
+    This resource only creates the infrastructure for workflow metadata. Workflows
+    themselves are deployed outside the pulumi flow (in the cape-cod-env ansible
+    repo).
+    """
+
+    @property
+    def default_config(self) -> dict:
+        """Implementation of abstract property `default_config`.
+
+        Returns:
+            The default config dict for the workflow registry.
+            THIS COMPONENT HAS NOTHING CONFIGURABLE AT THIS TIME.
+        """
+        return {}
+
+    @property
+    def type_name(self) -> str:
+        """Return the type_name (pulumi namespacing)."""
+        return "capeinfra:meta:capemeta:WorkflowMetaRegistry"
+
+    def __init__(self, **kwargs):
+        self.name = "cape-workflow-meta-registry"
+        self.desc_name = kwargs.get("desc_name")
+        super().__init__(self.name, **kwargs)
+
+        self.create_workflow_meta_store()
+
+    def create_workflow_meta_store(self):
+        """Sets up a data store to hold airflow workflow metadata."""
+        # setup a DynamoDB table to hold documents containing metadata on
+        # airflow workflow metadata. keyed on unique workflow `dag_id`
+        # NOTE: we can set up our Dynamo connections to go through a VPC
+        #       endpoint instead of the way we're currently doing (using the
+        #       fact that we have a NAT and egress requests to go through the
+        #       boto3 dynamo client, which makes the requests go through the
+        #       public internet). VPC endpoint is arguably more secure and
+        #       performant as it's a direct connection to Dynamo from our
+        #       clients, but it adds cost.
+
+        self.workflow_meta_ddb_table = DynamoTable(
+            name=f"{self.name}-WorkflowMetaStore",
+            hash_key="dag_id",
+            range_key=None,
+            idx_attrs=[
+                # NOTE: we do not need to define any part of the "schema" here
+                #       that isn't needed in an index.
+                {"name": "dag_id", "type": "S"},
+            ],
+            desc_name=(f"{self.desc_name} Workflow Metadata Table"),
+            opts=ResourceOptions(parent=self),
+        )
