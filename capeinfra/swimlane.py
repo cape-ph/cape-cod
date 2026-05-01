@@ -111,7 +111,7 @@ class ScopedSwimlane(CapeComponentResource):
         self.create_subnets()
         self.create_container_images()
         self.create_job_definitions()
-        self.create_compute_environments()
+        self.create_batch_compute_environments()
         self.register_outputs({f"{self.basename}-vpc-id": self.vpc.id})
 
     @property
@@ -525,25 +525,22 @@ class ScopedSwimlane(CapeComponentResource):
                 repository=self.container_repository,
             )
 
-    def create_compute_environments(self):
+    @abstractmethod
+    def create_airflow_compute_environment(self):
+        """Abstract method subclasses will implement to setup airflow envs.
+
+        Each swimlane will have its own needs for airflow (or may not even setup
+        airflow at all).
+        """
+        pass
+
+    def create_batch_compute_environments(self):
         """Default implementation of compute environment creation for a swimlane.
 
         The default implementation sets up the subnets as configured and routes
         all outgoing traffic to the NAT gateway in the public subnet if
         configured.
         """
-        # first handle mwaa envs:
-        for env in self.config.get(
-            "compute", "environments", "mwaa", default=[]
-        ):
-            name = env.get("name")
-            for sn_type in env.get("subnet_types"):
-                self.mwaa_compute_environments[name] = MwaaEnvironment(
-                    f"{self.basename}-{name}-mwaa",
-                    vpc=self.vpc,
-                    subnets=self.get_subnets_by_type(sn_type),
-                    config=env,
-                )
 
         # now handle batch envs
         for env in self.config.get(
