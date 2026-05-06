@@ -6,3 +6,4 @@ extend-exclude = ["assets/web/*"]
 ser = "ser"
 ue = "ue"
 ot = "ot"
+attch = "attch"
