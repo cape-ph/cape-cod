@@ -1338,6 +1338,7 @@ config:
                           airflow_config:
                               core.default_task_retries: 2
                               core.parallelism: 20
+                              celery.worker_autoscale: 5,5
                           environment_class: mw1.small
                           subnet_types:
                               - compute
@@ -1345,7 +1346,10 @@ config:
                               - compute
                               - vpn
                           extra_env_args:
+                              min_workers: 2
+                              max_workers: 10
                               logging_configuration:
+                                  # NOTE: INFO is the lowest level supported in MWAA
                                   dag_processing_logs:
                                       enabled: True
                                       log_level: INFO
@@ -1399,7 +1403,8 @@ config:
                                   - c4.large
                                   - c4.xlarge
                                   - c4.2xlarge
-                                  - c4.4xlarge - c4.8xlarge
+                                  - c4.4xlarge
+                                  - c4.8xlarge
                               max_vcpus: 16
                 container_images:
                     nextflow_kickstart:
