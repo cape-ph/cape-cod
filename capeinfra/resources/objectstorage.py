@@ -17,6 +17,7 @@ class Bucket(CapeComponentResource):
         """Enum of supported policy names for this component."""
 
         read = "read"
+        read_pab = "read_pab"
         write = "write"
         delete = "delete"
         browse = "browse"
@@ -69,6 +70,12 @@ class Bucket(CapeComponentResource):
                 {
                     "effect": "Allow",
                     "actions": ["s3:GetObject", "s3:GetBucketLocation"],
+                }
+            ]
+            self._policies[self.PolicyEnum.read_pab] = [
+                {
+                    "effect": "Allow",
+                    "actions": ["s3:GetBucketPublicAccessBlock"],
                 }
             ]
             self._policies[self.PolicyEnum.write] = [
