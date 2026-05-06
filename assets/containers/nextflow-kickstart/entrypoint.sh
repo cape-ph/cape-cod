@@ -46,6 +46,10 @@ cat >/nextflow.config <<EOF
 process {
     executor = 'awsbatch'
     queue = '${PIPELINE_QUEUE}'
+    // symlink kraken data - THIS SHOULD BE MOVED TO PIPELINE SPECIFIC NEXTFLOW CONFIG
+    withName: '.*:KRAKEN2|KRAKEN2' {
+        stageInMode = 'symlink'
+    }
 }
 aws {
     region = '${AWS_REGION}'
