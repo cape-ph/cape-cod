@@ -285,6 +285,9 @@ def get_api_statements(
                 "*",
             ],
         },
+        # TODO: when moving to airflow workflows instead of hitting batch
+        #       directly, we need permissions to hit the airflow api. not sure
+        #       if we need anything else yet.
     ]
 
     # add the queue grants as configured
