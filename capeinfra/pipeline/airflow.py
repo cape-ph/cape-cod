@@ -161,7 +161,7 @@ class MwaaEnvironment(CapeComponentResource):
             else []
         )
 
-        # build up the full list of policy statements we neeed
+        # build up the full list of policy statements we need
         execution_role_policy_statements = aggregate_statements(
             # our base policy needs
             [self.base_role_policy_statements]
