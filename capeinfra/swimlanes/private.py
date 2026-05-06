@@ -272,6 +272,19 @@ class PrivateSwimlane(ScopedSwimlane):
                 extra_policy_statements=None,
             )
 
+            # now configure the new mwaa environment to be able to pass the
+            # batch roles to batch
+            # TODO: ISSUE  #338
+            self.mwaa_compute_environments[
+                name
+            ].configure_batch_compute_pass_role(
+                [bce for bce in list(self.batch_compute_environments.values())]
+            )
+
+            self.mwaa_compute_environments[name].configure_batch_job_def_policy(
+                [bjd for bjd in list(self.job_definitions.values())]
+            )
+
     def create_env_rds_instance(self):
         """Creates the CAPE environment RDS instance."""
 
