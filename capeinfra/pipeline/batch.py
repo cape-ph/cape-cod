@@ -144,6 +144,12 @@ class BatchCompute(CapeComponentResource):
             policy_arn="arn:aws:iam::aws:policy/AWSBatchFullAccess",
             opts=ResourceOptions(parent=self),
         )
+        aws.iam.RolePolicyAttachment(
+            f"{name}-instnc-efssvcroleatch",
+            role=self.instance_role.name,
+            policy_arn="arn:aws:iam::aws:policy/AmazonElasticFileSystemClientFullAccess",
+            opts=ResourceOptions(parent=self),
+        )
         self.instance_role_profile = get_instance_profile(
             f"{name}-instnc-rl",
             self.instance_role,
