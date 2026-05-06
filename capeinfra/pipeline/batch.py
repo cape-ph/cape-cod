@@ -13,6 +13,8 @@ from capepulumi import CapeComponentResource
 class BatchJobDefinition(CapeComponentResource):
     """A batch job definition."""
 
+    # TODO: policy defaults
+
     @property
     def type_name(self) -> str:
         """Return the type_name (pulumi namespacing)."""
