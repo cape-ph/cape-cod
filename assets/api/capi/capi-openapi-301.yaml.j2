@@ -1277,9 +1277,175 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "mock"
+    /workflows:
+        get:
+            parameters:
+                - in: query
+                  name: dagId
+                  schema:
+                    type: string
+                    description: 
+                        The dag id for a workflow to limit the return to. If 
+                        not provided all workflows will be returned.
+                  required: false
+                - in: query
+                  name: includeDisabled
+                  schema:
+                    type: boolean
+                    description: 
+                        Boolean value specifying if disabled workflows should 
+                        be included in results. Defaults to false if not 
+                        provided.
+                  required: false
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    An object describing the workflows. Format 
+                                    described in the Airflow REST v2 API docs 
+                                    for GET /api/v2/dags.
+                                items:
+                                    type: object
+                                    properties:
+                                        dags:
+                                            type: array
+                                            items:
+                                                type: object
+                                                additionalProperties: true
+                                        total_entries: 
+                                            type: integer
+                "401":
+                    description: Airflow Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/responses/AirflowAuthnAuthzError"
+                "403":
+                    description: Airflow Forbidden
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/responses/AirflowAuthnAuthzError"
+
+                "422":
+                    description: Unprocessable Content
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/responses/AirflowUnprocessableContentError"
+                "500":
+                    description:
+                        Server error while fetching workflow details.
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_airflow_dags_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
+    /workflows/pipelineprofiles:
+        get:
+            parameters:
+                - in: query
+                  name: dagId
+                  schema:
+                    type: string
+                    description: 
+                        The dag id for a workflow fetch pipeline profiles for.
+                    required: true
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    An object containing information describing
+                                    input required for each pipeline profile 
+                                    used in the workflow.
+                                properties:
+                                    type: object
+                                    properties:
+                                        dagId: 
+                                            description: 
+                                                The DAG ID for the workflow asked for
+                                            type: string
+                                        pipelineProfiles:
+                                            type: array
+                                            items:
+                                                type: object
+                                                additionalProperties: true
+                "500":
+                    description:
+                        Server error while fetching workflow details.
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_workflow_pipeline_profiles_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
 # reusable components that follow OpenApi 3.0.1 spec
 components:
     responses:
+        AirflowAuthnAuthzError:
+            description: The 401/403 response format from the Airflow REST API
+            type: object
+            properties:
+                detail:
+                    type: string
+        AirflowUnprocessableContentError:
+            description: The 422 response format from the Airflow REST API
+            type: object
+            properties:
+                detail:
+                    type: array
+                    items:
+                        type: object
+                        additionalProperties: true
         200OptionsCors:
             description: "200 response"
             headers:
