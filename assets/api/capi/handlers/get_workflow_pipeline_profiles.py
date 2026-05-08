@@ -43,7 +43,7 @@ def json_serialize_the_unserializable(val):
 
 
 def index_handler(event, context):
-    """Handler for the GET of the profiles used in a workflow (ariflow dag).
+    """Handler for the GET of the profiles used in a workflow (airflow dag).
 
     :param event: The event object that contains the HTTP request and json
                   data.
