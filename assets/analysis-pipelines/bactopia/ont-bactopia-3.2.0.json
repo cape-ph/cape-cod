@@ -1,6 +1,8 @@
 {
     "pipelineType": "nextflow",
     "pipelineName": "Bactopia ONT Sample",
+    "pipelineId": "bactopia-ont-v3.2.0",
+    "pipelineRunnable": true,
     "pipelineDescription": "Execute Bactopia's ONT sample sequencing workflow with v3.2.0",
     "project": "bactopia/bactopia",
     "version": "v3.2.0",
