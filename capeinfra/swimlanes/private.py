@@ -357,6 +357,17 @@ class PrivateSwimlane(ScopedSwimlane):
             ),
         )
 
+        # read access to this this resource can be configured via the deployment
+        # config (for api lambdas), so add it to the bookkeeping structure for
+        # that
+        self._exposed_env_vars.setdefault(
+            "WORKFLOW_REG_DDB_TABLE",
+            {
+                "resource_name": self.workflow_meta_registry.workflow_meta_ddb_table.name,
+                "type": "table",
+            },
+        )
+
     # TODO: ISSUE #126
     # TODO: refactor out elsewhere
     def _deploy_static_app(self, sa_cfg: CapeConfig):
