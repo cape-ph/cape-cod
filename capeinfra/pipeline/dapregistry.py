@@ -113,6 +113,10 @@ class DAPRegistry(CapeComponentResource):
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
                 {
+                    "name": "pipeline_id",
+                    "type": "S",
+                },
+                {
                     "name": "pipeline_name",
                     "type": "S",
                 },
@@ -193,6 +197,10 @@ class DAPRegistry(CapeComponentResource):
                         item=Output.json_dumps(
                             {
                                 "pipeline_name": {"S": profile["pipelineName"]},
+                                "pipeline_id": {"S": profile["pipelineId"]},
+                                "pipeline_runnable": {
+                                    "S": profile["pipelineRunnable"]
+                                },
                                 "version": {"S": profile["version"]},
                                 "project": {"S": profile["project"]},
                                 "pipeline_type": {"S": profile["pipelineType"]},
