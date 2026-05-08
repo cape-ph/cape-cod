@@ -22,7 +22,7 @@ from capeinfra.iam import (
     get_vpce_api_invoke_policy,
 )
 from capeinfra.pipeline.airflow import MwaaEnvironment
-from capeinfra.pipeline.dapregistry import DAPRegistry, WorkflowMetaRegistry
+from capeinfra.pipeline.registry import DAPRegistry, WorkflowMetaRegistry
 
 # TODO: ISSUE #145 This import is to support the temporary dap results s3
 #       handling.
