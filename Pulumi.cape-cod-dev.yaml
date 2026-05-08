@@ -759,6 +759,7 @@ config:
                               logging_enabled: True
                       env_vars:
                           - "DAP_REG_DDB_TABLE"
+                          - "WORKFLOW_REG_DDB_TABLE"
                           - "DDB_REGION"
                           - "USER_ATTRS_DDB_TABLE"
                           - "ETL_ATTRS_DDB_TABLE"
@@ -768,6 +769,33 @@ config:
                       # TODO: memory and timeouts for these functions need
                       #       some love
                       handlers:
+                          - id: "get_airflow_dags_handler"
+                            name: "getdags"
+                            code: "assets/api/capi/handlers/get_airflow_dags.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdags Lambda Funnction"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "get_workflow_pipeline_profiles_handler"
+                            name: "getdagprofiles"
+                            code: "assets/api/capi/handlers/get_workflow_pipeline_profiles.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdagprofiles Lambda Funnction"
+                                memory_size: 128
+                                timeout: 3
+                          # TODO: remaining airflow handlers
                           - id: "get_daps_handler"
                             name: "getdaps"
                             code: "assets/api/capi/handlers/get_daps.py"
@@ -820,6 +848,8 @@ config:
                                 description: "getdaplogs Lambda Funnction"
                                 memory_size: 128
                                 timeout: 3
+                          # TODO: if not used as part of workflows (probably
+                          #       won't be) this should be removed
                           - id: "submit_dap_run_handler"
                             name: "submitdaprun"
                             code: "assets/api/capi/handlers/submit_dap_run.py"
