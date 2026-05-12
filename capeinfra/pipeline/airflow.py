@@ -1,6 +1,7 @@
 """Abstractions for Apache Airflow."""
 
 import json
+from enum import Enum
 
 import pulumi_aws as aws
 from pulumi import Input, Output, ResourceOptions
@@ -22,6 +23,11 @@ class MwaaEnvironment(CapeComponentResource):
           managed instance or our own self-managed EC2 instance, this will need
           to change or have a new set of resources defined.
     """
+
+    class PolicyEnum(str, Enum):
+        """Enum of supported policy names for this component."""
+
+        invoke_api = "invoke_api"
 
     @property
     def default_config(self):
@@ -274,6 +280,24 @@ class MwaaEnvironment(CapeComponentResource):
                 "mwaa_environment": self.mwaa_environment.id,
             }
         )
+
+    @property
+    def policies(self) -> dict[
+        str,
+        list[aws.iam.GetPolicyDocumentStatementArgsDict],
+    ]:
+        if self._policies is None:
+            self._policies = dict[
+                str,
+                list[aws.iam.GetPolicyDocumentStatementArgsDict],
+            ]()
+            self._policies[self.PolicyEnum.invoke_api] = [
+                {
+                    "effect": "Allow",
+                    "actions": ["airflow:InvokeRestApi"],
+                }
+            ]
+        return self._policies
 
     # TODO: feels this should be able to pass exactly one role, or be able to
     #       pass exactly one role to exactly one named batch compute env.
