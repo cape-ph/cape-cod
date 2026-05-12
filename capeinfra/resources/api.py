@@ -42,7 +42,8 @@ class CapeRestApi(CapeComponentResource):
         spec_path: str,
         stage_suffix: str,
         env_vars: Mapping[str, Output[str] | str],
-        resource_grants: dict[str, list[Output]],
+        legacy_resource_grants: dict[str, list[Output]],
+        policy_statements: list[aws.iam.GetPolicyDocumentStatementArgsDict],
         vpc_endpoint: aws.ec2.VpcEndpoint,
         domain_name: Output,
         *args,
@@ -95,7 +96,7 @@ class CapeRestApi(CapeComponentResource):
         self._ids_to_lambdas = {}
 
         self._configure_logging()
-        self._create_api_ep_lambdas(resource_grants)
+        self._create_api_ep_lambdas(legacy_resource_grants, policy_statements)
         self._create_api_authorizer_lambdas()
         self._create_aws_proxy_roles()
         self._render_spec()
@@ -152,7 +153,8 @@ class CapeRestApi(CapeComponentResource):
 
     def _create_api_ep_lambdas(
         self,
-        res_grants: dict[str, list[Output]],
+        legacy_res_grants: dict[str, list[Output]],
+        policy_statements: list[aws.iam.GetPolicyDocumentStatementArgsDict],
     ):
         """Create the Lambda functions acting as endpoint handlers for the API.
 
@@ -170,15 +172,23 @@ class CapeRestApi(CapeComponentResource):
         #       read from DynamoDB in another, this role's policy must have both
         #       those grants). This may not be the long term implementation.
         # TODO: ISSUE 245
+
+        # TODO: migrate policies into each policy granting resource
+        all_policy_statements = aggregate_statements(
+            [
+                Output.all(
+                    grants=legacy_res_grants,
+                ).apply(lambda kwargs: get_api_statements(**kwargs))
+            ]
+            + [policy_statements],
+        )
+
         self._api_lambda_role = get_inline_role(
             f"{self.name}-lmbd-role",
             f"{self.desc_name} {self.config.get('desc')} lambda role",
             "lmbd",
             "lambda.amazonaws.com",
-            # TODO: migrate policies into each policy granting resource
-            Output.all(
-                grants=res_grants,
-            ).apply(lambda kwargs: get_api_statements(**kwargs)),
+            all_policy_statements,
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
         )
 
