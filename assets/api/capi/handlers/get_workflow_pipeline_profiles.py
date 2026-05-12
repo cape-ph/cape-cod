@@ -1,7 +1,6 @@
 """Lambda function for handling a get of pipeline profiles used in a workflow."""
 
 import json
-from decimal import Decimal
 
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import PipelineTable, WorkflowMetaTable
@@ -10,39 +9,6 @@ from capepy.aws.utils import (
     decode_error,
     json_serialize_the_unserializable,
 )
-
-# # TODO: need to add some abstraction of this to capepy. it's repeated here and
-# #       in get_object_etls at least
-# def bad_param_response():
-#     """Gets a response data object and status code when bad params are given.
-#
-#     :return: A tuple containins a response data object and an HTTP 400 status
-#              code.
-#     """
-#     return (
-#         {"message": ("Missing required query string parameters: dagId")},
-#         400,
-#     )
-#
-#
-# # TODO: this should probably go elsewhere. issue is you can't json serialize
-# #       Decimal values, and some of the values coming back from dynamo in the
-# #       pipeline profile spec are Decimal. So this shims them to floats.
-# def json_serialize_the_unserializable(val):
-#     """Serialize a value (e.g. Decimal) that is otherwise not json serializable.
-#
-#     Right now this just handles Decimal, but can be updated as needed.
-#
-#     :param val: The value to serialize.
-#     :return: the serialized value.
-#     :raises: TypeError if even this function cannot serialize.
-#     """
-#     if isinstance(val, Decimal):
-#         # this results in a reduction of precision which can cause issues. In
-#         # our case (for now at least) it's ok, but we may want to consider other
-#         # mechanisms like string conversions or forcing some rounding.
-#         return float(val)
-#     raise TypeError(f"Value {val} of type {type(val)} is not json serializable")
 
 
 def index_handler(event, context):
@@ -67,7 +33,6 @@ def index_handler(event, context):
                 resp_data, resp_status = bad_param_response()
             else:
 
-                # TODO: need new capepy as it has the workflow table class
                 workflow_table = WorkflowMetaTable()
                 wf = workflow_table.get_workflow_by_id(dag_id)
 
@@ -76,23 +41,27 @@ def index_handler(event, context):
                 resp_data = []
                 resp_status = 200
 
-                # TODO: handle a change in status code due to potential issues
-                #       in pid for loop? what can go wrong there?
+                if wf is None:
+                    resp_data = [
+                        {"detail": f"Could not find workflow with id {dag_id} "}
+                    ]
+                    resp_status = 404
+                else:
+                    for pid in wf["pipeline_ids"]:
+                        dap = dapreg_table.get_pipeline_by_id(pid)
+                        if dap:
+                            resp_data.append(dap["profile"])
+                        else:
+                            # TODO: What other errors to handle here?
+                            resp_data = [
+                                {
+                                    "detail": f"Could not find pipeline profile for pipeline with id {pid} "
+                                }
+                            ]
+                            resp_status = 404
+                            break
 
-                for pid in wf["pipeline_ids"]:
-                    dap = dapreg_table.get_pipeline_by_id(pid)
-                    if dap:
-                        resp_data.append(dap["profile"])
-                    else:
-                        # TODO: What other errors to handle here?
-                        resp_data = [
-                            {
-                                "message": f"Could not find pipeline profile for pipeline with id {pid} "
-                            }
-                        ]
-                        resp_status = 404
-                        break
-        # And return our response as a 200
+        # And return our response however it worked out
         return {
             "statusCode": resp_status,
             "headers": {
@@ -119,8 +88,8 @@ def index_handler(event, context):
         code, message = decode_error(err)
 
         msg = (
-            f"Error during processing of submitted data analysis pipeline for "
-            f"queuing. {code} {message}"
+            f"Error during fetch of workflow pipeline profiles. "
+            f"{code} {message}"
         )
 
         return {
