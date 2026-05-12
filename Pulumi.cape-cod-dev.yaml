@@ -769,9 +769,9 @@ config:
                       # TODO: memory and timeouts for these functions need
                       #       some love
                       handlers:
-                          - id: "get_airflow_dags_handler"
+                          - id: "get_workflow_dags_handler"
                             name: "getdags"
-                            code: "assets/api/capi/handlers/get_airflow_dags.py"
+                            code: "assets/api/capi/handlers/get_workflow_dags.py"
                             layers:
                                 - capi-all
                             funct_args:
@@ -779,7 +779,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdags Lambda Funnction"
+                                description: "getdags Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_workflow_pipeline_profiles_handler"
@@ -792,7 +792,33 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdagprofiles Lambda Funnction"
+                                description: "getdagprofiles Lambda Function"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "post_workflow_run_handler"
+                            name: "postdagrun"
+                            code: "assets/api/capi/handlers/post_workflow_run.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "postdagrun Lambda Function"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "patch_workflow_run_handler"
+                            name: "patchdagrun"
+                            code: "assets/api/capi/handlers/patch_workflow_run.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "patchdagrun Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           # TODO: remaining airflow handlers
@@ -806,7 +832,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdaps Lambda Funnction"
+                                description: "getdaps Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_dap_profile_handler"
@@ -819,7 +845,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdapprofiles Lambda Funnction"
+                                description: "getdapprofiles Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_dap_status_handler"
@@ -832,7 +858,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdapstatus Lambda Funnction"
+                                description: "getdapstatus Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_dap_logs_handler"
@@ -845,7 +871,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdaplogs Lambda Funnction"
+                                description: "getdaplogs Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           # TODO: if not used as part of workflows (probably
@@ -860,7 +886,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "submitdaprun Lambda Funnction"
+                                description: "submitdaprun Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_raw_objstore_authz_handler"
