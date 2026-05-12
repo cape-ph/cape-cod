@@ -8,6 +8,7 @@ import json
 
 import pulumi_aws as aws
 from pulumi import Config, Output, ResourceOptions, warn
+from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_synced_folder import S3BucketFolder
 
 import capeinfra
@@ -100,6 +101,8 @@ class PrivateSwimlane(ScopedSwimlane):
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
+
+        self.mwaa_compute_environment = None
 
         # will contain a mapping of env var labels to resource names and types.
         # these may be used in api configuration to state the need for a
@@ -212,6 +215,9 @@ class PrivateSwimlane(ScopedSwimlane):
         resource_grants = {}
         for ev in self.apis[api_name]["spec"].get("env_vars", []):
             env_vars.setdefault(ev, self._exposed_env_vars[ev]["resource_name"])
+
+            # TODO: this is the old style policy management we should be moving
+            #       away from
             res = resource_grants.setdefault(
                 self._exposed_env_vars[ev]["type"], []
             )
@@ -221,6 +227,25 @@ class PrivateSwimlane(ScopedSwimlane):
             if self._exposed_env_vars[ev]["resource_name"] not in res:
                 res.append(self._exposed_env_vars[ev]["resource_name"])
 
+        # TODO: this is the new style policy statements we should be moving to
+        policy_statements = []
+
+        policy_statements.append(
+            self.mwaa_compute_environment.mwaa_environment.arn.apply(
+                # adding invoke rest api perms for the `Op` default role in
+                # airflow. Need Op as we will be configuring runs in
+                # addition to triggering (if no config, we'd be able to use
+                # User role)
+                lambda arn: add_resources(
+                    self.mwaa_compute_environment.policies[
+                        MwaaEnvironment.PolicyEnum.invoke_api
+                    ],
+                    f"{arn}/Op",
+                    arn,
+                )
+            )
+        )
+
         self.apis[api_name]["deploy"] = CapeRestApi(
             f"{self.basename}-{api_name}-api",
             api_name,
@@ -228,6 +253,7 @@ class PrivateSwimlane(ScopedSwimlane):
             self.api_stage_suffix,
             env_vars,
             resource_grants,
+            policy_statements,
             self.api_vpcendpoint,
             self.apigw_domainname.domain_name,
             config=self.apis[api_name]["spec"],
@@ -248,25 +274,27 @@ class PrivateSwimlane(ScopedSwimlane):
         # environments. but we support more if needed. for now we assume they
         # will have the same set of policies.
 
-        for env in self.config.get(
-            "compute", "environments", "mwaa", default=[]
-        ):
-            name = env.get("name")
+        mwaa_cfg = self.config.get(
+            "compute", "environments", "mwaa", default=None
+        )
+
+        if mwaa_cfg is not None:
+            name = mwaa_cfg.get("name")
 
             env_subnets = dict[str, aws.ec2.Subnet]()
-            for st in env.get("subnet_types"):
+            for st in mwaa_cfg.get("subnet_types"):
                 env_subnets.update(self.get_subnets_by_type(st))
 
             ingress_subnets = dict[str, aws.ec2.Subnet]()
-            for st in env.get("ingress_subnet_types"):
+            for st in mwaa_cfg.get("ingress_subnet_types"):
                 ingress_subnets.update(self.get_subnets_by_type(st))
 
-            self.mwaa_compute_environments[name] = MwaaEnvironment(
+            self.mwaa_compute_environment = MwaaEnvironment(
                 f"{self.basename}-{name}-mwaa",
                 vpc=self.vpc,
                 subnets=env_subnets,
                 ingress_subnets=ingress_subnets,
-                config=env,
+                config=mwaa_cfg,
                 aws_region=capeinfra.data_lakehouse.aws_region,
                 # TODO: add policy attachments
                 extra_policy_statements=None,
@@ -275,14 +303,26 @@ class PrivateSwimlane(ScopedSwimlane):
             # now configure the new mwaa environment to be able to pass the
             # batch roles to batch
             # TODO: ISSUE  #338
-            self.mwaa_compute_environments[
-                name
-            ].configure_batch_compute_pass_role(
+            self.mwaa_compute_environment.configure_batch_compute_pass_role(
                 [bce for bce in list(self.batch_compute_environments.values())]
             )
 
-            self.mwaa_compute_environments[name].configure_batch_job_def_policy(
+            self.mwaa_compute_environment.configure_batch_job_def_policy(
                 [bjd for bjd in list(self.job_definitions.values())]
+            )
+
+            self._exposed_env_vars.setdefault(
+                "MWAA_ENVIRONMENT",
+                {
+                    "resource_name": self.mwaa_compute_environment.name,
+                    # TODO: this is just to keep the same interface we were
+                    #       using for exposed env vars and res grants before
+                    #       moving to resource provided policies. We should
+                    #       ideally never care about type anymore once we have
+                    #       moved everything to that pattern and should get rid
+                    #       of this
+                    "type": "untyped",
+                },
             )
 
     def create_env_rds_instance(self):
