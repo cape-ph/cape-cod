@@ -765,6 +765,7 @@ config:
                           - "ETL_ATTRS_DDB_TABLE"
                           - "CRAWLER_ATTRS_DDB_TABLE"
                           - "CANNED_REPORT_DDB_TABLE"
+                          - "MWAA_ENVIRONMENT"
                       # env_vars: TODO: add env vars for this API if needed.
                       # TODO: memory and timeouts for these functions need
                       #       some love
@@ -1329,9 +1330,10 @@ config:
             # and no compute environments will be deployed
             compute:
                 # `environments` (mapping, optional)
-                # Environments for aws batch and mwaa (aairflow) are configured
+                # Environments for aws batch and mwaa (airflow) are configured
                 # in this section. There are mappings for both types of
-                # environments, and both mappings contain lists of mappings.
+                # environments, with the airflow mapping being singular and the
+                # batch environments being a list of mappings.
                 #
                 # Both types have some shared config keys and then keys specific
                 # to that type. Shared keys are as follows:
@@ -1346,9 +1348,8 @@ config:
                 #   config file. At least one subnet must be defined here.
                 #
                 environments:
-                    # Each mwaa mapping in the list has the
-                    # following schema in addition to the shared keys mentioned
-                    # above:
+                    # The mwaa mapping has the following schema in addition to
+                    # the shared keys mentioned above:
                     # * `dag_path` (string, required)
                     #    The path in the CAPE meta assets s3 bucket where dags
                     #    will be stored for airflow to load. MWAA syncs these
@@ -1388,39 +1389,39 @@ config:
                     #       here:
                     #       https://www.pulumi.com/registry/packages/aws/api-docs/mwaa/environment/
                     mwaa:
-                        - name: airflow-env
-                          dag_path: airflow/dags
-                          airflow_version: 3.0.6
-                          airflow_config:
-                              core.default_task_retries: 2
-                              core.parallelism: 20
-                              celery.worker_autoscale: 5,5
-                          environment_class: mw1.small
-                          subnet_types:
-                              - compute
-                          ingress_subnet_types:
-                              - compute
-                              - vpn
-                          extra_env_args:
-                              min_workers: 2
-                              max_workers: 10
-                              logging_configuration:
-                                  # NOTE: INFO is the lowest level supported in MWAA
-                                  dag_processing_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  scheduler_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  task_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  webserver_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  worker_logs:
-                                      enabled: True
-                                      log_level: INFO
+                        name: airflow-env
+                        dag_path: airflow/dags
+                        airflow_version: 3.0.6
+                        airflow_config:
+                            core.default_task_retries: 2
+                            core.parallelism: 20
+                            celery.worker_autoscale: 5,5
+                        environment_class: mw1.small
+                        subnet_types:
+                            - compute
+                        ingress_subnet_types:
+                            - compute
+                            - vpn
+                        extra_env_args:
+                            min_workers: 2
+                            max_workers: 10
+                            logging_configuration:
+                                # NOTE: INFO is the lowest level supported in MWAA
+                                dag_processing_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                scheduler_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                task_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                webserver_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                worker_logs:
+                                    enabled: True
+                                    log_level: INFO
                     # Each batch mapping in the list has the
                     # following schema in addition to the shared keys mentioned
                     # above:
