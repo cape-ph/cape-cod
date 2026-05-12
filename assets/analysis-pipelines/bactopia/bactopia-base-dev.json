@@ -2,6 +2,7 @@
     "pipelineType": "nextflow",
     "pipelineName": "Bactopia",
     "pipelineId": "bactopia-bactopia-base-dev",
+    "pipelineRunnable": false,
     "pipelineDescription": "Execute Bactopia development release",
     "project": "bactopia/bactopia",
     "version": "dev",
