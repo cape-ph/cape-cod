@@ -107,8 +107,7 @@ class DAPRegistry(CapeComponentResource):
             #       probably be much cheaper to go that route if we have a
             #       really solid idea of how many reads/writes this table needs
             billing_mode="PAY_PER_REQUEST",
-            hash_key="pipeline_name",
-            range_key="version",
+            hash_key="pipeline_id",
             attributes=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
@@ -124,6 +123,25 @@ class DAPRegistry(CapeComponentResource):
                     "name": "version",
                     "type": "S",
                 },
+            ],
+            global_secondary_indexes=[
+                aws.dynamodb.TableGlobalSecondaryIndexArgs(
+                    name="PipelineNameVerIndex",
+                    key_schemas=[
+                        aws.dynamodb.TableGlobalSecondaryIndexKeySchemaArgs(
+                            attribute_name="pipeline_name",
+                            key_type="HASH",
+                        ),
+                        aws.dynamodb.TableGlobalSecondaryIndexKeySchemaArgs(
+                            attribute_name="version",
+                            key_type="RANGE",
+                        ),
+                    ],
+                    projection_type="ALL",
+                    non_key_attributes=[],
+                    read_capacity=0,
+                    write_capacity=0,
+                )
             ],
             opts=ResourceOptions(parent=self),
             tags={
@@ -191,15 +209,12 @@ class DAPRegistry(CapeComponentResource):
                         f"{self.name}-{stem}-ddbitem",
                         table_name=self.analysis_pipeline_registry_ddb_table.name,
                         hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
-                        range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
-                            lambda rk: f"{rk}"
-                        ),
                         item=Output.json_dumps(
                             {
                                 "pipeline_name": {"S": profile["pipelineName"]},
                                 "pipeline_id": {"S": profile["pipelineId"]},
                                 "pipeline_runnable": {
-                                    "S": profile["pipelineRunnable"]
+                                    "BOOL": profile["pipelineRunnable"]
                                 },
                                 "version": {"S": profile["version"]},
                                 "project": {"S": profile["project"]},
