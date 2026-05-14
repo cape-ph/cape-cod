@@ -35,7 +35,7 @@ def index_handler(event, context):
 
         dag_id = None
         if qsp is not None:
-            dag_id = qsp.get("dag_id")
+            dag_id = qsp.get("dagId")
 
             if dag_id is not None:
                 api_path = f"{api_path}/{dag_id}"
@@ -80,7 +80,7 @@ def index_handler(event, context):
         code, message = decode_error(err)
 
         msg = (
-            f"Error during fetch of workflow data from airflow queuing. "
+            f"Error during fetch of workflow data from airflow. "
             f"{code} {message}"
         )
 
