@@ -822,7 +822,46 @@ config:
                                 description: "patchdagrun Lambda Function"
                                 memory_size: 128
                                 timeout: 3
-                          # TODO: remaining airflow handlers
+                          - id: "get_workflow_run_handler"
+                            name: "getdagrun"
+                            code: "assets/api/capi/handlers/get_workflow_run.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdags Lambda Function"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "get_workflow_tasks_handler"
+                            name: "getdagtasks"
+                            code: "assets/api/capi/handlers/get_workflow_tasks.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdagtasks Lambda Function"
+                                memory_size: 128
+                                timeout: 3
+                          - id: "get_workflow_run_task_instances_handler"
+                            name: "getdagruntaskinsts"
+                            code: "assets/api/capi/handlers/get_workflow_run_task_instances.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description:
+                                    "getdagruntaskinsts Lambda Function"
+                                memory_size: 128
+                                timeout: 3
                           - id: "get_daps_handler"
                             name: "getdaps"
                             code: "assets/api/capi/handlers/get_daps.py"
