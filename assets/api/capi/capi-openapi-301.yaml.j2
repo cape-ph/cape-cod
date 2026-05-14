@@ -1602,11 +1602,9 @@ paths:
                                     v2 API docs for PATCH 
                                     /api/v2/dags/{dag_id}/dagRuns/{dag_run_id}
                                     (200 response).
-                                items:
-                                    type: object
-                                    # this is not our format to define, so 
-                                    # we'll just say it's any object format
-                                    additionalProperties: true
+                                # this is not our format to define, so 
+                                # we'll just say it's any object format
+                                additionalProperties: true
                 "400":
                     description: Airflow Bad Params (400)
                     content:
@@ -1699,6 +1697,320 @@ paths:
                   https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/utils/state/index.html#airflow.utils.state.TaskInstanceState)
 
     #}
+    /workflows/run:
+        get:
+            parameters:
+                - in: query
+                  name: dagId
+                  schema:
+                    type: string
+                    description: 
+                        The dag id for a workflow run being fetched
+                  required: true
+                - in: query
+                  name: dagRunId
+                  schema:
+                    type: string
+                    description: 
+                        The dag run id for a workflow run being fetched
+                  required: true
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    An object describing the workflow run. Format 
+                                    described in the Airflow REST v2 API docs 
+                                    for GET 
+                                    /api/v2/dag/{dag_id}/dagRuns/{dag_run_id}
+                                # this is not our format to define, so 
+                                # we'll just say it's any object format
+                                additionalProperties: true
+                "400":
+                    description: Airflow Bad Params (400)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "401":
+                    description: Airflow Unauthorized (401)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "403":
+                    description: Airflow Forbidden (403)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "404":
+                    description: Airflow Not Found (404)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "422":
+                    description: Unprocessable Content/Validation Error (422)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/responses/AirflowUnprocessableContentError"
+                "500":
+                    description:
+                        Server error while fetching workflow run details.
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_workflow_run_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
+    /workflows/tasks:
+        get:
+            parameters:
+                - in: query
+                  name: dagId
+                  schema:
+                    type: string
+                    description: 
+                        The dag id to get the tasks for 
+                  required: true
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description: an object containing information on all tasks in the DAG
+                                properties:
+                                    tasks:
+                                        type: array
+                                        description: An array of objects describing the tasks of the DAG
+                                        items:
+                                            type: object
+                                            description: 
+                                                An object describing one task. Format 
+                                                described in the Airflow REST v2 API docs 
+                                                for GET 
+                                                /api/v2/dags/{dag_id}/tasks
+                                            # this is not our format to define, so 
+                                            # we'll just say it's any object format
+                                            additionalProperties: true
+                                    total_entries:
+                                        type: integer
+                                        description: the number of items in the tasks array
+                "400":
+                    description: Airflow Bad Params (400)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "401":
+                    description: Airflow Unauthorized (401)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "403":
+                    description: Airflow Forbidden (403)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "404":
+                    description: Airflow Not Found (404)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "422":
+                    description: Unprocessable Content/Validation Error (422)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/responses/AirflowUnprocessableContentError"
+                "500":
+                    description:
+                        Server error while fetching workflow tasks.
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_workflow_tasks_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
+    /workflows/taskinstances:
+        get:
+            parameters:
+                - in: query
+                  name: dagId
+                  schema:
+                    type: string
+                    description: 
+                        The dag id to get the task instaces for 
+                  required: true
+                - in: query
+                  name: dagRunId
+                  schema:
+                    type: string
+                    description: 
+                        The dag run id to get the task instances for 
+                  required: true
+            responses:
+                "200":
+{#
+    TODO: need the response headers (i.e. cors)
+#}
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description: 
+                                    An object containing information on all 
+                                    task instances in the DAG run
+                                properties:
+                                    tasks_instances:
+                                        type: array
+                                        description: 
+                                            An array of objects describing the 
+                                            task instances of the DAG
+                                        items:
+                                            type: object
+                                            description: 
+                                                An object describing one task instance. Format 
+                                                described in the Airflow REST v2 API docs 
+                                                for GET 
+                                                /api/v2/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances
+                                            # this is not our format to define, so 
+                                            # we'll just say it's any object format
+                                            additionalProperties: true
+                                    total_entries:
+                                        type: integer
+                                        description: the number of items in the task_instances array
+                "400":
+                    description: Airflow Bad Params (400)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "401":
+                    description: Airflow Unauthorized (401)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "403":
+                    description: Airflow Forbidden (403)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "404":
+                    description: Airflow Not Found (404)
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "422":
+                    description: Unprocessable Content/Validation Error (422)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/responses/AirflowUnprocessableContentError"
+                "500":
+                    description:
+                        Server error while fetching workflow tasks.
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_workflow_run_task_insatnces_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
 # reusable components that follow OpenApi 3.0.1 spec
 components:
     responses:
