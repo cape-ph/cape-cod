@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 import pulumi_aws as aws
-from pulumi import AssetArchive, FileAsset, Output, ResourceOptions, log
+from pulumi import AssetArchive, FileAsset, Output, ResourceOptions
 
 import capeinfra
 from capeinfra.iam import (
@@ -47,6 +47,11 @@ class CapeRestApi(CapeComponentResource):
         vpc_endpoint: aws.ec2.VpcEndpoint,
         domain_name: Output,
         *args,
+        # TODO: the vpc config was added hastily here as we need the
+        #       lambdas to be deployed in the vpc to have access to MWAA.
+        #       may not need changing, but the design should be thought more
+        #       about here.
+        lambda_vpc_cfg: aws.lambda_.FunctionVpcConfigArgs | None = None,
         **kwargs,
     ):
         """Constructor.
@@ -74,6 +79,8 @@ class CapeRestApi(CapeComponentResource):
                           requests will pass.
             domain_name: The domain name (e.g. api.cape-dev.org) on which this
                          API will reside.
+            lambda_vpc_cfg: If specified, the vpc config for lambda endpoint
+                            functions.
             authorizer_path: Optional path to the source file for a lambda
                              authorizer for the API. If not provided, no
                              authorizer will be configured for the API.
@@ -87,6 +94,7 @@ class CapeRestApi(CapeComponentResource):
         self.spec_path = spec_path
         self.api_vpcendpoint = vpc_endpoint
         self.domain_name = domain_name
+        self.lambda_vpc_cfg = lambda_vpc_cfg
 
         # this will map the ids (string ids) from the config to a tuple of
         # (function name, Lambda Function Resource) so we can fill in the
@@ -180,7 +188,7 @@ class CapeRestApi(CapeComponentResource):
                     grants=legacy_res_grants,
                 ).apply(lambda kwargs: get_api_statements(**kwargs))
             ]
-            + [policy_statements],
+            + policy_statements
         )
 
         self._api_lambda_role = get_inline_role(
@@ -189,7 +197,13 @@ class CapeRestApi(CapeComponentResource):
             "lmbd",
             "lambda.amazonaws.com",
             all_policy_statements,
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            [
+                "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                # TODO: This is needed to make use of the endpoints requiring vpc
+                #       access to things like MWAA. we probably want to limit it
+                #       to those lambdas longer term
+                "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+            ],
         )
 
         # make functions from the configuration and save the mapping of the
@@ -238,6 +252,7 @@ class CapeRestApi(CapeComponentResource):
                 ),
                 memory_size=funct_args.get("memory_size", 128),
                 timeout=funct_args.get("timeout", 3),
+                vpc_config=self.lambda_vpc_cfg,
             )
 
             # update our mapping of function ids from the config to the name and
