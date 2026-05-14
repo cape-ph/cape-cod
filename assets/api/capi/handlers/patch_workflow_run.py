@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import os
 
 import boto3
 from botocore.exceptions import ClientError
@@ -20,9 +21,7 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
-    # TODO: this will be used in a number of endpoints. we can pass it in or add
-    #       it to capepy or something else.
-    env_name = "ccd-pvsl-airflow-env-mwaa-env"
+    env_name = os.getenv("MWAA_ENVIRONMENT")
 
     # TODO: add this to capepy
     mwaa_client = boto3.client("mwaa")
