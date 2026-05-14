@@ -55,7 +55,7 @@ class MwaaEnvironment(CapeComponentResource):
                     "effect": "Allow",
                     "actions": "airflow:PublishMetrics",
                     "resources": [
-                        f"arn:aws:airflow:{self.aws_region}:767397883306:environment/{self.mwaa_env_name}"
+                        f"arn:aws:airflow:{self.aws_region}:{self.aws_account_id}:environment/{self.mwaa_env_name}"
                     ],
                 },
                 {
@@ -70,7 +70,7 @@ class MwaaEnvironment(CapeComponentResource):
                         "logs:GetQueryResults",
                     ],
                     "resources": [
-                        f"arn:aws:logs:{self.aws_region}:767397883306:log-group:airflow-{self.mwaa_env_name}-*"
+                        f"arn:aws:logs:{self.aws_region}:{self.aws_account_id}:log-group:airflow-{self.mwaa_env_name}-*"
                     ],
                 },
                 {
@@ -113,7 +113,7 @@ class MwaaEnvironment(CapeComponentResource):
                     ],
                     # our mwaa env uses an aws-managed set of keys, so we
                     # have to explicitly deny our own account's keyspace
-                    "not_resources": "arn:aws:kms:*:767397883306:key/*",
+                    "not_resources": f"arn:aws:kms:*:{self.aws_account_id}:key/*",
                     "conditions": [
                         {
                             "test": "StringLike",
@@ -132,6 +132,7 @@ class MwaaEnvironment(CapeComponentResource):
         subnets: dict[str, aws.ec2.Subnet],
         ingress_subnets: dict[str, aws.ec2.Subnet],
         aws_region: str,
+        aws_account_id: str,
         extra_policy_statements: (
             list[aws.iam.GetPolicyDocumentStatementArgsDict] | None
         ) = None,
@@ -156,6 +157,7 @@ class MwaaEnvironment(CapeComponentResource):
         self.name = f"{name}"
         self.mwaa_env_name = f"{self.name}-env"
         self.aws_region = aws_region
+        self.aws_account_id = aws_account_id
 
         # get in a var so we aren't typing super long lines anywhere
         ma_bucket = capeinfra.meta.automation_assets_bucket
