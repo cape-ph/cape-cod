@@ -5,7 +5,7 @@ import json
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import PipelineTable, WorkflowMetaTable
 from capepy.aws.utils import (
-    bad_params_response,
+    bad_param_response,
     decode_error,
     json_serialize_the_unserializable,
 )
@@ -19,18 +19,20 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
+    req_params = {"dagId"}
+
     try:
         headers = event.get("headers", {})
 
         qsp = event.get("queryStringParameters")
 
         if qsp is None:
-            resp_data, resp_status = bad_param_response()
+            resp_data, resp_status = bad_param_response(list(req_params))
         else:
             dag_id = qsp.get("dagId")
 
             if dag_id is None:
-                resp_data, resp_status = bad_param_response()
+                resp_data, resp_status = bad_param_response(list(req_params))
             else:
 
                 workflow_table = WorkflowMetaTable()
@@ -48,7 +50,7 @@ def index_handler(event, context):
                     resp_status = 404
                 else:
                     for pid in wf["pipeline_ids"]:
-                        dap = dapreg_table.get_pipeline_by_id(pid)
+                        dap = dapreg_table.get_pipeline(pid)
                         if dap:
                             resp_data.append(dap["profile"])
                         else:
