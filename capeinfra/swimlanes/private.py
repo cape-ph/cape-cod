@@ -101,6 +101,7 @@ class PrivateSwimlane(ScopedSwimlane):
 
         aws_config = Config("aws")
         self.aws_region = aws_config.require("region")
+        self.aws_account_id = aws.get_caller_identity().account_id
 
         self.mwaa_compute_environment = None
 
@@ -231,17 +232,26 @@ class PrivateSwimlane(ScopedSwimlane):
         policy_statements = []
 
         policy_statements.append(
-            self.mwaa_compute_environment.mwaa_environment.arn.apply(
+            Output.all(
+                arn=self.mwaa_compute_environment.mwaa_environment.arn,
+                name=self.mwaa_compute_environment.mwaa_environment.name,
+            ).apply(
                 # adding invoke rest api perms for the `Op` default role in
                 # airflow. Need Op as we will be configuring runs in
                 # addition to triggering (if no config, we'd be able to use
                 # User role)
-                lambda arn: add_resources(
+                lambda kwargs: add_resources(
                     self.mwaa_compute_environment.policies[
                         MwaaEnvironment.PolicyEnum.invoke_api
                     ],
-                    f"{arn}/Op",
-                    arn,
+                    # TODO: this isn't the arn of the environment or of the
+                    #       execution role. rather it seems to be the arn of
+                    #       the Op role in for airflow. anyway, if not specified
+                    #       like this (previously was using the env arn with
+                    #       `/Op` at the end) it fails. Need a good way to
+                    #       construct this
+                    f"arn:aws:airflow:{self.aws_region}:{self.aws_account_id}:role/{kwargs['name']}/Op",
+                    f"{kwargs['arn']}",
                 )
             )
         )
@@ -259,6 +269,17 @@ class PrivateSwimlane(ScopedSwimlane):
             config=self.apis[api_name]["spec"],
             desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),
+            lambda_vpc_cfg=aws.lambda_.FunctionVpcConfigArgs(
+                # vpc_id=self.vpc.id,
+                # TODO: hijacking the sec group here, need to either make this
+                #       one a default for a lot of things or create a new one
+                security_group_ids=[
+                    self.mwaa_compute_environment.security_group.id
+                ],
+                subnet_ids=[
+                    sn.id for sn in self.get_subnets_by_type("compute").values()
+                ],
+            ),
         )
 
     def create_airflow_compute_environment(self):
@@ -295,7 +316,8 @@ class PrivateSwimlane(ScopedSwimlane):
                 subnets=env_subnets,
                 ingress_subnets=ingress_subnets,
                 config=mwaa_cfg,
-                aws_region=capeinfra.data_lakehouse.aws_region,
+                aws_region=self.aws_region,
+                aws_account_id=self.aws_account_id,
                 # TODO: add policy attachments
                 extra_policy_statements=None,
             )
@@ -314,7 +336,7 @@ class PrivateSwimlane(ScopedSwimlane):
             self._exposed_env_vars.setdefault(
                 "MWAA_ENVIRONMENT",
                 {
-                    "resource_name": self.mwaa_compute_environment.name,
+                    "resource_name": self.mwaa_compute_environment.mwaa_environment.name,
                     # TODO: this is just to keep the same interface we were
                     #       using for exposed env vars and res grants before
                     #       moving to resource provided policies. We should
@@ -322,6 +344,29 @@ class PrivateSwimlane(ScopedSwimlane):
                     #       moved everything to that pattern and should get rid
                     #       of this
                     "type": "untyped",
+                },
+            )
+
+            # need this VPCE in order to be able to hit the airflow rest api
+            self.mwaa_env_vpcendpoint = aws.ec2.VpcEndpoint(
+                f"{self.basename}-{name}-mwaa-vpce",
+                vpc_id=self.vpc.id,
+                service_name=f"com.amazonaws.{aws.get_region().region}.airflow.env",
+                vpc_endpoint_type="Interface",
+                private_dns_enabled=True,
+                subnet_ids=[
+                    s.id
+                    for _, s in self.get_subnets_by_type(
+                        SubnetType.COMPUTE
+                    ).items()
+                ],
+                # TODO: hijacking the sec group here, need to either make this
+                #       one a default for a lot of things or create a new one
+                security_group_ids=[
+                    self.mwaa_compute_environment.security_group.id
+                ],
+                tags={
+                    "desc_name": f"{self.desc_name} MWAA Environment endpoint",
                 },
             )
 
@@ -403,7 +448,9 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "WORKFLOW_REG_DDB_TABLE",
             {
-                "resource_name": self.workflow_meta_registry.workflow_meta_ddb_table.name,
+                "resource_name": (
+                    self.workflow_meta_registry.workflow_meta_ddb_table.ddb_table.name
+                ),
                 "type": "table",
             },
         )
