@@ -313,10 +313,18 @@ def get_api_statements(
                 "actions": [
                     "dynamodb:DescribeTable",
                     "dynamodb:GetItem",
+                    "dynamodb:Query",
                     "dynamodb:Scan",
                 ],
                 "resources": [
                     f"arn:aws:dynamodb:*:*:table/{t}",
+                    # TODO: we now have an index that needs to be queried, which
+                    #       doesn't get only the table name but also the index
+                    #       name here. just opening to all indices right now as
+                    #       we're moving away from the `get_api_statements` way
+                    #       of doing things toward resource provided policies
+                    #       and need to handle this in that switch.
+                    f"arn:aws:dynamodb:*:*:table/{t}/index/*",
                 ],
             },
         )
