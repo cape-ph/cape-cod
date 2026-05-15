@@ -179,7 +179,7 @@ class CapePy(CapeComponentResource):
         )
 
         self.bucket = assets_bucket
-        capepy_whl = "capepy-2.2.0-py3-none-any.whl"
+        capepy_whl = "capepy-3.0.0-py3-none-any.whl"
         self.object = self.bucket.add_object(
             f"{self.name}-object",
             key=capepy_whl,
