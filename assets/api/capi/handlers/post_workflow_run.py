@@ -3,10 +3,11 @@
 import datetime
 import json
 import os
+import re
 
 import boto3
 from botocore.exceptions import ClientError
-from capepy.aws.utils import decode_error
+from capepy.aws.utils import bad_param_response, decode_error
 
 
 def index_handler(event, context):
@@ -34,6 +35,7 @@ def index_handler(event, context):
         if qsp is None:
             resp_data, resp_status = bad_param_response(list(req_params))
         else:
+
             dag_id = qsp.get("dagId")
             dag_params = json.loads(event["body"])
 
@@ -51,24 +53,35 @@ def index_handler(event, context):
                 #       - there are others like data_interval_[start|end] that
                 #         are used internally in dags that process data of
                 #         specific intervals
+
+                # the logical date must be specified (but may be null) when
+                # triggering. we're specifying the value. *but* it wants ISO
+                # 8601 format ending in `Z` which isn't supported in python
+                # natively till v3.11. so this makes the time string then
+                # replaces the bad part with `Z` so the airflow api accepts it.
+                now_str = datetime.datetime.now().isoformat()
+                zstr = re.sub(r"\..*$", "Z", now_str)
+
                 request_params = {
                     "Name": env_name,
                     "Path": f"/dags/{dag_id}/dagRuns",
                     "Method": "POST",
                     "Body": {
                         "conf": dag_params,
-                        "logical_date": datetime.datetime.now().isoformat(),
+                        "logical_date": zstr,  # datetime.datetime.now().isoformat(),
                     },
                 }
 
                 response = mwaa_client.invoke_rest_api(**request_params)
 
+                resp_data = response["RestApiResponse"]
+                resp_status = response["RestApiStatusCode"]
         # no matter the status code of the response we can return the same
         # thing. the difference in 200 vs non-200 is that the json will contain
         # an error string under the key "detail" instead of workflow data in
         # the non-200 case
         return {
-            "statusCode": response["RestApiStatusCode"],
+            "statusCode": resp_status,
             "headers": {
                 "Content-Type": "application/json",
                 # TODO: ISSUE #141 CORS bypass. We do not want this long term.
@@ -85,7 +98,7 @@ def index_handler(event, context):
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "OPTIONS,GET",
             },
-            "body": json.dumps(response["RestApiResponse"]),
+            "body": json.dumps(resp_data),
         }
     except ClientError as err:
         code, message = decode_error(err)
