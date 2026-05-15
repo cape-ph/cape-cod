@@ -1,49 +1,14 @@
 """Lambda function for handling a post of a new analysis pipeline run."""
 
 import json
-from decimal import Decimal
 
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import PipelineTable
-from capepy.aws.utils import decode_error
-
-
-# TODO: need to add some abstraction of this to capepy. it's repeated here and
-#       in get_object_etls at least
-def bad_param_response():
-    """Gets a response data object and status code when bad params are given.
-
-    :return: A tuple containins a response data object and an HTTP 400 status
-             code.
-    """
-    return (
-        {
-            "message": (
-                "Missing required query string parameters: pipeline and version"
-            )
-        },
-        400,
-    )
-
-
-# TODO: this should probably go elsewhere. issue is you can't json serialize
-#       Decimal values, and some of the values coming back from dynamo in the
-#       pipeline profile spec are Decimal. So this shims them to floats.
-def json_serialize_the_unserializable(val):
-    """Serialize a value (e.g. Decimal) that is otherwise not json serializable.
-
-    Right now this just handles Decimal, but can be updated as needed.
-
-    :param val: The value to serialize.
-    :return: the serialized value.
-    :raises: TypeError if even this function cannot serialize.
-    """
-    if isinstance(val, Decimal):
-        # this results in a reduction of precision which can cause issues. In
-        # our case (for now at least) it's ok, but we may want to consider other
-        # mechanisms like string conversions or forcing some rounding.
-        return float(val)
-    raise TypeError(f"Value {val} of type {type(val)} is not json serializable")
+from capepy.aws.utils import (
+    bad_param_response,
+    decode_error,
+    json_serialize_the_unserializable,
+)
 
 
 def index_handler(event, context):
@@ -54,29 +19,40 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
+    req_params = {"pipeline", "version"}
+
     try:
         headers = event.get("headers", {})
 
         qsp = event.get("queryStringParameters")
 
         if qsp is None:
-            resp_data, resp_status = bad_param_response()
+            resp_data, resp_status = bad_param_response(list(req_params))
         else:
             pipeline_name = qsp.get("pipeline")
             version = qsp.get("version")
 
             if not pipeline_name or not version:
-                resp_data, resp_status = bad_param_response()
+                resp_data, resp_status = bad_param_response(list(req_params))
             else:
                 # get a reference to the registry table
                 ddb_table = PipelineTable()
 
-                dap = ddb_table.get_pipeline(pipeline_name, version)
+                dap = ddb_table.get_pipelines_by_name(pipeline_name, version)
                 resp_data = []
                 resp_status = 200
+
                 if dap:
-                    resp_data = dap["profile"]
-                    print(f"resp_data: {resp_data}")
+                    if len(dap) == 1:
+                        resp_data = dap[0]["profile"]
+                    else:  # must be more than one, which is bad
+                        resp_status = 409
+                        resp_data = {
+                            "message": (
+                                f"More than one DAP returned for name "
+                                f"'{pipeline_name}'@'{version}'."
+                            )
+                        }
         # And return our response as a 200
         return {
             "statusCode": resp_status,
