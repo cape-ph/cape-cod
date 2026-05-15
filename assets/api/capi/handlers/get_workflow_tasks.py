@@ -42,7 +42,7 @@ def index_handler(event, context):
                 resp_data, resp_status = bad_param_response(list(req_params))
 
             else:
-                api_path = f"/dags/{dag_id}/dagRuns/tasks"
+                api_path = f"/dags/{dag_id}/tasks"
 
                 request_params = {
                     "Name": env_name,
