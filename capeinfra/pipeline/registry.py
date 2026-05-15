@@ -147,7 +147,7 @@ class DAPRegistry(CapeComponentResource):
                 parent=self,
                 # TODO: this is a bazooka against an ant. the GSI keeps showing
                 #       changes in the for of adding `__defaults: []` in the GSI
-                #       and each entry in the key_shemas as well as removal of
+                #       and each entry in the key_schemas as well as removal of
                 #       the previously specified hash_key and range_key values
                 #       (which were replaced by key_schemas recently). this
                 #       despite the table being removed and rebuilt totally
