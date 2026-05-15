@@ -6,7 +6,7 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
-from capepy.aws.utils import decode_error
+from capepy.aws.utils import bad_param_response, decode_error
 
 
 def index_handler(event, context):
@@ -53,7 +53,7 @@ def index_handler(event, context):
                     "Name": env_name,
                     "Path": f"/dags/{dag_id}/dagRuns/{dag_run_id}",
                     "Method": "PATCH",
-                    "QueryStringParameters": {"update_mask": update_mask},
+                    "QueryParameters": {"update_mask": update_mask},
                     "Body": req_body,
                 }
 
