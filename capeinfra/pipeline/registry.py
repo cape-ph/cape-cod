@@ -143,7 +143,20 @@ class DAPRegistry(CapeComponentResource):
                     write_capacity=0,
                 )
             ],
-            opts=ResourceOptions(parent=self),
+            opts=ResourceOptions(
+                parent=self,
+                # TODO: this is a bazooka against an ant. the GSI keeps showing
+                #       changes in the for of adding `__defaults: []` in the GSI
+                #       and each entry in the key_shemas as well as removal of
+                #       the previously specified hash_key and range_key values
+                #       (which were replaced by key_schemas recently). this
+                #       despite the table being removed and rebuilt totally
+                #       since removal of the `[hash|range]_key` fields (meaning
+                #       they should no longer be involved at all). so we're
+                #       ignoring all GSI changes reported from the server. which
+                #       is bad if we make a real change...need to fix
+                ignore_changes=["global_secondary_indexes"],
+            ),
             tags={
                 "desc_name": (
                     f"{self.desc_name} Analysis Pipeline Registry DynamoDB Table"
