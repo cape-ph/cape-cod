@@ -1898,7 +1898,7 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "mock"
-    /workflows/taskinstances:
+    /workflows/run/taskinstances:
         get:
             parameters:
                 - in: query
@@ -1990,7 +1990,7 @@ paths:
                         Server error while fetching workflow tasks.
             x-amazon-apigateway-integration:
                 httpMethod: "POST"
-                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_workflow_run_task_insatnces_handler'] }}/invocations"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_workflow_run_task_instances_handler'] }}/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "aws_proxy"
