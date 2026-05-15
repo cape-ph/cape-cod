@@ -231,30 +231,38 @@ class PrivateSwimlane(ScopedSwimlane):
         # TODO: this is the new style policy statements we should be moving to
         policy_statements = []
 
-        policy_statements.append(
-            Output.all(
-                arn=self.mwaa_compute_environment.mwaa_environment.arn,
-                name=self.mwaa_compute_environment.mwaa_environment.name,
-            ).apply(
-                # adding invoke rest api perms for the `Op` default role in
-                # airflow. Need Op as we will be configuring runs in
-                # addition to triggering (if no config, we'd be able to use
-                # User role)
-                lambda kwargs: add_resources(
-                    self.mwaa_compute_environment.policies[
-                        MwaaEnvironment.PolicyEnum.invoke_api
-                    ],
-                    # TODO: this isn't the arn of the environment or of the
-                    #       execution role. rather it seems to be the arn of
-                    #       the Op role in for airflow. anyway, if not specified
-                    #       like this (previously was using the env arn with
-                    #       `/Op` at the end) it fails. Need a good way to
-                    #       construct this
-                    f"arn:aws:airflow:{self.aws_region}:{self.aws_account_id}:role/{kwargs['name']}/Op",
-                    f"{kwargs['arn']}",
+        if self.mwaa_compute_environment is not None:
+            mep = self.mwaa_compute_environment.policies[
+                MwaaEnvironment.PolicyEnum.invoke_api
+            ]
+            policy_statements.append(
+                Output.all(
+                    arn=self.mwaa_compute_environment.mwaa_environment.arn,
+                    name=self.mwaa_compute_environment.mwaa_environment.name,
+                ).apply(
+                    # adding invoke rest api perms for the `Op` default role in
+                    # airflow. Need Op as we will be configuring runs in
+                    # addition to triggering (if no config, we'd be able to use
+                    # User role)
+                    lambda kwargs: add_resources(
+                        mep,
+                        # TODO: this isn't the arn of the environment or of the
+                        #       execution role. rather it seems to be the arn of
+                        #       the Op role in for airflow. anyway, if not specified
+                        #       like this (previously was using the env arn with
+                        #       `/Op` at the end) it fails. Need a good way to
+                        #       construct this
+                        f"arn:aws:airflow:{self.aws_region}:{self.aws_account_id}:role/{kwargs['name']}/Op",
+                        f"{kwargs['arn']}",
+                    )
                 )
             )
-        )
+
+        sgis = []
+        if self.mwaa_compute_environment is not None:
+            # TODO: hijacking the sec group here, need to either make this
+            #       one a default for a lot of things or create a new one
+            sgis = [self.mwaa_compute_environment.security_group.id]
 
         self.apis[api_name]["deploy"] = CapeRestApi(
             f"{self.basename}-{api_name}-api",
@@ -270,12 +278,7 @@ class PrivateSwimlane(ScopedSwimlane):
             desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),
             lambda_vpc_cfg=aws.lambda_.FunctionVpcConfigArgs(
-                # vpc_id=self.vpc.id,
-                # TODO: hijacking the sec group here, need to either make this
-                #       one a default for a lot of things or create a new one
-                security_group_ids=[
-                    self.mwaa_compute_environment.security_group.id
-                ],
+                security_group_ids=sgis,
                 subnet_ids=[
                     sn.id for sn in self.get_subnets_by_type("compute").values()
                 ],
