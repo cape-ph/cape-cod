@@ -782,7 +782,7 @@ config:
                                     - "x86_64"
                                 description: "getdags Lambda Function"
                                 memory_size: 128
-                                timeout: 3
+                                timeout: 10
                           - id: "get_workflow_pipeline_profiles_handler"
                             name: "getdagprofiles"
                             code: "assets/api/capi/handlers/get_workflow_pipeline_profiles.py"
@@ -795,7 +795,7 @@ config:
                                     - "x86_64"
                                 description: "getdagprofiles Lambda Function"
                                 memory_size: 128
-                                timeout: 3
+                                timeout: 10
                           - id: "post_workflow_run_handler"
                             name: "postdagrun"
                             code: "assets/api/capi/handlers/post_workflow_run.py"
@@ -808,7 +808,7 @@ config:
                                     - "x86_64"
                                 description: "postdagrun Lambda Function"
                                 memory_size: 128
-                                timeout: 3
+                                timeout: 10
                           - id: "patch_workflow_run_handler"
                             name: "patchdagrun"
                             code: "assets/api/capi/handlers/patch_workflow_run.py"
@@ -821,7 +821,7 @@ config:
                                     - "x86_64"
                                 description: "patchdagrun Lambda Function"
                                 memory_size: 128
-                                timeout: 3
+                                timeout: 10
                           - id: "get_workflow_run_handler"
                             name: "getdagrun"
                             code: "assets/api/capi/handlers/get_workflow_run.py"
@@ -834,7 +834,7 @@ config:
                                     - "x86_64"
                                 description: "getdags Lambda Function"
                                 memory_size: 128
-                                timeout: 3
+                                timeout: 10
                           - id: "get_workflow_tasks_handler"
                             name: "getdagtasks"
                             code: "assets/api/capi/handlers/get_workflow_tasks.py"
@@ -847,7 +847,7 @@ config:
                                     - "x86_64"
                                 description: "getdagtasks Lambda Function"
                                 memory_size: 128
-                                timeout: 3
+                                timeout: 10
                           - id: "get_workflow_run_task_instances_handler"
                             name: "getdagruntaskinsts"
                             code: "assets/api/capi/handlers/get_workflow_run_task_instances.py"
@@ -861,7 +861,7 @@ config:
                                 description:
                                     "getdagruntaskinsts Lambda Function"
                                 memory_size: 128
-                                timeout: 3
+                                timeout: 10
                           - id: "get_daps_handler"
                             name: "getdaps"
                             code: "assets/api/capi/handlers/get_daps.py"
