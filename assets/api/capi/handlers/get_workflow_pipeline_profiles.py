@@ -25,6 +25,8 @@ def index_handler(event, context):
         headers = event.get("headers", {})
 
         qsp = event.get("queryStringParameters")
+        resp_status = 200
+        resp_data = {}
 
         if qsp is None:
             resp_data, resp_status = bad_param_response(list(req_params))
@@ -34,7 +36,6 @@ def index_handler(event, context):
             if dag_id is None:
                 resp_data, resp_status = bad_param_response(list(req_params))
             else:
-
                 workflow_table = WorkflowMetaTable()
                 wf = workflow_table.get_workflow_by_id(dag_id)
 
@@ -50,6 +51,7 @@ def index_handler(event, context):
                     resp_status = 404
                 else:
                     for pid in wf["pipeline_ids"]:
+
                         dap = dapreg_table.get_pipeline(pid)
                         if dap:
                             resp_data.append(dap["profile"])
