@@ -5,24 +5,12 @@ import logging
 
 import boto3
 from botocore.exceptions import ClientError
-from capepy.aws.utils import decode_error
+from capepy.aws.utils import bad_param_response, decode_error
 
 logger = logging.getLogger(__name__)
 
 
 batch_client = boto3.client("batch")
-
-
-def bad_param_response():
-    """Gets a response data object and status code when bad params are given.
-
-    :return: A tuple containins a response data object and an HTTP 400 status
-             code.
-    """
-    return (
-        {"message": ("Missing required query string parameters: jobIds")},
-        400,
-    )
 
 
 def index_handler(event, context):
@@ -33,16 +21,18 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
+    req_params = {"jobIds"}
+
     try:
         qsp = event.get("queryStringParameters")
 
         resp_status = 200
         if qsp is None:
-            resp_data, resp_status = bad_param_response()
+            resp_data, resp_status = bad_param_response(list(req_params))
         else:
             job_ids = qsp.get("jobIds")
             if job_ids is None:
-                resp_data, resp_status = bad_param_response()
+                resp_data, resp_status = bad_param_response(list(req_params))
             else:
                 response = batch_client.describe_jobs(
                     jobs=[id.strip() for id in job_ids.split(",") if id]
