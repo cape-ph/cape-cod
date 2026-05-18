@@ -1669,34 +1669,6 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "mock"
-        options:
-            responses:
-                "200":
-                    $ref: "#/components/responses/200OptionsCors"
-            x-amazon-apigateway-integration:
-                responses:
-                    default:
-                        statusCode: "200"
-                        responseParameters:
-                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
-                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-                            method.response.header.Access-Control-Allow-Origin: "'*'"
-                requestTemplates:
-                    application/json: "{'statusCode':200}"
-                passthroughBehavior: "when_no_match"
-                timeoutInMillis: 29000
-                type: "mock"
-    {#
-        TODO:
-        - add:
-            - get dag run (/api/v2/dags/{dag_id}/dagRuns/{dag_run_id})
-                - for status of the dag run
-            - get dag run task instances (/api/v2/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances) 
-                - for status of the dag run tasks. 
-                - support a qsp for running tasks (or maybe any valid task state 
-                  https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/utils/state/index.html#airflow.utils.state.TaskInstanceState)
-
-    #}
     /workflows/run:
         get:
             parameters:
