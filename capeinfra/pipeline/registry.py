@@ -226,9 +226,6 @@ class DAPRegistry(CapeComponentResource):
                             {
                                 "pipeline_name": {"S": profile["pipelineName"]},
                                 "pipeline_id": {"S": profile["pipelineId"]},
-                                "pipeline_runnable": {
-                                    "BOOL": profile["pipelineRunnable"]
-                                },
                                 "version": {"S": profile["version"]},
                                 "project": {"S": profile["project"]},
                                 "pipeline_type": {"S": profile["pipelineType"]},
