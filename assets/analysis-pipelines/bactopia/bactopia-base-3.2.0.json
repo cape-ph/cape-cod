@@ -1,7 +1,7 @@
 {
     "pipelineType": "nextflow",
     "pipelineName": "Bactopia",
-    "pipelineId": "bactopia-base-v3.2.0",
+    "pipelineId": "bactopia-bactopia-base-v3.2.0",
     "pipelineRunnable": false,
     "pipelineDescription": "Execute Bactopia v3.2.0",
     "project": "bactopia/bactopia",
