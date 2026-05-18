@@ -83,6 +83,7 @@ class DynamoTable(CapeComponentResource):
                     "actions": [
                         "dynamodb:DescribeTable",
                         "dynamodb:GetItem",
+                        "dynamodb:Query",
                         # TODO: arguably we don't need to include scan here.
                         #       scan reads the whole table (or a bunch of the
                         #       table) at once. we grant it currently for the

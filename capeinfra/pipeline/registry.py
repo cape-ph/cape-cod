@@ -107,11 +107,14 @@ class DAPRegistry(CapeComponentResource):
             #       probably be much cheaper to go that route if we have a
             #       really solid idea of how many reads/writes this table needs
             billing_mode="PAY_PER_REQUEST",
-            hash_key="pipeline_name",
-            range_key="version",
+            hash_key="pipeline_id",
             attributes=[
                 # NOTE: we do not need to define any part of the "schema" here
                 #       that isn't needed in an index.
+                {
+                    "name": "pipeline_id",
+                    "type": "S",
+                },
                 {
                     "name": "pipeline_name",
                     "type": "S",
@@ -121,7 +124,39 @@ class DAPRegistry(CapeComponentResource):
                     "type": "S",
                 },
             ],
-            opts=ResourceOptions(parent=self),
+            global_secondary_indexes=[
+                aws.dynamodb.TableGlobalSecondaryIndexArgs(
+                    name="PipelineNameVerIndex",
+                    key_schemas=[
+                        aws.dynamodb.TableGlobalSecondaryIndexKeySchemaArgs(
+                            attribute_name="pipeline_name",
+                            key_type="HASH",
+                        ),
+                        aws.dynamodb.TableGlobalSecondaryIndexKeySchemaArgs(
+                            attribute_name="version",
+                            key_type="RANGE",
+                        ),
+                    ],
+                    projection_type="ALL",
+                    non_key_attributes=[],
+                    read_capacity=0,
+                    write_capacity=0,
+                )
+            ],
+            opts=ResourceOptions(
+                parent=self,
+                # TODO: this is a bazooka against an ant. the GSI keeps showing
+                #       changes in the for of adding `__defaults: []` in the GSI
+                #       and each entry in the key_schemas as well as removal of
+                #       the previously specified hash_key and range_key values
+                #       (which were replaced by key_schemas recently). this
+                #       despite the table being removed and rebuilt totally
+                #       since removal of the `[hash|range]_key` fields (meaning
+                #       they should no longer be involved at all). so we're
+                #       ignoring all GSI changes reported from the server. which
+                #       is bad if we make a real change...need to fix
+                ignore_changes=["global_secondary_indexes"],
+            ),
             tags={
                 "desc_name": (
                     f"{self.desc_name} Analysis Pipeline Registry DynamoDB Table"
@@ -187,12 +222,10 @@ class DAPRegistry(CapeComponentResource):
                         f"{self.name}-{stem}-ddbitem",
                         table_name=self.analysis_pipeline_registry_ddb_table.name,
                         hash_key=self.analysis_pipeline_registry_ddb_table.hash_key,
-                        range_key=self.analysis_pipeline_registry_ddb_table.range_key.apply(
-                            lambda rk: f"{rk}"
-                        ),
                         item=Output.json_dumps(
                             {
                                 "pipeline_name": {"S": profile["pipelineName"]},
+                                "pipeline_id": {"S": profile["pipelineId"]},
                                 "version": {"S": profile["version"]},
                                 "project": {"S": profile["project"]},
                                 "pipeline_type": {"S": profile["pipelineType"]},

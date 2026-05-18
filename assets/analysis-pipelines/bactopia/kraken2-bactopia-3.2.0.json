@@ -1,6 +1,7 @@
 {
     "pipelineType": "nextflow",
     "pipelineName": "Bactopia Kraken2",
+    "pipelineId": "bactopia-kraken2-v3.2.0",
     "pipelineDescription": "Execute Bactopia's Kraken2 workflow with the development release",
     "project": "bactopia/bactopia",
     "version": "v3.2.0",

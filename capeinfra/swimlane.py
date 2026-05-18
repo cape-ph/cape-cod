@@ -10,7 +10,6 @@ from pulumi import ResourceOptions, log
 # TODO: ISSUE #145 this import is only needed for the temporary DAP S3 handling.
 #       it should not be here after 145.
 from capeinfra.datalake.datalake import CatalogDatabase
-from capeinfra.pipeline.airflow import MwaaEnvironment
 from capeinfra.pipeline.batch import BatchCompute, BatchJobDefinition
 from capeinfra.pipeline.ecr import ContainerRepository
 from capeinfra.resources.certs import BYOCert
@@ -80,13 +79,6 @@ class ScopedSwimlane(CapeComponentResource):
         # to. e.g. self.az_assets["us-east-2b"]["inet_nat_gw"] is the internet
         # facing nat gateway for az "us=east-2b"
         self.az_assets = dict[str, dict[str, Any]]()
-        # TODO: there's maybe a common base class that could be made for batch
-        #       and mwaa (and later additions too) environments. I don't really
-        #       see how the envs are used after being created, so i don't yet
-        #       know if keeping all compute envs together is a good idea or not.
-        #       For now we'll just keep them separate until we show airflow
-        #       working.
-        self.mwaa_compute_environments = dict[str, MwaaEnvironment]()
         self.batch_compute_environments = dict[str, BatchCompute]()
         self.job_definitions = dict[str, BatchJobDefinition]()
         self.albs = {}

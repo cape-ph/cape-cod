@@ -12,7 +12,6 @@ import yaml
 from boto3.dynamodb.types import TypeSerializer
 from pulumi import (
     AssetArchive,
-    Config,
     FileArchive,
     FileAsset,
     Output,
@@ -179,7 +178,7 @@ class CapePy(CapeComponentResource):
         )
 
         self.bucket = assets_bucket
-        capepy_whl = "capepy-2.2.0-py3-none-any.whl"
+        capepy_whl = "capepy-3.0.0-py3-none-any.whl"
         self.object = self.bucket.add_object(
             f"{self.name}-object",
             key=capepy_whl,
@@ -259,7 +258,11 @@ class CapePrincipals(CapeComponentResource):
             name="cape-users",
             account_recovery_setting={
                 "recovery_mechanisms": [
-                    {"name": "verified_email", "priority": 1}
+                    # HACK: pyright typing seems broken for identifying
+                    # dictionary, this is a hacky fix for that
+                    aws.cognito.UserPoolAccountRecoverySettingRecoveryMechanismArgs(
+                        name="verified_email", priority=1
+                    )
                 ]
             },
             admin_create_user_config={"allow_admin_create_user_only": True},

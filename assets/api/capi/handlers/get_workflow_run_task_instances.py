@@ -1,69 +1,64 @@
-"""Lambda function for handling a get of an analysis pipeline job status."""
+"""Lambda function for handling a get of an airflow workflow run."""
 
 import json
-import logging
+import os
 
 import boto3
 from botocore.exceptions import ClientError
 from capepy.aws.utils import bad_param_response, decode_error
 
-logger = logging.getLogger(__name__)
-
-
-batch_client = boto3.client("batch")
-
 
 def index_handler(event, context):
-    """Handler for the GET of status of analysis pipeline jobs.
+    """Handler for the GET of all task instances for an airflow workflow runs.
+
+    This endpoint is a proxy to the airflow
+    /api/v2/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances endpoint. Done as
+    a lambda instead of direct integration so we can massage data as required.
+
+    This endpoint does not return any CAPE specific data such as the pipeline
+    profiles of the pipelines in the workflows. That is a separate API call.
 
     :param event: The event object that contains the HTTP request and json
                   data.
     :param context: Context object.
     """
 
-    req_params = {"jobIds"}
+    env_name = os.getenv("MWAA_ENVIRONMENT")
+
+    # TODO: add this to capepy
+    mwaa_client = boto3.client("mwaa")
+
+    req_params = {"dagId", "dagRunId"}
 
     try:
         qsp = event.get("queryStringParameters")
 
-        resp_status = 200
         if qsp is None:
             resp_data, resp_status = bad_param_response(list(req_params))
         else:
-            job_ids = qsp.get("jobIds")
-            if job_ids is None:
-                resp_data, resp_status = bad_param_response(list(req_params))
-            else:
-                response = batch_client.describe_jobs(
-                    jobs=[id.strip() for id in job_ids.split(",") if id]
-                )
-                resp_data = []
-                for job in response["jobs"]:
-                    keys = [
-                        "jobName",
-                        "jobArn",
-                        "jobId",
-                        "status",
-                        "statusReason",
-                        "isCancelled",
-                        "isTerminated",
-                        "createdAt",
-                        "startedAt",
-                        "stoppedAt",
-                    ]
-                    job_info = {key: job[key] for key in keys if key in job}
-                    if "container" in job:
-                        container_data = job["container"]
-                        if "logStreamName" in container_data:
-                            job_info["logStreamName"] = container_data[
-                                "logStreamName"
-                            ]
-                        job_info["environment"] = {
-                            env["name"]: env["value"]
-                            for env in container_data.get("environment", [])
-                        }
-                    resp_data.append(job_info)
+            dag_id = qsp.get("dagId")
+            dag_run_id = qsp.get("dagRunId")
 
+            if None in [dag_id, dag_run_id]:
+                resp_data, resp_status = bad_param_response(list(req_params))
+
+            else:
+                api_path = f"/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances"
+
+                request_params = {
+                    "Name": env_name,
+                    "Path": api_path,
+                    "Method": "GET",
+                }
+
+                response = mwaa_client.invoke_rest_api(**request_params)
+                resp_data = response["RestApiResponse"]
+                resp_status = response["RestApiStatusCode"]
+
+        # no matter the status code of the response we can return the same
+        # thing. the difference in 200 vs non-200 is that the json will contain
+        # an error string under the key "detail" instead of workflow data in
+        # the non-200 case
         return {
             "statusCode": resp_status,
             "headers": {
@@ -88,9 +83,9 @@ def index_handler(event, context):
         code, message = decode_error(err)
 
         msg = (
-            f"Error during processing of checking job status. {code} {message}"
+            f"Error during fetch of workflow run data from airflow. "
+            f"{code} {message}"
         )
-        logger.exception(msg)
 
         return {
             "statusCode": 500,

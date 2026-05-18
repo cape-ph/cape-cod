@@ -759,15 +759,109 @@ config:
                               logging_enabled: True
                       env_vars:
                           - "DAP_REG_DDB_TABLE"
+                          - "WORKFLOW_REG_DDB_TABLE"
                           - "DDB_REGION"
                           - "USER_ATTRS_DDB_TABLE"
                           - "ETL_ATTRS_DDB_TABLE"
                           - "CRAWLER_ATTRS_DDB_TABLE"
                           - "CANNED_REPORT_DDB_TABLE"
+                          - "MWAA_ENVIRONMENT"
                       # env_vars: TODO: add env vars for this API if needed.
                       # TODO: memory and timeouts for these functions need
                       #       some love
                       handlers:
+                          - id: "get_workflow_dags_handler"
+                            name: "getdags"
+                            code: "assets/api/capi/handlers/get_workflow_dags.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdags Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_workflow_pipeline_profiles_handler"
+                            name: "getdagprofiles"
+                            code: "assets/api/capi/handlers/get_workflow_pipeline_profiles.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdagprofiles Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "post_workflow_run_handler"
+                            name: "postdagrun"
+                            code: "assets/api/capi/handlers/post_workflow_run.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "postdagrun Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "patch_workflow_run_handler"
+                            name: "patchdagrun"
+                            code: "assets/api/capi/handlers/patch_workflow_run.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "patchdagrun Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_workflow_run_handler"
+                            name: "getdagrun"
+                            code: "assets/api/capi/handlers/get_workflow_run.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdags Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_workflow_tasks_handler"
+                            name: "getdagtasks"
+                            code: "assets/api/capi/handlers/get_workflow_tasks.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdagtasks Lambda Function"
+                                memory_size: 128
+                                timeout: 10
+                          - id: "get_workflow_run_task_instances_handler"
+                            name: "getdagruntaskinsts"
+                            code: "assets/api/capi/handlers/get_workflow_run_task_instances.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description:
+                                    "getdagruntaskinsts Lambda Function"
+                                memory_size: 128
+                                timeout: 10
                           - id: "get_daps_handler"
                             name: "getdaps"
                             code: "assets/api/capi/handlers/get_daps.py"
@@ -778,7 +872,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdaps Lambda Funnction"
+                                description: "getdaps Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_dap_profile_handler"
@@ -791,7 +885,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdapprofiles Lambda Funnction"
+                                description: "getdapprofiles Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_dap_status_handler"
@@ -804,7 +898,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdapstatus Lambda Funnction"
+                                description: "getdapstatus Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_dap_logs_handler"
@@ -817,9 +911,11 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "getdaplogs Lambda Funnction"
+                                description: "getdaplogs Lambda Function"
                                 memory_size: 128
                                 timeout: 3
+                          # TODO: if not used as part of workflows (probably
+                          #       won't be) this should be removed
                           - id: "submit_dap_run_handler"
                             name: "submitdaprun"
                             code: "assets/api/capi/handlers/submit_dap_run.py"
@@ -830,7 +926,7 @@ config:
                                 runtime: "python3.10"
                                 architectures:
                                     - "x86_64"
-                                description: "submitdaprun Lambda Funnction"
+                                description: "submitdaprun Lambda Function"
                                 memory_size: 128
                                 timeout: 3
                           - id: "get_raw_objstore_authz_handler"
@@ -1273,9 +1369,10 @@ config:
             # and no compute environments will be deployed
             compute:
                 # `environments` (mapping, optional)
-                # Environments for aws batch and mwaa (aairflow) are configured
+                # Environments for aws batch and mwaa (airflow) are configured
                 # in this section. There are mappings for both types of
-                # environments, and both mappings contain lists of mappings.
+                # environments, with the airflow mapping being singular and the
+                # batch environments being a list of mappings.
                 #
                 # Both types have some shared config keys and then keys specific
                 # to that type. Shared keys are as follows:
@@ -1290,9 +1387,8 @@ config:
                 #   config file. At least one subnet must be defined here.
                 #
                 environments:
-                    # Each mwaa mapping in the list has the
-                    # following schema in addition to the shared keys mentioned
-                    # above:
+                    # The mwaa mapping has the following schema in addition to
+                    # the shared keys mentioned above:
                     # * `dag_path` (string, required)
                     #    The path in the CAPE meta assets s3 bucket where dags
                     #    will be stored for airflow to load. MWAA syncs these
@@ -1332,39 +1428,39 @@ config:
                     #       here:
                     #       https://www.pulumi.com/registry/packages/aws/api-docs/mwaa/environment/
                     mwaa:
-                        - name: airflow-env
-                          dag_path: airflow/dags
-                          airflow_version: 3.0.6
-                          airflow_config:
-                              core.default_task_retries: 2
-                              core.parallelism: 20
-                              celery.worker_autoscale: 5,5
-                          environment_class: mw1.small
-                          subnet_types:
-                              - compute
-                          ingress_subnet_types:
-                              - compute
-                              - vpn
-                          extra_env_args:
-                              min_workers: 2
-                              max_workers: 10
-                              logging_configuration:
-                                  # NOTE: INFO is the lowest level supported in MWAA
-                                  dag_processing_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  scheduler_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  task_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  webserver_logs:
-                                      enabled: True
-                                      log_level: INFO
-                                  worker_logs:
-                                      enabled: True
-                                      log_level: INFO
+                        name: airflow-env
+                        dag_path: airflow/dags
+                        airflow_version: 3.0.6
+                        airflow_config:
+                            core.default_task_retries: 2
+                            core.parallelism: 20
+                            celery.worker_autoscale: 5,5
+                        environment_class: mw1.small
+                        subnet_types:
+                            - compute
+                        ingress_subnet_types:
+                            - compute
+                            - vpn
+                        extra_env_args:
+                            min_workers: 2
+                            max_workers: 10
+                            logging_configuration:
+                                # NOTE: INFO is the lowest level supported in MWAA
+                                dag_processing_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                scheduler_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                task_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                webserver_logs:
+                                    enabled: True
+                                    log_level: INFO
+                                worker_logs:
+                                    enabled: True
+                                    log_level: INFO
                     # Each batch mapping in the list has the
                     # following schema in addition to the shared keys mentioned
                     # above:
