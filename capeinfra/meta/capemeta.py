@@ -256,15 +256,16 @@ class CapePrincipals(CapeComponentResource):
         self.user_pool = aws.cognito.UserPool(
             "cape-users",
             name="cape-users",
-            account_recovery_setting={
-                "recovery_mechanisms": [
-                    # HACK: pyright typing seems broken for identifying
-                    # dictionary, this is a hacky fix for that
+            # HACK: pyright typing seems broken for identifying
+            # dictionary for both account_recovery_setting, and
+            # recovery_mechanism. this is a hacky fix for that
+            account_recovery_setting=aws.cognito.UserPoolAccountRecoverySettingArgs(
+                recovery_mechanisms=[
                     aws.cognito.UserPoolAccountRecoverySettingRecoveryMechanismArgs(
                         name="verified_email", priority=1
                     )
                 ]
-            },
+            ),
             admin_create_user_config={"allow_admin_create_user_only": True},
             password_policy={
                 "minimum_length": 8,
