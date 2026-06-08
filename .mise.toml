@@ -2,4 +2,4 @@
 _.python.venv = { path = "venv", create = false }
 
 [tools]
-pulumi = "3.223.0"
+pulumi = "3"
