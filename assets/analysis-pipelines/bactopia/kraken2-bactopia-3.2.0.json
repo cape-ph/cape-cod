@@ -15,6 +15,11 @@
                 "const": "kraken2",
                 "default": "kraken2"
             },
+            "--kraken2_db": {
+                "type": "string",
+                "title": "Kraken2 Database Path",
+                "default": "/mnt/nextflow_shared_data/kraken2"
+            },
             "--max_cpus": {
                 "type": "integer",
                 "title": "Max CPUs",

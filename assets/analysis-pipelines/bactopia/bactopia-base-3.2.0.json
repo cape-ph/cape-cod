@@ -12,6 +12,10 @@
             "-profile": {
                 "const": "aws",
                 "default": "aws"
+            },
+            "--aws_volumes": {
+                "const": "/opt/conda:/mnt/conda,/mnt/nextflow_shared_data:/mnt/nextflow_shared_data:ro",
+                "default": "/opt/conda:/mnt/conda,/mnt/nextflow_shared_data:/mnt/nextflow_shared_data:ro"
             }
         }
     },
