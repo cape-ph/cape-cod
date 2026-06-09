@@ -1277,7 +1277,7 @@ config:
                           - s3
                     - name: "cape-frontend"
                       short_name: "cfe"
-                      image: "ami-0416fb60ec18f5660"
+                      image: "ami-06544672c7721b7a9"
                       public_ip: False
                       instance_type: "t3a.medium"
                       subnet_types:
