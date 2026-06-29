@@ -1234,7 +1234,7 @@ config:
                           - cognito
                     - name: "opa"
                       short_name: "opa"
-                      image: "ami-05080e4998b881ee0"
+                      image: "ami-07b9e418d53f44854"
                       public_ip: False
                       instance_type: "t3a.medium"
                       subnet_types:
