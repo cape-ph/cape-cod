@@ -239,6 +239,15 @@ class Tributary(CapeComponentResource):
         super().__init__(name, *args, **kwargs)
 
         self.name = f"{name}"
+
+        # ABAC resource-export metadata. `code` is the short config name (which
+        # also drives AWS resource names); `display_name`/`description` are
+        # optional human-readable config fields consumed by the resource export
+        # (capeinfra/authz/export.py). They default sensibly when absent.
+        self.code = self.config.get("name")
+        self.display_name = self.config.get("display_name", default=self.code)
+        self.description = self.config.get("description", default=None)
+
         catalog_name = f"{self.name}-catalog"
         self.catalog = CatalogDatabase(
             catalog_name,

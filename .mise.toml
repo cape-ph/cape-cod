@@ -3,3 +3,7 @@ _.python.venv = { path = "venv", create = false }
 
 [tools]
 pulumi = "3"
+
+[tasks.export-abac-resources]
+description = "Write the deployed ABAC resource catalog to cape-cod-export.json"
+run = "pulumi stack output abac_resource_export --json > cape-cod-export.json"
