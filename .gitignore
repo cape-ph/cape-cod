@@ -2,3 +2,12 @@
 venv/
 .DS_Store
 assets-untracked/
+
+# generated ABAC resource export (produced by `mise run export-abac-resources`)
+cape-cod-export.json
+
+# pi-llm-wiki: keep authored knowledge, drop generated + immutable layers
+.llm-wiki/meta/
+.llm-wiki/raw/
+.llm-wiki/outputs/
+.llm-wiki/.discoveries/
