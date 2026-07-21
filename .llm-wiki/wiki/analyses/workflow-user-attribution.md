@@ -5,7 +5,7 @@ slug: workflow-user-attribution
 status: stable
 confidence: high
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-21
 tags: ["api", "airflow", "mwaa", "workflows", "authorizer", "security", "capi"]
 ---
 
@@ -25,6 +25,31 @@ principal) - not as the end user. Airflow therefore cannot populate its native
 `triggering_user_name` with the Cognito user; it would only ever see the service
 identity. Faithfully setting the native field would require presenting each end
 user's identity to Airflow's auth manager, a large change to the auth model.
+
+## Why not authenticate the real user into Airflow?
+
+A natural question is whether we could pass the Cognito bearer token through to
+Airflow so it authenticates as the actual user (and populates its native
+triggering-user field). On MWAA this is not achievable:
+
+- MWAA's Airflow web/REST auth is AWS IAM-based (access is granted via
+  `mwaa:CreateWebLoginToken` / `airflow:InvokeRestApi`), not our Cognito user
+  pool. MWAA does not let you swap the Airflow auth backend to an OIDC/Cognito
+  provider, and nothing in `capeinfra/pipeline/airflow.py` wires one up.
+- The frontend never talks to Airflow directly. It calls the capi API
+  (API Gateway -> Lambda), and the Lambda reaches Airflow with
+  `mwaa_client.invoke_rest_api`, authenticated by SigV4 using the Lambda
+  execution role (mapped to the Airflow `Op` role in `private.py`). The Cognito
+  token is consumed and discarded at the API Gateway edge and never travels to
+  Airflow, so Airflow only ever sees that single service principal.
+- Getting a true per-user Airflow identity would require self-managed Airflow
+  (not MWAA) with a Cognito OIDC auth backend, plus the frontend hitting Airflow
+  directly or the API impersonating the user via token passthrough - a large
+  infra shift that abandons MWAA's managed benefits.
+
+So resolving identity at the Cognito-authenticated API edge and stamping it into
+`conf.cape` is the correct pattern under the MWAA constraint, not a workaround
+for a missing feature.
 
 ## Decision
 
@@ -66,8 +91,9 @@ REST API - with no database dependency.
 ## Follow-ups / risks
 
 - Authorizer does not verify the JWT signature yet; harden before production or
-  switch to a managed Cognito JWT authorizer (would need Cognito issuer/JWKS
-  config wired into the currently env-var-less authorizer Lambda).
+  switch to a native API Gateway Cognito User Pools authorizer (AWS handles
+  verification/JWKS; handlers would then read `requestContext.authorizer.claims`).
+  This migration is fully specified in cape-ph/cape-cod#352.
 - Per-user listing filters in the proxy because Airflow has no server-side
   filter on a `conf` value (true in every Airflow version). Runs are fetched via
   Airflow 3's cross-DAG list endpoint `GET /dags/~/dagRuns/list` (the `~`
