@@ -835,6 +835,19 @@ config:
                                 description: "getdags Lambda Function"
                                 memory_size: 128
                                 timeout: 10
+                          - id: "get_workflow_runs_handler"
+                            name: "getdagruns"
+                            code: "assets/api/capi/handlers/get_workflow_runs.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getdagruns Lambda Function"
+                                memory_size: 128
+                                timeout: 30
                           - id: "get_workflow_tasks_handler"
                             name: "getdagtasks"
                             code: "assets/api/capi/handlers/get_workflow_tasks.py"

@@ -9,6 +9,58 @@ import boto3
 from botocore.exceptions import ClientError
 from capepy.aws.utils import bad_param_response, decode_error
 
+# Namespace under the DAG run `conf` where CAPE-owned metadata lives, kept
+# separate from the DAG's own parameters so the two never collide.
+CAPE_CONF_KEY = "cape"
+
+
+def caller_identity_from_event(event):
+    """Read the caller identity injected by the API Gateway authorizer.
+
+    The authorizer resolves the Cognito user and passes it in the request
+    context. We only trust this server-side value for ownership; we never trust
+    identity sent in the request body.
+
+    :param event: The API Gateway proxy event.
+    :return: A dict with any of `triggering_user_id` / `triggering_user_name`.
+    """
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    identity = {}
+    user_id = authorizer.get("triggering_user_id")
+    if user_id:
+        identity["triggering_user_id"] = str(user_id)
+
+    user_name = authorizer.get("triggering_user_name")
+    if user_name:
+        identity["triggering_user_name"] = str(user_name)
+
+    return identity
+
+
+def apply_cape_identity(conf, identity):
+    """Stamp the resolved caller identity onto a DAG run `conf`.
+
+    Any client-supplied `cape` block is removed first so a caller cannot forge
+    ownership. When no identity is available (e.g. authorizer not yet resolving
+    users) the `cape` block is simply absent.
+
+    :param conf: The DAG run conf dict (the passthrough of the request body).
+    :param identity: The identity dict from `caller_identity_from_event`.
+    :return: The same conf dict, mutated in place and returned for convenience.
+    """
+    if not isinstance(conf, dict):
+        return conf
+
+    # Never allow client-provided CAPE metadata through.
+    conf.pop(CAPE_CONF_KEY, None)
+
+    if identity:
+        conf[CAPE_CONF_KEY] = dict(identity)
+
+    return conf
+
 
 def index_handler(event, context):
     """Handler for the POST to trigger an airflow dag.
@@ -16,6 +68,11 @@ def index_handler(event, context):
     This endpoint is a proxy to the airflow /api/v2/dags/{dag_id}/dagRuns
     endpoint. Done as a lambda instead of direct integration so we can massage
     data as required.
+
+    In addition to forwarding the request body as the DAG run `conf`, this
+    handler stamps the triggering user (resolved by the API Gateway authorizer)
+    into `conf.cape` so ownership is recorded in Airflow state, visible in the
+    Airflow UI, and retrievable via the Airflow API.
 
     :param event: The event object that contains the HTTP request and json
                   data.
@@ -43,11 +100,16 @@ def index_handler(event, context):
                 resp_data, resp_status = bad_param_response(list(req_params))
             else:
 
+                # Stamp the triggering user (from the authorizer context) into
+                # the conf. Client-supplied `cape` metadata is stripped so
+                # ownership cannot be spoofed.
+                identity = caller_identity_from_event(event)
+                dag_params = apply_cape_identity(dag_params, identity)
+
                 # TODO: we can add some additional run params that airflow
                 #       supports:
                 #       - specific run id (probably don't want people using this
                 #         usually if ever)
-                #       - note (freetext string)
                 #       - run_after (if we want to get into scheduling from
                 #         users)
                 #       - there are others like data_interval_[start|end] that
@@ -62,14 +124,24 @@ def index_handler(event, context):
                 now_str = datetime.datetime.now().isoformat()
                 zstr = re.sub(r"\..*$", "Z", now_str)
 
+                body = {
+                    "conf": dag_params,
+                    "logical_date": zstr,  # datetime.datetime.now().isoformat(),
+                }
+
+                # Surface the triggering user in the run `note` too, so admins
+                # scanning the Airflow runs list can see it without opening conf.
+                user_name = identity.get("triggering_user_name") or identity.get(
+                    "triggering_user_id"
+                )
+                if user_name:
+                    body["note"] = f"Triggered by {user_name}"
+
                 request_params = {
                     "Name": env_name,
                     "Path": f"/dags/{dag_id}/dagRuns",
                     "Method": "POST",
-                    "Body": {
-                        "conf": dag_params,
-                        "logical_date": zstr,  # datetime.datetime.now().isoformat(),
-                    },
+                    "Body": body,
                 }
 
                 response = mwaa_client.invoke_rest_api(**request_params)
