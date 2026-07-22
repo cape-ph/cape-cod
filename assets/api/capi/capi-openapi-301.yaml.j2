@@ -1785,6 +1785,65 @@ paths:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 type: "mock"
+    /workflows/runs:
+        get:
+            parameters:
+                - in: query
+                  name: userId
+                  schema:
+                    type: string
+                    description:
+                        Optional fallback caller id used only when the API
+                        authorizer has not injected the caller identity. In
+                        normal operation the triggering user is resolved from
+                        the Authorization token by the authorizer.
+                  required: false
+            responses:
+                "200":
+                    description: "Success"
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                description:
+                                    The calling user's workflow runs. Contains a
+                                    `dag_runs` array (Airflow DAG run objects)
+                                    and a `total_entries` count.
+                                additionalProperties: true
+                "401":
+                    description: Caller identity could not be resolved.
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/responses/AirflowErrorDetailStrResp"
+                                    - $ref: "#/components/responses/AirflowErrorDetailObjResp"
+                "500":
+                    description:
+                        Server error while fetching workflow runs.
+            x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                uri: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/{{ handlers['get_workflow_runs_handler'] }}/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "aws_proxy"
+        options:
+            responses:
+                "200":
+                    $ref: "#/components/responses/200OptionsCors"
+            x-amazon-apigateway-integration:
+                responses:
+                    default:
+                        statusCode: "200"
+                        responseParameters:
+                            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET'"
+                            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                            method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                    application/json: "{'statusCode':200}"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                type: "mock"
     /workflows/tasks:
         get:
             parameters:
