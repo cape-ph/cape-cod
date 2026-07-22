@@ -131,9 +131,9 @@ def index_handler(event, context):
 
                 # Surface the triggering user in the run `note` too, so admins
                 # scanning the Airflow runs list can see it without opening conf.
-                user_name = identity.get("triggering_user_name") or identity.get(
-                    "triggering_user_id"
-                )
+                user_name = identity.get(
+                    "triggering_user_name"
+                ) or identity.get("triggering_user_id")
                 if user_name:
                     body["note"] = f"Triggered by {user_name}"
 
