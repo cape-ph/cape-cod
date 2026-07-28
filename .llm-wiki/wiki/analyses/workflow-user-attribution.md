@@ -13,9 +13,10 @@ tags: ["api", "airflow", "mwaa", "workflows", "authorizer", "security", "capi"]
 
 How the capi API records "which user triggered an Airflow DAG run" and exposes a
 per-user run list, given the MWAA integration constraints. See
-[[entities/assets-capi-handlers]] and [[entities/assets-api-authorizer-and-spec]]
-for the code, and [[entities/airflow-module]] / [[entities/cape-rest-api-module]]
-for the surrounding infrastructure.
+[[entities/assets-capi-handlers]] and
+[[entities/assets-api-authorizer-and-spec]] for the code, and
+[[entities/airflow-module]] / [[entities/cape-rest-api-module]] for the
+surrounding infrastructure.
 
 ## Constraint
 
@@ -36,8 +37,8 @@ triggering-user field). On MWAA this is not achievable:
   `mwaa:CreateWebLoginToken` / `airflow:InvokeRestApi`), not our Cognito user
   pool. MWAA does not let you swap the Airflow auth backend to an OIDC/Cognito
   provider, and nothing in `capeinfra/pipeline/airflow.py` wires one up.
-- The frontend never talks to Airflow directly. It calls the capi API
-  (API Gateway -> Lambda), and the Lambda reaches Airflow with
+- The frontend never talks to Airflow directly. It calls the capi API (API
+  Gateway -> Lambda), and the Lambda reaches Airflow with
   `mwaa_client.invoke_rest_api`, authenticated by SigV4 using the Lambda
   execution role (mapped to the Airflow `Op` role in `private.py`). The Cognito
   token is consumed and discarded at the API Gateway edge and never travels to
@@ -70,12 +71,10 @@ REST API - with no database dependency.
 2. `handlers/post_workflow_run.py` reads that context via
    `caller_identity_from_event`, then `apply_cape_identity` strips any
    client-supplied `conf.cape` (anti-spoofing) and stamps the resolved identity.
-   It also sets the DAG run `note` to `Triggered by <user>` so admins see the
-   owner in the Airflow runs list without opening `conf`.
 3. `handlers/get_workflow_runs.py` (route `GET /workflows/runs`, handler key
    `get_workflow_runs_handler`) resolves the caller (`caller_user_id`, with a
-   `userId` query-string fallback for pre-authorizer/dev calls), lists each
-   DAG's recent runs, and returns only those where
+   `userId` query-string fallback for pre-authorizer/dev calls), lists recent
+   runs across all DAGs, and returns only those where
    `conf.cape.triggering_user_id` matches (`filter_runs_for_user`).
 
 ## IAM / wiring notes
@@ -85,28 +84,29 @@ REST API - with no database dependency.
   `MwaaEnvironment` (see `capeinfra/swimlanes/private.py`), so no IAM change was
   needed. `MWAA_ENVIRONMENT` is injected into all capi handlers via the shared
   `env_vars` in `capeinfra/resources/api.py`.
-- Registered in `Pulumi.cape-cod-dev.yaml` and `Pulumi.cape-cod-public.yaml`
-  and in `capi-openapi-301.yaml.j2` (with the standard OPTIONS CORS mock).
+- Registered in `Pulumi.cape-cod-dev.yaml` and `Pulumi.cape-cod-public.yaml` and
+  in `capi-openapi-301.yaml.j2` (with the standard OPTIONS CORS mock).
 
 ## Follow-ups / risks
 
 - Authorizer does not verify the JWT signature yet; harden before production or
   switch to a native API Gateway Cognito User Pools authorizer (AWS handles
-  verification/JWKS; handlers would then read `requestContext.authorizer.claims`).
-  This migration is fully specified in cape-ph/cape-cod#352.
+  verification/JWKS; handlers would then read
+  `requestContext.authorizer.claims`). This migration is fully specified in
+  cape-ph/cape-cod#352.
 - Per-user listing filters in the proxy. Runs are fetched via Airflow 3's
   cross-DAG list endpoint `GET /dags/~/dagRuns` (the `~` wildcard covers all
   DAGs), ordered by `-run_after` (`logical_date` is nullable for API-triggered
   runs in Airflow 3) and paged at 100 up to a scan cap, so it is one paginated
-  stream rather than one request per DAG. Airflow 3.0.6 exposes a `conf_contains`
-  query filter (substring CONTAINS on the serialized `conf`); the handler passes
-  the caller's user id as `conf_contains` to prefilter server-side, then re-
-  checks `conf.cape.triggering_user_id` exactly in the proxy so a coincidental
-  substring match cannot leak another user's run. Note: the older
-  `GET /dags/~/dagRuns/list` batch endpoint does not exist in Airflow 3's v2 API
-  and returns a 4xx (surfaced as `RestApiClientException`). Large run volumes may
-  still warrant a database-backed ownership index (the CAPE environment DB)
-  later; this scalability follow-up is fully specified in
+  stream rather than one request per DAG. Airflow 3.0.6 exposes a
+  `conf_contains` query filter (substring CONTAINS on the serialized `conf`);
+  the handler passes the caller's user id as `conf_contains` to prefilter
+  server-side, then re- checks `conf.cape.triggering_user_id` exactly in the
+  proxy so a coincidental substring match cannot leak another user's run. Note:
+  the older `GET /dags/~/dagRuns/list` batch endpoint does not exist in Airflow
+  3's v2 API and returns a 4xx (surfaced as `RestApiClientException`). Large run
+  volumes may still warrant a database-backed ownership index (the CAPE
+  environment DB) later; this scalability follow-up is fully specified in
   cape-ph/cape-frontend#30.
 
 Related: [[syntheses/assets-subsystem]], [[concepts/coding-style-and-tooling]].

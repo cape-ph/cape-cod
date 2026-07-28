@@ -64,9 +64,9 @@ the rendered OpenAPI spec and created as a Lambda by `CapeRestApi` (see
 - `get_workflow_tasks.py` - tasks for a workflow.
 - `post_workflow_run.py` - create a workflow run. Stamps the triggering user
   onto the DAG run `conf` under `conf.cape` (`triggering_user_id` /
-  `triggering_user_name`) from the authorizer context, strips any
-  client-supplied `cape` (anti-spoofing), and sets a `Triggered by <user>`
-  run note. See [[analyses/workflow-user-attribution]].
+  `triggering_user_name`) from the authorizer context and strips any
+  client-supplied `cape` (anti-spoofing). See
+  [[analyses/workflow-user-attribution]].
 - `patch_workflow_run.py` - update a workflow run.
 
 ## User attribute handlers

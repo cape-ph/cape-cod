@@ -20,9 +20,10 @@ CAPE_CONF_KEY = "cape"
 
 # Page size when listing runs across all DAGs (Airflow caps page limit at 100).
 DAG_RUNS_PAGE_LIMIT = 100
-# Safety cap on how many recent runs we scan while filtering by owner. Airflow
-# has no server-side filter for a `conf` value, so we page through the most
-# recent runs and match `conf.cape` here.
+# Safety cap on how many recent runs we scan while filtering by owner. Airflow's
+# only server-side filter on `conf` is a substring match (`conf_contains`), so we
+# prefilter with it and re-check exact ownership here; this bounds how deep we
+# page when a substring match happens to be broad.
 MAX_RUNS_SCANNED = 1000
 
 
@@ -127,10 +128,10 @@ def index_handler(event, context):
     only those triggered by the caller (matched on
     `conf.cape.triggering_user_id`).
 
-    TODO: Airflow has no server-side filter for a `conf` value, so ownership
-          filtering is done here after fetching recent runs. For large run
-          volumes this should move to a database-backed ownership index (the
-          CAPE environment DB).
+    TODO: Airflow's only server-side filter on `conf` is a substring match
+          (`conf_contains`), so exact ownership is re-checked here after the
+          prefilter. For large run volumes this should move to a database-backed
+          ownership index (the CAPE environment DB).
 
     :param event: The event object that contains the HTTP request.
     :param context: Context object.
@@ -180,9 +181,9 @@ def index_handler(event, context):
         # Airflow already orders newest-first; sort defensively in case a page
         # boundary or backend quirk perturbs the order.
         matching_runs.sort(
-            key=lambda run: run.get("run_after")
-            or run.get("logical_date")
-            or "",
+            key=lambda run: (
+                run.get("run_after") or run.get("logical_date") or ""
+            ),
             reverse=True,
         )
 
