@@ -78,27 +78,36 @@ def filter_runs_for_user(runs, user_id):
     return [run for run in (runs or []) if run_belongs_to_user(run, user_id)]
 
 
-def _list_all_dag_runs(mwaa_client, env_name):
+def _list_all_dag_runs(mwaa_client, env_name, conf_contains=None):
     """List recent DAG runs across all DAGs, most recent first.
 
-    Uses Airflow's cross-DAG list endpoint (`/dags/~/dagRuns/list`; the `~`
+    Uses Airflow 3's cross-DAG list endpoint (`GET /dags/~/dagRuns`; the `~`
     wildcard means "all DAGs") so every DAG is covered by a single paginated
-    stream instead of one request per DAG. Paging stops once MAX_RUNS_SCANNED
+    stream instead of one request per DAG. When `conf_contains` is provided it
+    is passed as the server-side `conf_contains` filter so Airflow only returns
+    runs whose serialized `conf` contains that value (the caller's user id),
+    which keeps the scanned volume small. Paging stops once MAX_RUNS_SCANNED
     runs have been seen or Airflow reports no more entries.
+
+    Runs are ordered by `-run_after`; `logical_date` is nullable in Airflow 3
+    for API-triggered runs, so it is not a reliable sort key.
     """
     runs = []
     offset = 0
 
+    query_parameters = {
+        "limit": DAG_RUNS_PAGE_LIMIT,
+        "order_by": "-run_after",
+    }
+    if conf_contains:
+        query_parameters["conf_contains"] = conf_contains
+
     while offset < MAX_RUNS_SCANNED:
         response = mwaa_client.invoke_rest_api(
             Name=env_name,
-            Path="/dags/~/dagRuns/list",
+            Path="/dags/~/dagRuns",
             Method="GET",
-            QueryParameters={
-                "limit": DAG_RUNS_PAGE_LIMIT,
-                "offset": offset,
-                "order_by": "-logical_date",
-            },
+            QueryParameters={**query_parameters, "offset": offset},
         )
         data = response["RestApiResponse"]
         page = data.get("dag_runs", [])
@@ -161,13 +170,19 @@ def index_handler(event, context):
                 ),
             }
 
-        all_runs = _list_all_dag_runs(mwaa_client, env_name)
+        all_runs = _list_all_dag_runs(
+            mwaa_client, env_name, conf_contains=user_id
+        )
+        # `conf_contains` is a substring prefilter; re-check ownership exactly
+        # so a coincidental substring match cannot leak another user's run.
         matching_runs = filter_runs_for_user(all_runs, user_id)
 
         # Airflow already orders newest-first; sort defensively in case a page
         # boundary or backend quirk perturbs the order.
         matching_runs.sort(
-            key=lambda run: run.get("logical_date") or "",
+            key=lambda run: run.get("run_after")
+            or run.get("logical_date")
+            or "",
             reverse=True,
         )
 
@@ -191,5 +206,6 @@ def index_handler(event, context):
 
         return {
             "statusCode": 500,
-            "body": msg,
+            "headers": resp_headers,
+            "body": json.dumps({"message": msg}),
         }

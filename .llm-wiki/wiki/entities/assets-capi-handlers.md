@@ -55,9 +55,10 @@ the rendered OpenAPI spec and created as a Lambda by `CapeRestApi` (see
 - `get_workflow_pipeline_profiles.py` - DAP profiles used by a workflow.
 - `get_workflow_run.py` - a specific workflow run.
 - `get_workflow_runs.py` - the calling user's workflow runs. Lists recent runs
-  across all DAGs via Airflow's cross-DAG endpoint `GET /dags/~/dagRuns/list`
-  (paged), and returns only those whose `conf.cape.triggering_user_id` matches
-  the caller (resolved from the API authorizer context; see
+  across all DAGs via Airflow 3's cross-DAG endpoint `GET /dags/~/dagRuns`
+  (server-side `conf_contains` prefilter, `order_by=-run_after`, paged), and
+  returns only those whose `conf.cape.triggering_user_id` matches the caller
+  (resolved from the API authorizer context; see
   [[analyses/workflow-user-attribution]]).
 - `get_workflow_run_task_instances.py` - task instances for a run.
 - `get_workflow_tasks.py` - tasks for a workflow.

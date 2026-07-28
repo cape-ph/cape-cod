@@ -94,12 +94,19 @@ REST API - with no database dependency.
   switch to a native API Gateway Cognito User Pools authorizer (AWS handles
   verification/JWKS; handlers would then read `requestContext.authorizer.claims`).
   This migration is fully specified in cape-ph/cape-cod#352.
-- Per-user listing filters in the proxy because Airflow has no server-side
-  filter on a `conf` value (true in every Airflow version). Runs are fetched via
-  Airflow 3's cross-DAG list endpoint `GET /dags/~/dagRuns/list` (the `~`
-  wildcard covers all DAGs), paged at 100 up to a scan cap, so it is one
-  paginated stream rather than one request per DAG. Large run volumes may still
-  warrant a database-backed ownership index (the CAPE environment DB) later;
-  this scalability follow-up is fully specified in cape-ph/cape-frontend#30.
+- Per-user listing filters in the proxy. Runs are fetched via Airflow 3's
+  cross-DAG list endpoint `GET /dags/~/dagRuns` (the `~` wildcard covers all
+  DAGs), ordered by `-run_after` (`logical_date` is nullable for API-triggered
+  runs in Airflow 3) and paged at 100 up to a scan cap, so it is one paginated
+  stream rather than one request per DAG. Airflow 3.0.6 exposes a `conf_contains`
+  query filter (substring CONTAINS on the serialized `conf`); the handler passes
+  the caller's user id as `conf_contains` to prefilter server-side, then re-
+  checks `conf.cape.triggering_user_id` exactly in the proxy so a coincidental
+  substring match cannot leak another user's run. Note: the older
+  `GET /dags/~/dagRuns/list` batch endpoint does not exist in Airflow 3's v2 API
+  and returns a 4xx (surfaced as `RestApiClientException`). Large run volumes may
+  still warrant a database-backed ownership index (the CAPE environment DB)
+  later; this scalability follow-up is fully specified in
+  cape-ph/cape-frontend#30.
 
 Related: [[syntheses/assets-subsystem]], [[concepts/coding-style-and-tooling]].

@@ -281,7 +281,7 @@ def test_list_all_dag_runs_paginates(get_workflow_runs):
     # One request per page: ceil(total / page_limit).
     assert len(client.calls) == 3
     # Every request hits the cross-DAG list endpoint via GET.
-    assert all(c["Path"] == "/dags/~/dagRuns/list" for c in client.calls)
+    assert all(c["Path"] == "/dags/~/dagRuns" for c in client.calls)
     assert all(c["Method"] == "GET" for c in client.calls)
 
 
