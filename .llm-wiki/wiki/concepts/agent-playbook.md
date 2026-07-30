@@ -5,7 +5,7 @@ slug: agent-playbook
 status: stable
 confidence: high
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-07-21
 tags: ["playbook", "workflow", "start-here", "safety", "onboarding"]
 ---
 
@@ -34,14 +34,21 @@ through `CapeComponentResource` + `CapeConfig` (see
 4. Edit minimally: smallest correct change, matching existing conventions (see
    [[concepts/coding-style-and-tooling]]).
 5. Validate: `pulumi preview` on a local stack and `pytest` (see
-   [[concepts/testing-and-pulumi-preview-workflow]]).
+   [[concepts/testing-and-pulumi-preview-workflow]]). Before a deploy, run
+   `pulumi preview --diff` against the target stack and reconcile every planned
+   action against the changes actually made in the branch.
 6. Record: `wiki_retro` durable insights, `wiki_observe` running notes; update
-   the affected page if structure changed.
+   the affected page if structure changed. Commit the resulting
+   `.llm-wiki/wiki/**` changes (authored pages and new source pages) in the same
+   commit as the code they describe.
 
 ## Hard rules
 
 - NEVER run `pulumi up` or any deploy/destroy. Local verification is
-  `pulumi preview` (local, non-production stack) + `pytest` only.
+  `pulumi preview` (local, non-production stack) + `pytest` only. Deployment
+  preparation includes running `pulumi preview --diff` and reviewing the diff
+  against the intended change before the user deploys; the review is the agent's
+  job, the deploy is the user's.
 - Tooling is fixed: Python -> black + isort at 80 cols; YAML/JSON/Markdown ->
   Prettier; types -> Pyright `basic`. Do NOT add ruff, flake8, biome, eslint, or
   mypy. Do not change CI/tooling without explicit instruction.

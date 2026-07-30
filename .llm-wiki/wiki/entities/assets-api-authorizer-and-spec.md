@@ -13,18 +13,28 @@ tags: ["api", "authorizer", "openapi", "security", "assets"]
 
 ## `authz/default_apigw_authorizer.py`
 
-A Lambda request authorizer for API Gateway. IMPORTANT: it is currently a
-test/sample stub that ALLOWS EVERYTHING - `lambda_handler` unconditionally
-returns `generate_policy("*", "Allow", "*")`. It is heavily TODO-commented:
+A Lambda request authorizer for API Gateway. It makes an allow-all access
+decision (real allow/deny policy still TODO), but it now resolves the caller's
+Cognito identity from the `Authorization` bearer token and passes it downstream
+to endpoint handlers via the authorizer `context`:
 
-- Intended to become a real authorizer (check caller identity via headers /
-  query / path params / stage vars, build a scoped `execute-api:Invoke` policy
-  from the method ARN, deny with `raise Exception("Unauthorized")` for a 401).
-- Currently prints debug info and returns an allow-all policy with placeholder
-  context. Treat this as a known security gap, not production authz.
+- `get_bearer_token(headers)` extracts the token (case-insensitive header,
+  tolerates a bare token with no `Bearer` prefix).
+- `decode_jwt_claims(token)` base64url-decodes the JWT payload. IMPORTANT: it
+  does NOT verify the signature yet (module TODO) - treat identity as
+  authenticated-by-transport-only until signature verification or a managed
+  Cognito JWT authorizer is added.
+- `identity_context_from_claims(claims)` maps `sub` ->
+  `triggering_user_id` and `email`/`cognito:username` -> `triggering_user_name`.
+- `generate_policy(principalId, effect, resource, context=None)` returns the IAM
+  policy plus the string-valued `context` map.
 
-`generate_policy(principalId, effect, resource)` builds the IAM policy document
-response (adapted from the AWS Lambda authorizer example).
+Handlers read that identity from `event.requestContext.authorizer` (e.g.
+`post_workflow_run.py` stamps it into the DAG run `conf.cape`; `get_workflow_runs.py`
+filters runs by it). See [[analyses/workflow-user-attribution]]. Anonymous/
+unparseable tokens still get an allow with an empty context (rollout safety).
+NOTE: the authorizer Lambda is created with no env vars; signature verification
+would need Cognito config (JWKS/issuer) wired in.
 
 Wired via `CapeRestApi._create_api_authorizer_lambdas` (see
 [[entities/cape-rest-api-module]]).
@@ -69,6 +79,7 @@ CORS headers (the ISSUE #141 bypass; see [[entities/assets-capi-handlers]]).
 | `/workflows/trigger`           | `post_workflow_run_handler`               | `post_workflow_run.py`               |
 | `/workflows/halt`              | `patch_workflow_run_handler`              | `patch_workflow_run.py`              |
 | `/workflows/run`               | `get_workflow_run_handler`                | `get_workflow_run.py`                |
+| `/workflows/runs`              | `get_workflow_runs_handler`               | `get_workflow_runs.py`               |
 | `/workflows/tasks`             | `get_workflow_tasks_handler`              | `get_workflow_tasks.py`              |
 | `/workflows/run/taskinstances` | `get_workflow_run_task_instances_handler` | `get_workflow_run_task_instances.py` |
 

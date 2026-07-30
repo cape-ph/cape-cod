@@ -5,7 +5,7 @@ slug: testing-and-pulumi-preview-workflow
 status: stable
 confidence: high
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-07-21
 tags: ["testing", "pulumi", "preview", "pytest", "safety", "workflow"]
 ---
 
@@ -43,6 +43,49 @@ is roughly:
 
 Prefer running `pulumi preview` against a local, non-production stack. Do not
 run it in a way that mutates a shared/live stack's config.
+
+## Reviewing the `--diff` before a deploy
+
+Whenever a change touches the Pulumi program or the `assets/**` it deploys,
+`pulumi preview --diff` is a required deployment-preparation step, run and
+reviewed before the user performs the real deploy. The point is to confirm the
+planned change matches the intended scope, not just that the program compiles.
+
+- Run `pulumi preview --diff` against the target stack (e.g. `-s cape-cod-dev`).
+  `--diff` expands per-resource property changes so create/update/replace/delete
+  and the specific fields are visible, not just a summary count.
+- Reconcile every reported action against the changes actually made in the
+  branch. Each create/update should trace to a real edit; there should be no
+  unexplained churn.
+- Treat replacements or deletions of shared resources as stop-and-investigate
+  signals. A replace on a stateful resource (bucket, database, queue) can be
+  destructive; understand why before the user deploys.
+- Only once the diff is understood and matches the intended change does the user
+  run the deploy. Agents still never run `pulumi up` - the review is the agent's
+  job, the deploy is the user's.
+
+### Known benign recurring drift
+
+Some resources show up in nearly every `cape-cod-dev` preview regardless of the
+branch under review. These are expected and are not a reason to hold a deploy on
+their own - when a preview contains only these plus the branch's intended
+changes, the diff is clean:
+
+- `cognito/identityProvider` `GTRI-SSO` (`cape-idp-SAML-GTRI-SSO`): its
+  `providerDetails` (SAML `ActiveEncryptionCertificate`,
+  `SLORedirectBindingURI`, `SSORedirectBindingURI`) recompute to `[unknown]` on
+  essentially every preview. This SAML metadata always recomputes; it is
+  expected.
+- `docker-build:index:Image` `nextflow_kickstart`: its `contextHash` changes
+  regularly, which shows as an image rebuild. This is normal churn, not
+  necessarily a concern. The rebuild cascades to the batch `jobDefinition`
+  (`ccd-pvsl-nextflow-jobdef` revision bump) and the IAM policy that references
+  that revision ARN (`ccd-pvsl-nextflow-jobdef-pssrl-plcy`), so those two
+  updates typically ride along with it.
+
+Still scan them each time - the point is they are known-benign by default, not
+that they should be ignored. Anything outside this set and the branch's own
+changes is what warrants investigation.
 
 ## The pytest suite
 

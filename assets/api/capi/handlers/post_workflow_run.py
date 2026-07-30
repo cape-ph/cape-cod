@@ -9,6 +9,58 @@ import boto3
 from botocore.exceptions import ClientError
 from capepy.aws.utils import bad_param_response, decode_error
 
+# Namespace under the DAG run `conf` where CAPE-owned metadata lives, kept
+# separate from the DAG's own parameters so the two never collide.
+CAPE_CONF_KEY = "cape"
+
+
+def caller_identity_from_event(event):
+    """Read the caller identity injected by the API Gateway authorizer.
+
+    The authorizer resolves the Cognito user and passes it in the request
+    context. We only trust this server-side value for ownership; we never trust
+    identity sent in the request body.
+
+    :param event: The API Gateway proxy event.
+    :return: A dict with any of `triggering_user_id` / `triggering_user_name`.
+    """
+    request_context = event.get("requestContext") or {}
+    authorizer = request_context.get("authorizer") or {}
+
+    identity = {}
+    user_id = authorizer.get("triggering_user_id")
+    if user_id:
+        identity["triggering_user_id"] = str(user_id)
+
+    user_name = authorizer.get("triggering_user_name")
+    if user_name:
+        identity["triggering_user_name"] = str(user_name)
+
+    return identity
+
+
+def apply_cape_identity(conf, identity):
+    """Stamp the resolved caller identity onto a DAG run `conf`.
+
+    Any client-supplied `cape` block is removed first so a caller cannot forge
+    ownership. When no identity is available (e.g. authorizer not yet resolving
+    users) the `cape` block is simply absent.
+
+    :param conf: The DAG run conf dict (the passthrough of the request body).
+    :param identity: The identity dict from `caller_identity_from_event`.
+    :return: The same conf dict, mutated in place and returned for convenience.
+    """
+    if not isinstance(conf, dict):
+        return conf
+
+    # Never allow client-provided CAPE metadata through.
+    conf.pop(CAPE_CONF_KEY, None)
+
+    if identity:
+        conf[CAPE_CONF_KEY] = dict(identity)
+
+    return conf
+
 
 def index_handler(event, context):
     """Handler for the POST to trigger an airflow dag.
@@ -16,6 +68,13 @@ def index_handler(event, context):
     This endpoint is a proxy to the airflow /api/v2/dags/{dag_id}/dagRuns
     endpoint. Done as a lambda instead of direct integration so we can massage
     data as required.
+
+    In addition to forwarding the request body as the DAG run `conf`, this
+    handler stamps the triggering user (resolved by the API Gateway authorizer)
+    into `conf.cape` so ownership is recorded in Airflow state, visible in the
+    Airflow UI, and retrievable via the Airflow API. A run with no resolvable
+    caller is refused (401) rather than triggered anonymously, matching
+    `GET /workflows/runs`.
 
     :param event: The event object that contains the HTTP request and json
                   data.
@@ -27,6 +86,21 @@ def index_handler(event, context):
     # TODO: add this to capepy
     mwaa_client = boto3.client("mwaa")
 
+    resp_headers = {
+        "Content-Type": "application/json",
+        # TODO: ISSUE #141 CORS bypass. We do not want this long term. When we
+        #       get all the api and web resources on the same domain, this may
+        #       not matter too much. But we may eventually end up needing to
+        #       handle requests from one domain served up by another domain in
+        #       a lambda handler. In that case we'd need to handle CORS, and
+        #       would want to allow configuration of the lambda (via pulumi
+        #       config that turns into env vars) that sets the origins allowed
+        #       for CORS.
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "OPTIONS,GET",
+    }
+
     try:
         req_params = {"dagId"}
 
@@ -35,19 +109,46 @@ def index_handler(event, context):
         if qsp is None:
             resp_data, resp_status = bad_param_response(list(req_params))
         else:
-
             dag_id = qsp.get("dagId")
             dag_params = json.loads(event["body"])
 
             if not dag_id:
                 resp_data, resp_status = bad_param_response(list(req_params))
             else:
+                # Resolve the triggering user from the authorizer context and
+                # gate on it: a run with no resolvable owner could not be
+                # attributed or listed back to anyone, so refuse it the same
+                # way GET /workflows/runs does rather than trigger anonymously.
+                #
+                # NOTE: the authorizer is still allow-all and does not verify
+                # the JWT signature (see #352), so this currently only requires
+                # a decodable token carrying a `sub`, not a cryptographically
+                # verified identity. Tighten once a verifying Cognito authorizer
+                # lands.
+                identity = caller_identity_from_event(event)
+
+                if not identity.get("triggering_user_id"):
+                    return {
+                        "statusCode": 401,
+                        "headers": resp_headers,
+                        "body": json.dumps(
+                            {
+                                "detail": (
+                                    "Unable to resolve the calling user. A "
+                                    "valid Authorization token is required."
+                                )
+                            }
+                        ),
+                    }
+
+                # Client-supplied `cape` metadata is stripped so ownership
+                # cannot be spoofed.
+                dag_params = apply_cape_identity(dag_params, identity)
 
                 # TODO: we can add some additional run params that airflow
                 #       supports:
                 #       - specific run id (probably don't want people using this
                 #         usually if ever)
-                #       - note (freetext string)
                 #       - run_after (if we want to get into scheduling from
                 #         users)
                 #       - there are others like data_interval_[start|end] that
@@ -62,14 +163,16 @@ def index_handler(event, context):
                 now_str = datetime.datetime.now().isoformat()
                 zstr = re.sub(r"\..*$", "Z", now_str)
 
+                body = {
+                    "conf": dag_params,
+                    "logical_date": zstr,  # datetime.datetime.now().isoformat(),
+                }
+
                 request_params = {
                     "Name": env_name,
                     "Path": f"/dags/{dag_id}/dagRuns",
                     "Method": "POST",
-                    "Body": {
-                        "conf": dag_params,
-                        "logical_date": zstr,  # datetime.datetime.now().isoformat(),
-                    },
+                    "Body": body,
                 }
 
                 response = mwaa_client.invoke_rest_api(**request_params)
@@ -82,22 +185,7 @@ def index_handler(event, context):
         # the non-200 case
         return {
             "statusCode": resp_status,
-            "headers": {
-                "Content-Type": "application/json",
-                # TODO: ISSUE #141 CORS bypass. We do not want this long term.
-                #       When we get all the api and web resources on the same
-                #       domain, this may not matter too much. But we may
-                #       eventually end up with needing to handle requests from
-                #       one domain served up by another domain in a lambda
-                #       handler. In that case we'd need to be able to handle
-                #       CORS, and would want to look into allowing
-                #       configuration of the lambda (via pulumi config that
-                #       turns into env vars for the lambda) that set the
-                #       origins allowed for CORS.
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "OPTIONS,GET",
-            },
+            "headers": resp_headers,
             "body": json.dumps(resp_data),
         }
     except ClientError as err:
