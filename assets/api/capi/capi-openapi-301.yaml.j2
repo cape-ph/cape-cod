@@ -1787,17 +1787,6 @@ paths:
                 type: "mock"
     /workflows/runs:
         get:
-            parameters:
-                - in: query
-                  name: userId
-                  schema:
-                    type: string
-                    description:
-                        Optional fallback caller id used only when the API
-                        authorizer has not injected the caller identity. In
-                        normal operation the triggering user is resolved from
-                        the Authorization token by the authorizer.
-                  required: false
             responses:
                 "200":
                     description: "Success"

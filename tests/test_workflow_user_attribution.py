@@ -211,9 +211,11 @@ def test_caller_user_id_from_authorizer(get_workflow_runs):
     assert get_workflow_runs.caller_user_id(event) == "u1"
 
 
-def test_caller_user_id_qsp_fallback(get_workflow_runs):
+def test_caller_user_id_ignores_query_string(get_workflow_runs):
+    # A `userId` query parameter must NOT be trusted: identity comes only from
+    # the authorizer context, so a caller cannot list another user's runs.
     event = {"queryStringParameters": {"userId": "u2"}}
-    assert get_workflow_runs.caller_user_id(event) == "u2"
+    assert get_workflow_runs.caller_user_id(event) is None
 
 
 def test_caller_user_id_none(get_workflow_runs):

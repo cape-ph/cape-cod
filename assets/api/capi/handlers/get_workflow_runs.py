@@ -28,12 +28,12 @@ MAX_RUNS_SCANNED = 1000
 
 
 def caller_user_id(event):
-    """Resolve the calling user's stable id.
+    """Resolve the calling user's stable id from the authorizer context.
 
-    Prefers the identity injected by the API Gateway authorizer
-    (`requestContext.authorizer.triggering_user_id`). Falls back to a `userId`
-    query string parameter to support local/dev calls before the authorizer is
-    fully wired.
+    The API Gateway authorizer resolves the Cognito user from the bearer token
+    and injects `triggering_user_id` into `requestContext.authorizer`. Only that
+    server-side value is trusted; the caller cannot supply their own id, so
+    there is no query-string override.
 
     :param event: The API Gateway proxy event.
     :return: The user id string, or None if it cannot be resolved.
@@ -41,10 +41,6 @@ def caller_user_id(event):
     request_context = event.get("requestContext") or {}
     authorizer = request_context.get("authorizer") or {}
     user_id = authorizer.get("triggering_user_id")
-
-    if not user_id:
-        qsp = event.get("queryStringParameters") or {}
-        user_id = qsp.get("userId")
 
     return str(user_id) if user_id else None
 

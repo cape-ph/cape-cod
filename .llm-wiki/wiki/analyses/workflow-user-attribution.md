@@ -72,10 +72,11 @@ REST API - with no database dependency.
    `caller_identity_from_event`, then `apply_cape_identity` strips any
    client-supplied `conf.cape` (anti-spoofing) and stamps the resolved identity.
 3. `handlers/get_workflow_runs.py` (route `GET /workflows/runs`, handler key
-   `get_workflow_runs_handler`) resolves the caller (`caller_user_id`, with a
-   `userId` query-string fallback for pre-authorizer/dev calls), lists recent
-   runs across all DAGs, and returns only those where
-   `conf.cape.triggering_user_id` matches (`filter_runs_for_user`).
+   `get_workflow_runs_handler`) resolves the caller (`caller_user_id`, from the
+   authorizer context only - no client-supplied override), lists recent runs
+   across all DAGs, and returns only those where `conf.cape.triggering_user_id`
+   matches (`filter_runs_for_user`). It returns 401 when the caller cannot be
+   resolved.
 
 ## IAM / wiring notes
 
