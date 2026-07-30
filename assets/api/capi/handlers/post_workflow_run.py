@@ -72,7 +72,9 @@ def index_handler(event, context):
     In addition to forwarding the request body as the DAG run `conf`, this
     handler stamps the triggering user (resolved by the API Gateway authorizer)
     into `conf.cape` so ownership is recorded in Airflow state, visible in the
-    Airflow UI, and retrievable via the Airflow API.
+    Airflow UI, and retrievable via the Airflow API. A run with no resolvable
+    caller is refused (401) rather than triggered anonymously, matching
+    `GET /workflows/runs`.
 
     :param event: The event object that contains the HTTP request and json
                   data.
@@ -84,6 +86,21 @@ def index_handler(event, context):
     # TODO: add this to capepy
     mwaa_client = boto3.client("mwaa")
 
+    resp_headers = {
+        "Content-Type": "application/json",
+        # TODO: ISSUE #141 CORS bypass. We do not want this long term. When we
+        #       get all the api and web resources on the same domain, this may
+        #       not matter too much. But we may eventually end up needing to
+        #       handle requests from one domain served up by another domain in
+        #       a lambda handler. In that case we'd need to handle CORS, and
+        #       would want to allow configuration of the lambda (via pulumi
+        #       config that turns into env vars) that sets the origins allowed
+        #       for CORS.
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "OPTIONS,GET",
+    }
+
     try:
         req_params = {"dagId"}
 
@@ -92,18 +109,40 @@ def index_handler(event, context):
         if qsp is None:
             resp_data, resp_status = bad_param_response(list(req_params))
         else:
-
             dag_id = qsp.get("dagId")
             dag_params = json.loads(event["body"])
 
             if not dag_id:
                 resp_data, resp_status = bad_param_response(list(req_params))
             else:
-
-                # Stamp the triggering user (from the authorizer context) into
-                # the conf. Client-supplied `cape` metadata is stripped so
-                # ownership cannot be spoofed.
+                # Resolve the triggering user from the authorizer context and
+                # gate on it: a run with no resolvable owner could not be
+                # attributed or listed back to anyone, so refuse it the same
+                # way GET /workflows/runs does rather than trigger anonymously.
+                #
+                # NOTE: the authorizer is still allow-all and does not verify
+                # the JWT signature (see #352), so this currently only requires
+                # a decodable token carrying a `sub`, not a cryptographically
+                # verified identity. Tighten once a verifying Cognito authorizer
+                # lands.
                 identity = caller_identity_from_event(event)
+
+                if not identity.get("triggering_user_id"):
+                    return {
+                        "statusCode": 401,
+                        "headers": resp_headers,
+                        "body": json.dumps(
+                            {
+                                "detail": (
+                                    "Unable to resolve the calling user. A "
+                                    "valid Authorization token is required."
+                                )
+                            }
+                        ),
+                    }
+
+                # Client-supplied `cape` metadata is stripped so ownership
+                # cannot be spoofed.
                 dag_params = apply_cape_identity(dag_params, identity)
 
                 # TODO: we can add some additional run params that airflow
@@ -146,22 +185,7 @@ def index_handler(event, context):
         # the non-200 case
         return {
             "statusCode": resp_status,
-            "headers": {
-                "Content-Type": "application/json",
-                # TODO: ISSUE #141 CORS bypass. We do not want this long term.
-                #       When we get all the api and web resources on the same
-                #       domain, this may not matter too much. But we may
-                #       eventually end up with needing to handle requests from
-                #       one domain served up by another domain in a lambda
-                #       handler. In that case we'd need to be able to handle
-                #       CORS, and would want to look into allowing
-                #       configuration of the lambda (via pulumi config that
-                #       turns into env vars for the lambda) that set the
-                #       origins allowed for CORS.
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "OPTIONS,GET",
-            },
+            "headers": resp_headers,
             "body": json.dumps(resp_data),
         }
     except ClientError as err:

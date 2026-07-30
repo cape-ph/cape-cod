@@ -71,6 +71,8 @@ REST API - with no database dependency.
 2. `handlers/post_workflow_run.py` reads that context via
    `caller_identity_from_event`, then `apply_cape_identity` strips any
    client-supplied `conf.cape` (anti-spoofing) and stamps the resolved identity.
+   It returns 401 when no `triggering_user_id` resolves, so a run is never
+   triggered unattributed (matching the list path).
 3. `handlers/get_workflow_runs.py` (route `GET /workflows/runs`, handler key
    `get_workflow_runs_handler`) resolves the caller (`caller_user_id`, from the
    authorizer context only - no client-supplied override), lists recent runs

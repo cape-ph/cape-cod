@@ -201,6 +201,62 @@ def test_apply_cape_identity_removes_forged_when_no_identity(post_workflow_run):
     assert "cape" not in result
 
 
+def test_index_handler_refuses_without_identity(post_workflow_run, monkeypatch):
+    # The trigger path must refuse to run a DAG for an unresolved caller
+    # (matching GET /workflows/runs) and must not reach MWAA.
+    class _NoCallMwaa:
+        def invoke_rest_api(self, **_):
+            raise AssertionError("MWAA must not be called without an identity")
+
+    monkeypatch.setattr(
+        post_workflow_run.boto3, "client", lambda *a, **k: _NoCallMwaa()
+    )
+
+    event = {
+        "queryStringParameters": {"dagId": "d1"},
+        "body": json.dumps({"pipelineConfigs": []}),
+        "requestContext": {"authorizer": {}},
+    }
+    resp = post_workflow_run.index_handler(event, None)
+    assert resp["statusCode"] == 401
+
+
+def test_index_handler_stamps_identity_and_triggers(
+    post_workflow_run, monkeypatch
+):
+    # With a resolvable caller the run is stamped and forwarded to MWAA.
+    captured = {}
+
+    class _FakeMwaa:
+        def invoke_rest_api(self, **params):
+            captured.update(params)
+            return {
+                "RestApiResponse": {"dag_run_id": "r1"},
+                "RestApiStatusCode": 200,
+            }
+
+    monkeypatch.setattr(
+        post_workflow_run.boto3, "client", lambda *a, **k: _FakeMwaa()
+    )
+
+    event = {
+        "queryStringParameters": {"dagId": "d1"},
+        "body": json.dumps({"pipelineConfigs": []}),
+        "requestContext": {
+            "authorizer": {
+                "triggering_user_id": "u1",
+                "triggering_user_name": "u1@x.org",
+            }
+        },
+    }
+    resp = post_workflow_run.index_handler(event, None)
+    assert resp["statusCode"] == 200
+    assert captured["Body"]["conf"]["cape"] == {
+        "triggering_user_id": "u1",
+        "triggering_user_name": "u1@x.org",
+    }
+
+
 # ---------------------------------------------------------------------------
 # List handler: caller resolution + ownership filtering
 # ---------------------------------------------------------------------------
