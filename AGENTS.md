@@ -10,6 +10,10 @@ findings.
   `[[folder/page]]`, and cite sources.
 - Never edit `.llm-wiki/raw/**` (immutable captures) or `.llm-wiki/meta/**`
   (generated index). `meta/` is gitignored and rebuilt locally.
+- Commit authored `.llm-wiki/wiki/**` changes (including new `wiki_observe` /
+  `wiki_retro` source pages) in the same commit as the code they describe, so
+  the knowledge lands alongside the change. `meta/`, `raw/`, `outputs/`, and
+  `.discoveries/` are gitignored and stay out of commits.
 - With the `@zosmaai/pi-llm-wiki` extension, prefer its tools (`wiki_recall`,
   `wiki_retro`, `wiki_ensure_page`); they maintain `meta/` automatically.
   Without it, edit the markdown directly and leave `meta/` alone.

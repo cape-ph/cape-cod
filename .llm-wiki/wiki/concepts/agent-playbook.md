@@ -38,7 +38,9 @@ through `CapeComponentResource` + `CapeConfig` (see
    `pulumi preview --diff` against the target stack and reconcile every planned
    action against the changes actually made in the branch.
 6. Record: `wiki_retro` durable insights, `wiki_observe` running notes; update
-   the affected page if structure changed.
+   the affected page if structure changed. Commit the resulting
+   `.llm-wiki/wiki/**` changes (authored pages and new source pages) in the same
+   commit as the code they describe.
 
 ## Hard rules
 
