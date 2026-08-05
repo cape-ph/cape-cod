@@ -37,3 +37,10 @@ target stack and evaluate the output before the user deploys:
 - Only once the diff is understood and matches the intended scope does the user
   run the deploy. See
   `.llm-wiki/wiki/concepts/testing-and-pulumi-preview-workflow.md`.
+
+## Agent Memory
+
+- `PLAN.md` is a Pantheon/deepwork plan-gate artifact tied to whatever work is
+  in flight; keep it uncommitted. Do not add it to this repo's `.gitignore` -
+  the ignore rule belongs in the upstream shared repo that feeds this and other
+  repos. Leave `PLAN.md` untracked here.
