@@ -14,7 +14,9 @@ etl_job = EtlJob()
 # files fastx files (fasta, fastq). The metadata will be extracted, augmented
 # for later use and then written to the clean data sink. The fastx files will be
 # contcatenated into a single gzipped fastx and also written to the clean data
-# sink. The prefix for the clean data will be constructed from the sample_id
+# sink. Each individual sequencing file is additionally written out on its own
+# (gzipped) under the `sequencing-reads-split` prefix in the clean data sink.
+# The prefix for the clean data will be constructed from the sample_id
 # (from the meta) and the current UTC date/time
 
 archive_obj_key = etl_job.parameters["OBJECT_KEY"]
@@ -86,12 +88,28 @@ with io.BytesIO() as gzbuff:
             bytes_for_concat = None
             if mn.endswith(("fasta", "fastq")):
                 etl_job.logger.info(
-                    f"input archive member is not gzipped. gzipping."
+                    "input archive member is not gzipped. gzipping."
                 )
                 bytes_for_concat = gzip.compress(br.read())
             else:
                 bytes_for_concat = br.read()
             gzbuff.write(bytes_for_concat)
+
+            # also write this member out on its own (un-concatenated) under a
+            # dedicated prefix so the per-read files are available in the clean
+            # sink. keep one consistent gzip format: fasta/fastq members were
+            # gzipped above, already-gzipped members pass through as-is.
+            member_name = mn.rsplit("/", 1)[-1]
+            if mn.endswith(("fasta", "fastq")):
+                split_name = f"{member_name}.gz"
+            else:
+                split_name = member_name
+            split_key = "/".join(
+                ["sequencing-reads-split", sink_prefix, split_name]
+            )
+            with io.BytesIO(bytes_for_concat) as splitbuff:
+                splitbuff.seek(0)
+                etl_job.write_sink_file(splitbuff, split_key)
 
     # write out the new clean uber sequencing file
     gzbuff.seek(0)
