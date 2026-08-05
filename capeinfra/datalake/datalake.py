@@ -590,7 +590,7 @@ class Tributary(CapeComponentResource):
             environment={
                 "variables": {
                     "QUEUE_NAME": self.src_data_queue.sqs_queue.name,
-                    "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.name,
+                    "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.ddb_table.name,
                     "DDB_REGION": self.aws_region,
                 }
             },
