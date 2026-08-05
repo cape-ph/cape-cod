@@ -50,6 +50,110 @@ def send_etl_message(
     )
 
 
+def send_notify_message(
+    boto3_object: Boto3Object,
+    queue_url: str | None,
+    message_group_id: str,
+    qmsg: dict,
+):
+    """Send a data notification message as json to the notify queue.
+
+    Args:
+        queue_url: The URL of the notify queue to send the message to.
+        message_group_id: The fifo message group id to use (per-object-key,
+                           so distinct objects can deliver in parallel while
+                           redeliveries of the same object collapse).
+        qmsg: A dict containing the data notification message body.
+
+    Raises:
+        ClientError: On any error in sending the message.
+    """
+    body = json.dumps(qmsg)
+    try:
+        sqs_client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=body,
+            MessageGroupId=message_group_id,
+        )
+    except ClientError as err:
+        code, message = decode_error(err)
+
+        boto3_object.logger.exception(
+            f"Could not place message with body ({body}) on queue at URL "
+            f"({queue_url}). {code} "
+            f"{message}"
+        )
+        raise err
+
+    boto3_object.logger.info(
+        f"Message ({body}) SUCCESSFULLY placed on queue at url ({queue_url})"
+    )
+
+
+def match_notify_rules(bucket: str, key: str, rules: dict) -> list[str]:
+    """Return the names of the data notification rules that match an object.
+
+    Args:
+        bucket: The physical bucket name the object lives in.
+        key: The object's key.
+        rules: The parsed NOTIFY_RULES mapping of bucket name to a list of
+               rule objects, each with a "name", a "prefix", and an optional
+               list of "suffixes" (empty/absent means match any suffix).
+
+    Returns:
+        The names of every rule for this bucket whose prefix/suffixes match
+        the given key. Empty if the bucket has no rules or none match.
+    """
+    matched = []
+
+    for rule in rules.get(bucket, []):
+        if not key.startswith(rule["prefix"]):
+            continue
+
+        suffixes = rule.get("suffixes") or []
+        if suffixes and not any(key.endswith(suffix) for suffix in suffixes):
+            continue
+
+        matched.append(rule["name"])
+
+    return matched
+
+
+def build_notify_message(
+    raw_record: dict,
+    bucket: str,
+    key: str,
+    tributary_name: str | None,
+    notification: str,
+) -> dict:
+    """Build the body of a data notification message for a matched rule.
+
+    Args:
+        raw_record: The raw S3 notification record for the object, used for
+                    fields BucketNotificationRecord doesn't expose.
+        bucket: The object's bucket.
+        key: The object's key.
+        tributary_name: The value of the TRIBUTARY_NAME environment variable.
+        notification: The name of the matched notification rule.
+
+    Returns:
+        A dict ready to be JSON-serialized as the notify message body.
+    """
+    s3_object = raw_record.get("s3", {}).get("object", {})
+
+    return {
+        "schema_version": "1",
+        "event_time": raw_record.get("eventTime"),
+        "event_name": raw_record.get("eventName"),
+        "bucket": bucket,
+        "key": key,
+        "size": s3_object.get("size"),
+        "etag": s3_object.get("eTag"),
+        "tributary": tributary_name,
+        "notification": notification,
+    }
+
+
 def index_handler(event, context):
     """Handler for inserting notification events into a specified queue.
 
@@ -68,6 +172,22 @@ def index_handler(event, context):
     # get a reference to the etl attributes table
     ddb_table = EtlTable()
 
+    # data notification config is entirely optional/additive: when unset the
+    # handler behaves exactly as it did before data notifications existed.
+    notify_queue_name = os.getenv("NOTIFY_QUEUE_NAME")
+    notify_rules_raw = os.getenv("NOTIFY_RULES")
+    tributary_name = os.getenv("TRIBUTARY_NAME")
+
+    notify_rules = None
+    if notify_rules_raw:
+        try:
+            notify_rules = json.loads(notify_rules_raw)
+        except ValueError as err:
+            msg = f"NOTIFY_RULES is not valid JSON. {err}"
+            return {"statusCode": 500, "body": msg}
+
+    notify_queue_url = None
+
     try:
         # we'll bucket the incoming object infos and use them to send our
         # response if nothing fails miserably
@@ -79,8 +199,33 @@ def index_handler(event, context):
         response = sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response["QueueUrl"]
 
+        if notify_queue_name:
+            notify_response = sqs_client.get_queue_url(
+                QueueName=notify_queue_name
+            )
+            notify_queue_url = notify_response["QueueUrl"]
+
         for rec in event["Records"]:
             bucket_notif = BucketNotificationRecord(rec)
+
+            # data notification path: independent of the ETL path below, and
+            # a no-op unless NOTIFY_RULES has been configured for this
+            # deployment.
+            if notify_rules is not None:
+                for notification in match_notify_rules(
+                    bucket_notif.bucket, bucket_notif.key, notify_rules
+                ):
+                    qmsg = build_notify_message(
+                        rec,
+                        bucket_notif.bucket,
+                        bucket_notif.key,
+                        tributary_name,
+                        notification,
+                    )
+                    send_notify_message(
+                        ddb_table, notify_queue_url, bucket_notif.key, qmsg
+                    )
+
             # deconstruct the key (s3 name, prefix, suffix)
             prefix, _, objname = bucket_notif.key.rpartition("/")
             if not objname:
