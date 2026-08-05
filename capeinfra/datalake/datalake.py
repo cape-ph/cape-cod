@@ -133,6 +133,13 @@ class DatalakeHouse(CapeComponentResource):
         # create the parts of the datalake from the tributary configuration
         # (e.g. hai, genomics, etc)
         self.tributaries = []
+        # discoverable, config-keyed map of tributary notify queues. populated
+        # only for tributaries that declare a notify config (present-if-
+        # configured), mirroring the discoverability of
+        # self.athena_results_bucket without hard-coding any tributary name.
+        # resolving a name that declared no notify queue raises KeyError at
+        # synth time rather than yielding a silently empty grant.
+        self.notify_queues: dict[str, SQSQueue] = {}
         for trib_config in self.config.get("tributaries", default=[]):
             trib_name = trib_config.get("name")
 
@@ -160,6 +167,11 @@ class DatalakeHouse(CapeComponentResource):
                     desc_name=f"{self.desc_name} {trib_name} tributary",
                 )
             )
+            # register this tributary's notify queue for discovery only when it
+            # declared one (keyed by the config name, e.g. "seqauto").
+            tributary = self.tributaries[-1]
+            if tributary.notify_queue is not None:
+                self.notify_queues[trib_name] = tributary.notify_queue
 
 
 class CatalogDatabase(CapeComponentResource):
