@@ -323,5 +323,51 @@
             {% endfor %}
         </tbody>
     </table>
+    {% if caerbannog_sample_results %}
+    <h2>RABiTS Sample Results</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Threat</th>
+                <th>Severity</th>
+                <th>Threat Assessment</th>
+                <th>Confidence</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in caerbannog_sample_results %}
+                <tr>
+                    {% for k,v in row.items() %}
+                        <td>{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    {% if caerbannog_cleared_threats %}
+    <h2>RABiTS Cleared Threats</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Threat</th>
+                <th>Severity</th>
+                <th>Threat Assessment</th>
+                <th>Confidence</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in caerbannog_cleared_threats %}
+                <tr>
+                    {% for k,v in row.items() %}
+                        <td>{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
   </body>
 </html>
