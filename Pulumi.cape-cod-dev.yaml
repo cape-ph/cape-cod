@@ -1657,6 +1657,44 @@ config:
             #         ETL jobs will be queued until currently running jobs are
             #         completed and the number of running jobs is < max.
             #         Defaults to 5.
+            #       WARNING: pointing an `etl` (or `notify`, below) rule's `src`
+            #       bucket+prefix at a prefix this SAME pipeline WRITES into
+            #       (e.g. its own `sink`) creates a self-triggering loop: the
+            #       write lands back in the watched prefix and re-triggers the
+            #       rule. Keep watched prefixes disjoint from written-back
+            #       prefixes.
+            #     * `notify` (mapping[], optional)
+            #       A list of data notification rules for the tributary. Unlike
+            #       `etl`, these do not run a Glue job - they only place a
+            #       message on a per-tributary data notification queue when a
+            #       matching object shows up, for consumption outside this
+            #       pipeline. Entirely additive; a tributary with no `notify`
+            #       list gets no notification queue and no extra AWS resources.
+            #       Each list item has the following schema
+            #       * `name` (string, required)
+            #         A short name for the notification rule. Needs to be unique
+            #         across notify rules in the tributary. This value is sent
+            #         as the `notification` field of the data notification
+            #         message so consumers can identify which rule matched.
+            #       * `src` (string, required)
+            #         The id of the bucket to watch (e.g. `input-clean`). This
+            #         is *not* required to also be an `etl` source - a bucket
+            #         can be notify-only.
+            #       * `prefix` (string, required)
+            #         The object key prefix to match. Format-agnostic (works
+            #         for any file type under the prefix).
+            #       * `suffixes` (string[], optional)
+            #         A list of object (e.g. file) suffixes to limit the rule
+            #         to. If not specified (or empty), the rule matches any
+            #         suffix under `prefix`.
+            #       * `message_retention_seconds` (int, optional)
+            #         How long undelivered messages stay on the notification
+            #         queue. SQS accepts 60..1209600 seconds (14 days). If
+            #         omitted, the SQS default of 4 days (345600s) applies -
+            #         there is no true "infinite" retention. When more than one
+            #         `notify` entry is present for a tributary, the first
+            #         entry with a value set wins (all entries share one
+            #         queue).
             - name: hai
               buckets:
                   input-raw:
@@ -1754,7 +1792,11 @@ config:
                       name:
                       crawler:
                           prefix: input # prefixes for tables in the database
-                          excludes: ["sequencing-reads/**"]
+                          excludes:
+                              [
+                                  "sequencing-reads/**",
+                                  "sequencing-reads-split/**",
+                              ]
                   result-raw:
                       name:
                   result-clean:
@@ -1791,3 +1833,21 @@ config:
                             suffixes:
                                 - tsv
                                 - txt
+                      notify:
+                          # individual split read files as they land in the
+                          # clean sink (one notification per file).
+                          - name: split-reads
+                            src: input-clean
+                            prefix: sequencing-reads-split
+                            message_retention_seconds: 43200 # 12 hours
+                          # one manifest per uploaded archive, listing every
+                          # split read file extracted from it (written by
+                          # etl_seqarchive to manifest/.../manifest.csv).
+                          # consumers read it to learn the full set from an
+                          # upload; it is also crawled into the catalog (not
+                          # excluded above) so the set is queryable like
+                          # meta.csv. retention is queue-level (taken from the
+                          # first rule above), so it is not repeated here.
+                          - name: split-reads-manifest
+                            src: input-clean
+                            prefix: manifest

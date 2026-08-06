@@ -128,7 +128,7 @@ class DataCrawler(CapeComponentResource):
             s3_targets=[
                 aws.glue.CrawlerS3TargetArgs(
                     path=bucket.bucket.bucket.apply(
-                        lambda b: f"s3://{b}/{prefix+'/' if prefix else ''}"
+                        lambda b: f"s3://{b}/{prefix + '/' if prefix else ''}"
                     ),
                     exclusions=self.config["excludes"],
                 )
@@ -232,6 +232,16 @@ class EtlJob(CapeComponentResource):
                     )
                     for bucket in [script_bucket]
                 ]
+                + [
+                    capeinfra.meta.capepy.uri.apply(
+                        lambda uri: add_resources(
+                            script_bucket.policies[
+                                VersionedBucket.PolicyEnum.read
+                            ],
+                            uri.replace("s3://", "arn:aws:s3:::"),
+                        )
+                    )
+                ]
             ),
             opts=ResourceOptions(parent=self),
         )
@@ -278,7 +288,9 @@ class EtlJob(CapeComponentResource):
         self.register_outputs({"job_name": self.job.name})
 
     @property
-    def policies(self) -> dict[
+    def policies(
+        self,
+    ) -> dict[
         str,
         list[aws.iam.GetPolicyDocumentStatementArgsDict],
     ]:

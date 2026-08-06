@@ -3,16 +3,11 @@
 This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
-import itertools
-import json
-
 import pulumi_aws as aws
 from pulumi import Config, Output, ResourceOptions, warn
-from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_synced_folder import S3BucketFolder
 
 import capeinfra
-from capeinfra.datalake.datalake import DatalakeHouse
 from capeinfra.iam import (
     add_resources,
     aggregate_statements,
@@ -134,7 +129,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "ETL_ATTRS_DDB_TABLE",
             {
-                "resource_name": capeinfra.data_lakehouse.etl_attr_ddb_table.name,
+                "resource_name": capeinfra.data_lakehouse.etl_attr_ddb_table.ddb_table.name,
                 "type": "table",
             },
         )
@@ -142,7 +137,7 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars.setdefault(
             "CRAWLER_ATTRS_DDB_TABLE",
             {
-                "resource_name": capeinfra.data_lakehouse.crawler_attrs_ddb_table.name,
+                "resource_name": capeinfra.data_lakehouse.crawler_attrs_ddb_table.ddb_table.name,
                 "type": "table",
             },
         )
@@ -825,7 +820,9 @@ class PrivateSwimlane(ScopedSwimlane):
                     )
                     template_args["cognito_domain"] = (
                         capeinfra.meta.principals.user_pool.domain.apply(
-                            lambda d: f"https://{d}.auth.{self.aws_region}.amazoncognito.com"
+                            lambda d: (
+                                f"https://{d}.auth.{self.aws_region}.amazoncognito.com"
+                            )
                         )
                     )
                     template_args["cognito_pool_endpoint"] = (
@@ -993,14 +990,12 @@ class PrivateSwimlane(ScopedSwimlane):
 
         # we need a zone record per static app bucket
         for sa_name, sa_info in self.static_apps.items():
-
             self.create_private_domain_alb_record(
                 sa_info["bucket"].bucket.bucket, sa_name, self.APPLICATION_ALB
             )
 
         # and a zone record for each instance application
         for ia_name, ia_info in self.instance_apps.items():
-
             self.create_private_domain_alb_record(
                 ia_info["fqdn"], ia_name, self.APPLICATION_ALB
             )
@@ -1111,7 +1106,6 @@ class PrivateSwimlane(ScopedSwimlane):
         # associate the VPN endpoint with all VPN subnets and setup auth
         # rules/routes for the vpn subnets
         for sn_name, sn in self.get_subnets_by_type(SubnetType.VPN).items():
-
             # The client endpoint needs to be associated with one or more
             # subnets
             # TODO: ISSUE #100

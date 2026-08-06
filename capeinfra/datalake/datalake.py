@@ -1,5 +1,6 @@
 """Contains data lake related declarations."""
 
+import json
 from typing import List, Literal
 
 import pulumi_aws as aws
@@ -12,7 +13,7 @@ from capeinfra.pipeline.data import DataCrawler, EtlJob
 from capeinfra.resources.database import DynamoTable
 from capeinfra.resources.objectstorage import Bucket, VersionedBucket
 from capeinfra.resources.queue import SQSQueue
-from capepulumi import CapeComponentResource
+from capepulumi import CapeComponentResource, CapeConfig
 
 # aliases for prefixes and suffixes we expect for tributary buckets that have an
 # etl associated
@@ -132,6 +133,13 @@ class DatalakeHouse(CapeComponentResource):
         # create the parts of the datalake from the tributary configuration
         # (e.g. hai, genomics, etc)
         self.tributaries = []
+        # discoverable, config-keyed map of tributary notify queues. populated
+        # only for tributaries that declare a notify config (present-if-
+        # configured), mirroring the discoverability of
+        # self.athena_results_bucket without hard-coding any tributary name.
+        # resolving a name that declared no notify queue raises KeyError at
+        # synth time rather than yielding a silently empty grant.
+        self.notify_queues: dict[str, SQSQueue] = {}
         for trib_config in self.config.get("tributaries", default=[]):
             trib_name = trib_config.get("name")
 
@@ -159,6 +167,11 @@ class DatalakeHouse(CapeComponentResource):
                     desc_name=f"{self.desc_name} {trib_name} tributary",
                 )
             )
+            # register this tributary's notify queue for discovery only when it
+            # declared one (keyed by the config name, e.g. "seqauto").
+            tributary = self.tributaries[-1]
+            if tributary.notify_queue is not None:
+                self.notify_queues[trib_name] = tributary.notify_queue
 
 
 class CatalogDatabase(CapeComponentResource):
@@ -267,7 +280,9 @@ class Tributary(CapeComponentResource):
             self.configure_bucket(bucket_id, crawler_attrs_ddb_table)
 
         # when new objects are put into `self.buckets` targets, a trigger
-        # function will put messages in this queue for processing down the line
+        # function will put messages in this queue for processing down the line.
+        # this queue uses a static message group id (serial per-tributary ETL
+        # processing).
         self.src_data_queue = SQSQueue(name=f"{self.name}-srcq")
 
         self.sources = set()
@@ -277,6 +292,38 @@ class Tributary(CapeComponentResource):
 
         # Lambda SQS Target setup
         self.configure_sqs_lambda_target(jobs)
+
+        # data notifications are entirely optional/additive: a tributary with
+        # no `notify` config gets no notify queue, no NOTIFY_* env vars, and no
+        # extra trigger role statements.
+        #
+        # CapeConfig.get() only wraps Mapping results, so list entries come
+        # back as plain dicts; wrap each one so per-entry `.get(..., default=)`
+        # lookups below behave like the rest of the config object.
+        self.notify_cfgs = [
+            CapeConfig(ncfg)
+            for ncfg in self.config.get(
+                "pipelines", "data", "notify", default=[]
+            )
+        ]
+        self.notify_queue = None
+        if self.notify_cfgs:
+            notify_retention_seconds = next(
+                (
+                    ncfg.get("message_retention_seconds", default=None)
+                    for ncfg in self.notify_cfgs
+                    if ncfg.get("message_retention_seconds", default=None)
+                    is not None
+                ),
+                None,
+            )
+
+            # this queue uses a per-object-key message group id (fires on
+            # objects landing in a clean/sink bucket, independent of ETL).
+            self.notify_queue = SQSQueue(
+                name=f"{self.name}-ntfq",
+                message_retention_seconds=notify_retention_seconds,
+            )
 
         # Bucket notification setup
         self.configure_src_bucket_notifications(etl_attrs_ddb_table)
@@ -535,6 +582,31 @@ class Tributary(CapeComponentResource):
                                  here will need to read from this table.
         """
 
+        # notify-config rules grouped by physical source bucket name (see
+        # below); empty unless self.notify_queue is configured. keeping this
+        # in a local named `notify_srcs` lets the role/lambda/notification-
+        # loop wiring stay a no-op when no notify config exists.
+        notify_srcs = []
+
+        put_msg_statements = [
+            self.src_data_queue.sqs_queue.arn.apply(
+                lambda arn: add_resources(
+                    self.src_data_queue.policies[SQSQueue.PolicyEnum.put_msg],
+                    arn,
+                )
+            )
+        ]
+        if self.notify_queue is not None:
+            notify_queue = self.notify_queue
+            put_msg_statements.append(
+                notify_queue.sqs_queue.arn.apply(
+                    lambda arn: add_resources(
+                        notify_queue.policies[SQSQueue.PolicyEnum.put_msg],
+                        arn,
+                    )
+                )
+            )
+
         # get a role for the source bucket trigger
         self.src_bucket_trigger_role = get_inline_role(
             f"{self.name}-s3trgrole",
@@ -543,16 +615,7 @@ class Tributary(CapeComponentResource):
             "lambda.amazonaws.com",
             aggregate_statements(
                 [capeinfra.meta.policies[CapeMeta.PolicyEnum.logging]]
-                + [
-                    self.src_data_queue.sqs_queue.arn.apply(
-                        lambda arn: add_resources(
-                            self.src_data_queue.policies[
-                                SQSQueue.PolicyEnum.put_msg
-                            ],
-                            arn,
-                        )
-                    )
-                ]
+                + put_msg_statements
                 + [
                     etl_attrs_ddb_table.ddb_table.arn.apply(
                         lambda arn: add_resources(
@@ -567,6 +630,40 @@ class Tributary(CapeComponentResource):
             "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
             opts=ResourceOptions(parent=self),
         )
+
+        env_vars = {
+            "QUEUE_NAME": self.src_data_queue.sqs_queue.name,
+            "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.ddb_table.name,
+            "DDB_REGION": self.aws_region,
+        }
+
+        if self.notify_queue is not None:
+            # data notification rules, grouped by the src bucket id (e.g.
+            # "input-clean") they watch. keyed by physical bucket name (below)
+            # before being handed to the Lambda, since that's what the S3
+            # event carries at runtime.
+            rules_by_src: dict[str, list[dict]] = {}
+            for ncfg in self.notify_cfgs:
+                rules_by_src.setdefault(ncfg["src"], []).append(
+                    {
+                        "name": ncfg["name"],
+                        "prefix": ncfg["prefix"],
+                        "suffixes": list(ncfg.get("suffixes", default=[])),
+                    }
+                )
+            notify_srcs = list(rules_by_src.keys())
+
+            notify_rules_json = Output.all(
+                **{src: self.buckets[src].bucket.id for src in notify_srcs}
+            ).apply(
+                lambda ids: json.dumps(
+                    {ids[src]: rules_by_src[src] for src in notify_srcs}
+                )
+            )
+
+            env_vars["NOTIFY_QUEUE_NAME"] = self.notify_queue.sqs_queue.name
+            env_vars["TRIBUTARY_NAME"] = self.name
+            env_vars["NOTIFY_RULES"] = notify_rules_json
 
         # Create our Lambda function that triggers the given glue job
         new_object_handler = aws.lambda_.Function(
@@ -587,21 +684,19 @@ class Tributary(CapeComponentResource):
             # and the actual function in the script must be named
             # the same as the value here
             handler="index.index_handler",
-            environment={
-                "variables": {
-                    "QUEUE_NAME": self.src_data_queue.sqs_queue.name,
-                    "ETL_ATTRS_DDB_TABLE": etl_attrs_ddb_table.name,
-                    "DDB_REGION": self.aws_region,
-                }
-            },
+            environment={"variables": env_vars},
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": f"{self.desc_name} source data lambda trigger function"
             },
         )
 
-        # Give our function permission to invoke
-        for src in self.sources:
+        # Give our function permission to invoke. this is the union of ETL
+        # source buckets and data-notification source buckets, so a notify-
+        # only source (e.g. input-clean with no ETL reading from it) also
+        # gets wired up; when there's no notify config this is just
+        # self.sources.
+        for src in self.sources | set(notify_srcs):
             new_obj_handler_permission = aws.lambda_.Permission(
                 f"{self.name}-{src}-allow-lmbd",
                 action="lambda:InvokeFunction",
