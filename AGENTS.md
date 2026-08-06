@@ -40,6 +40,10 @@ target stack and evaluate the output before the user deploys:
 
 ## Agent Memory
 
+- Do not commit unless the user explicitly asks. Default workflow: complete the
+  work, leave changes unstaged in the working tree, and let the user review
+  before any commit. This is the standing pattern unless the user says otherwise
+  for a given task.
 - `PLAN.md` is a Pantheon/deepwork plan-gate artifact tied to whatever work is
   in flight; keep it uncommitted. Do not add it to this repo's `.gitignore` -
   the ignore rule belongs in the upstream shared repo that feeds this and other
