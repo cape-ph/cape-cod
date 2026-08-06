@@ -5,18 +5,23 @@ seqauto `result-raw` bucket under the `caerbannog-output` prefix. This job
 unpacks it and writes CSV to `result-clean`, where the existing crawler catalogs
 the outputs as `result_caerbannog_*` tables alongside the bactopia tables.
 
-Archive layout:
+Archive contents:
 
     archive.tar.gz/
       |- aggregate.csv                 (pre-aggregated; near passthrough)
-      |- individual-outputs/
-         |- stoplight-<n>.json         (per-sample)
-         |- cluster-estimates-<n>.json (per-sample)
+      |- <prefix>-stoplight.json         (per-sample/batch)
+      |- <prefix>-cluster-estimates.json (per-sample/batch)
 
-TODO(#363): archive member names and the JSON record schemas are provisional
-until the consumer contract is finalized. The format-dependent seams are
-derive_sample_id, normalize_stoplight, and normalize_cluster_estimates. CSV
-output (not columnar) is intentional; the datalake-wide columnar move is #364.
+The stoplight and cluster-estimates JSON are each a single nested object: a
+sample-level summary carrying `sample_id` plus an array of per-record entries
+(target detections / cluster summaries). Each is flattened to one CSV row per
+array entry, with the sample- and document-level fields denormalized onto every
+row and `sample_id` (the report join key) read from inside the document.
+
+TODO(#363): the archive packaging (single .tar.gz, the aggregate CSV filename,
+directory layout) is the consumer->datalake delivery contract and is still
+provisional; the per-file parsing below matches the confirmed output formats.
+CSV output (not columnar) is intentional; the columnar move is #364.
 """
 
 import csv
@@ -30,11 +35,11 @@ from capepy.aws.glue import EtlJob
 
 etl_job = EtlJob()
 
-# archive members of interest. TODO(#363): names provisional.
-INDIVIDUAL_DIR = "individual-outputs/"
+# archive member classification (by basename). the aggregate CSV filename is
+# provisional (TODO(#363)); the JSON suffixes match the confirmed output naming.
 AGGREGATE_OBJ = "aggregate.csv"
-STOPLIGHT_STEM = "stoplight"
-CLUSTER_STEM = "cluster-estimates"
+STOPLIGHT_SUFFIX = "stoplight.json"
+CLUSTER_SUFFIX = "cluster-estimates.json"
 
 # top-level output folders under the clean sink. the result-clean crawler walks
 # the whole bucket and names each top-level folder `result_<name>` (e.g. the
@@ -47,83 +52,138 @@ CLUSTER_TABLE = "caerbannog_cluster_estimates"
 # per-run partition column (one archive == one run), mirroring bactopia_run.
 RUN_PARTITION = "caerbannog_run"
 
-# sample id column injected into every individual-output row (report join key).
-SAMPLE_ID_COL = "sample_id"
+# explicit, stable CSV headers so every run partition writes the same columns
+# in the same order (the crawler infers types per column across partitions).
+STOPLIGHT_COLUMNS = [
+    "sample_id",
+    "rule_set_version",
+    "software_version",
+    "status",
+    "error_message",
+    "datetime",
+    "num_reads",
+    "category",
+    "category_threat_severity",
+    "category_assessment",
+    "category_confidence",
+    "target_name",
+    "target_description",
+    "target_severity",
+    "target_assessment",
+    "target_confidence",
+]
 
-
-def derive_sample_id(member_basename, stem):
-    """Derive the sample name (report join key) for an individual output file.
-
-    TODO(#363): the consumer encodes the sample in the filename today, but a
-    sidecar metadata file is also on the table. This strips the known stem and
-    the `.json` suffix; replace once the contract is fixed.
-
-    Args:
-        member_basename: The archive member file name without its directory.
-        stem: The known filename stem for this output type (e.g. `stoplight`).
-
-    Returns:
-        The derived sample id as a string.
-    """
-    name = member_basename
-    if name.endswith(".json"):
-        name = name[: -len(".json")]
-    name = re.sub(rf"^{re.escape(stem)}[-_]?", "", name)
-    return name or member_basename
-
-
-def _scalarize(value):
-    """Flatten a JSON value to a CSV-safe cell, json-encoding nested values."""
-    if isinstance(value, (dict, list)):
-        return json.dumps(value)
-    return value
-
-
-def _normalize_records(record):
-    """Flatten a parsed JSON document (object or list) to flat rows.
-
-    TODO(#363): schema-agnostic placeholder - flattens one level and
-    json-encodes nested values until the real schema lands.
-    """
-    items = record if isinstance(record, list) else [record]
-    rows = []
-    for item in items:
-        if isinstance(item, dict):
-            rows.append({k: _scalarize(v) for k, v in item.items()})
-        else:
-            rows.append({"value": _scalarize(item)})
-    return rows
+CLUSTER_COLUMNS = [
+    "sample_id",
+    "rule_set_version",
+    "software_version",
+    "status",
+    "error_message",
+    "num_reads",
+    "num_batches",
+    "match_cluster_id",
+    "num_matches",
+    "target_name",
+    "target_description",
+    "target_severity",
+    "estimated_likelihood",
+    "estimated_fraction",
+]
 
 
 def normalize_stoplight(record):
-    """Normalize a stoplight JSON document to flat CSV rows.
+    """Flatten a stoplight document to one row per target detection.
 
-    Distinct seam from cluster-estimates so each type can get its own column
-    mapping in the #363 second pass without disturbing the other.
+    The document is a single object with a `sample_threat_assessment` summary
+    (sample_id, num_reads, category_assessments[]); each category carries its
+    own assessment and a list of target detections. Sample- and category-level
+    fields are denormalized onto every target row. A category with no detections
+    still yields one row (blank target fields), and a document with no
+    categories still yields one sample-level row, so the sample always appears.
     """
-    return _normalize_records(record)
+    summary = record.get("sample_threat_assessment") or {}
+    base = {
+        "sample_id": summary.get("sample_id", ""),
+        "rule_set_version": record.get("rule_set_version", ""),
+        "software_version": record.get("software_version", ""),
+        "status": record.get("status", ""),
+        "error_message": record.get("error_message", ""),
+        "datetime": record.get("datetime", ""),
+        "num_reads": summary.get("num_reads", ""),
+    }
+
+    rows = []
+    for category in summary.get("category_assessments") or []:
+        cat_base = {
+            **base,
+            "category": category.get("category", ""),
+            "category_threat_severity": category.get("threat_severity", ""),
+            "category_assessment": category.get("category_assessment", ""),
+            "category_confidence": category.get("confidence", ""),
+        }
+        detections = category.get("target_detections") or []
+        if not detections:
+            rows.append(cat_base)
+        for detection in detections:
+            rows.append(
+                {
+                    **cat_base,
+                    "target_name": detection.get("target_name", ""),
+                    "target_description": detection.get(
+                        "target_description", ""
+                    ),
+                    "target_severity": detection.get("target_severity", ""),
+                    "target_assessment": detection.get("target_assessment", ""),
+                    "target_confidence": detection.get("confidence", ""),
+                }
+            )
+
+    return rows or [base]
 
 
 def normalize_cluster_estimates(record):
-    """Normalize a cluster-estimates JSON document to flat CSV rows."""
-    return _normalize_records(record)
+    """Flatten a cluster-estimates document to one row per cluster summary.
 
-
-def _rows_to_csv(rows):
-    """Serialize dict rows to a CSV string with a stable header.
-
-    The header is the union of keys across all rows in first-seen order, so a
-    ragged record set still yields one well-formed table. `sample_id` is
-    inserted first per row, so it leads the header.
+    The document is a single object with a `sample_target_summary` (sample_id,
+    num_reads, num_batches, cluster_summaries[]). Sample- and document-level
+    fields are denormalized onto every cluster row. A document with no cluster
+    summaries still yields one sample-level row so the sample always appears.
     """
-    fieldnames = []
-    seen = set()
-    for row in rows:
-        for key in row:
-            if key not in seen:
-                seen.add(key)
-                fieldnames.append(key)
+    summary = record.get("sample_target_summary") or {}
+    base = {
+        "sample_id": summary.get("sample_id", ""),
+        "rule_set_version": record.get("rule_set_version", ""),
+        "software_version": record.get("software_version", ""),
+        "status": record.get("status", ""),
+        "error_message": record.get("error_message", ""),
+        "num_reads": summary.get("num_reads", ""),
+        "num_batches": summary.get("num_batches", ""),
+    }
 
+    rows = []
+    for cluster in summary.get("cluster_summaries") or []:
+        rows.append(
+            {
+                **base,
+                "match_cluster_id": cluster.get("match_cluster_id", ""),
+                "num_matches": cluster.get("num_matches", ""),
+                "target_name": cluster.get("target_name", ""),
+                "target_description": cluster.get("target_description", ""),
+                "target_severity": cluster.get("target_severity", ""),
+                "estimated_likelihood": cluster.get("estimated_likelihood", ""),
+                "estimated_fraction": cluster.get("estimated_fraction", ""),
+            }
+        )
+
+    return rows or [base]
+
+
+def _rows_to_csv(rows, fieldnames):
+    """Serialize dict rows to a CSV string with a fixed header.
+
+    Missing keys are written as empty cells and unexpected keys are dropped, so
+    every partition emits exactly `fieldnames` in order.
+    """
     buf = io.StringIO()
     writer = csv.DictWriter(
         buf, fieldnames=fieldnames, restval="", extrasaction="ignore"
@@ -133,21 +193,18 @@ def _rows_to_csv(rows):
     return buf.getvalue()
 
 
-def _json_outputs_to_rows(members, stem, normalizer):
-    """Convert matched individual-output JSON members to sample-tagged rows.
+def _json_outputs_to_rows(members, normalizer):
+    """Parse and normalize matched JSON members to flat rows.
 
     Args:
         members: List of (member_name, raw_bytes) tuples.
-        stem: The filename stem for this output type (for sample id derivation).
         normalizer: The per-type normalization function.
 
     Returns:
-        A list of flat dict rows, each carrying a leading `sample_id` column.
+        The concatenated rows from every member.
     """
     rows = []
     for member_name, raw in members:
-        basename = member_name.rsplit("/", 1)[-1]
-        sample_id = derive_sample_id(basename, stem)
         try:
             record = json.loads(raw)
         except (json.JSONDecodeError, ValueError) as err:
@@ -158,8 +215,7 @@ def _json_outputs_to_rows(members, stem, normalizer):
             )
             etl_job.logger.error(msg)
             raise ValueError(msg) from err
-        for flat in normalizer(record):
-            rows.append({SAMPLE_ID_COL: sample_id, **flat})
+        rows.extend(normalizer(record))
     return rows
 
 
@@ -199,22 +255,19 @@ for member_name in tf.getnames():
     if not basename:
         continue
 
-    if member_name == AGGREGATE_OBJ:
+    if basename == AGGREGATE_OBJ:
         with tf.extractfile(member_name) as br:
             aggregate_bytes = br.read()
         continue
 
-    if member_name.startswith(INDIVIDUAL_DIR) and basename.endswith(".json"):
-        if basename.startswith(STOPLIGHT_STEM):
-            with tf.extractfile(member_name) as br:
-                stoplight_members.append((member_name, br.read()))
-        elif basename.startswith(CLUSTER_STEM):
-            with tf.extractfile(member_name) as br:
-                cluster_members.append((member_name, br.read()))
-        else:
-            etl_job.logger.info(
-                f"Ignoring unrecognized individual output {member_name}."
-            )
+    if basename.endswith(CLUSTER_SUFFIX):
+        with tf.extractfile(member_name) as br:
+            cluster_members.append((member_name, br.read()))
+        continue
+
+    if basename.endswith(STOPLIGHT_SUFFIX):
+        with tf.extractfile(member_name) as br:
+            stoplight_members.append((member_name, br.read()))
         continue
 
     etl_job.logger.info(f"Ignoring unrecognized archive member {member_name}.")
@@ -240,20 +293,24 @@ if aggregate_bytes is not None:
 
 if stoplight_members:
     stoplight_rows = _json_outputs_to_rows(
-        stoplight_members, STOPLIGHT_STEM, normalize_stoplight
+        stoplight_members, normalize_stoplight
     )
     stoplight_key = os.path.join(
         STOPLIGHT_TABLE, f"{RUN_PARTITION}={run_id}", "stoplight.csv"
     )
     print(f"Writing stoplight output to {stoplight_key}")
-    etl_job.write_sink_file(_rows_to_csv(stoplight_rows), stoplight_key)
+    etl_job.write_sink_file(
+        _rows_to_csv(stoplight_rows, STOPLIGHT_COLUMNS), stoplight_key
+    )
 
 if cluster_members:
     cluster_rows = _json_outputs_to_rows(
-        cluster_members, CLUSTER_STEM, normalize_cluster_estimates
+        cluster_members, normalize_cluster_estimates
     )
     cluster_key = os.path.join(
         CLUSTER_TABLE, f"{RUN_PARTITION}={run_id}", "cluster_estimates.csv"
     )
     print(f"Writing cluster-estimates output to {cluster_key}")
-    etl_job.write_sink_file(_rows_to_csv(cluster_rows), cluster_key)
+    etl_job.write_sink_file(
+        _rows_to_csv(cluster_rows, CLUSTER_COLUMNS), cluster_key
+    )
