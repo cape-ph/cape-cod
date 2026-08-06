@@ -63,7 +63,7 @@ STOPLIGHT_COLUMNS = [
     "datetime",
     "num_reads",
     "category",
-    "category_threat_severity",
+    "category_severity",
     "category_assessment",
     "category_confidence",
     "target_name",
@@ -117,7 +117,7 @@ def normalize_stoplight(record):
         cat_base = {
             **base,
             "category": category.get("category", ""),
-            "category_threat_severity": category.get("threat_severity", ""),
+            "category_severity": category.get("threat_severity", ""),
             "category_assessment": category.get("category_assessment", ""),
             "category_confidence": category.get("confidence", ""),
         }
