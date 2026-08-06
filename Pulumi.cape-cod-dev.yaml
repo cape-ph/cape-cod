@@ -1834,7 +1834,20 @@ config:
                                 - tsv
                                 - txt
                       notify:
+                          # individual split read files as they land in the
+                          # clean sink (one notification per file).
                           - name: split-reads
                             src: input-clean
                             prefix: sequencing-reads-split
                             message_retention_seconds: 43200 # 12 hours
+                          # one manifest per uploaded archive, listing every
+                          # split read file extracted from it (written by
+                          # etl_seqarchive to manifest/.../manifest.csv).
+                          # consumers read it to learn the full set from an
+                          # upload; it is also crawled into the catalog (not
+                          # excluded above) so the set is queryable like
+                          # meta.csv. retention is queue-level (taken from the
+                          # first rule above), so it is not repeated here.
+                          - name: split-reads-manifest
+                            src: input-clean
+                            prefix: manifest

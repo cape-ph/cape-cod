@@ -63,6 +63,10 @@ sink_prefix = (
 
 reads_key = "/".join(["sequencing-reads", sink_prefix, "sequencing-reads.gz"])
 
+# collect (key, size) for each individual split read file as it is written so
+# a per-upload manifest of the full set can be emitted below.
+split_files = []
+
 # start with the gzip files
 with io.BytesIO() as gzbuff:
     # TODO:
@@ -111,12 +115,49 @@ with io.BytesIO() as gzbuff:
                 splitbuff.seek(0)
                 etl_job.write_sink_file(splitbuff, split_key)
 
+            split_files.append(
+                {"key": split_key, "size": len(bytes_for_concat)}
+            )
+
     # write out the new clean uber sequencing file
     gzbuff.seek(0)
     etl_job.write_sink_file(
         gzbuff,
         reads_key,
     )
+
+# write a manifest of the individual split read files for this upload as CSV
+# under a dedicated `manifest` prefix (one row per split file), keyed by the
+# same sink prefix as the rest of the upload's outputs. this is crawled into
+# the data catalog like meta.csv, so the set of files extracted from a single
+# uploaded archive is queryable (e.g. by sample_id or source archive). the
+# notify queue also emits a notification for this object (see the
+# `split-reads-manifest` rule in the stack config), so consumers of the
+# individual reads can learn the full set from an upload.
+manifest_fields = [
+    "sample_id",
+    "source_archive_key",
+    "sink_prefix",
+    "file_key",
+    "file_size",
+]
+manifest_buf = io.StringIO()
+manifest_writer = csv.DictWriter(manifest_buf, fieldnames=manifest_fields)
+manifest_writer.writeheader()
+for split_file in split_files:
+    manifest_writer.writerow(
+        {
+            "sample_id": sample_id,
+            "source_archive_key": archive_obj_key,
+            "sink_prefix": sink_prefix,
+            "file_key": split_file["key"],
+            "file_size": split_file["size"],
+        }
+    )
+manifest_key = "/".join(["manifest", sink_prefix, "manifest.csv"])
+with io.BytesIO(manifest_buf.getvalue().encode("utf-8")) as manifestbuff:
+    manifestbuff.seek(0)
+    etl_job.write_sink_file(manifestbuff, manifest_key)
 
 # add the s3 path to the concatenated sequencing file into meta
 concat_gz_s3loc = "/".join(

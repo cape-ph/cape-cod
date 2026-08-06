@@ -186,3 +186,50 @@ class TestBuildNotifyMessage:
 
         assert msg["etag"] is None
         assert msg["size"] == 1234
+
+
+@pytest.fixture(scope="module")
+def deployed_rules():
+    """Rules mirroring the seqauto notify config: an individual split-reads
+    rule (match-any under its prefix) plus a manifest rule under a disjoint
+    top-level ``manifest`` prefix. Because the prefixes do not overlap, a
+    manifest object never also matches the per-file split-reads rule, so the
+    manifest stays out of the individual-file notification stream."""
+    return {
+        "input-clean-bucket": [
+            {
+                "name": "split-reads",
+                "prefix": "sequencing-reads-split",
+                "suffixes": [],
+            },
+            {
+                "name": "split-reads-manifest",
+                "prefix": "manifest",
+                "suffixes": [],
+            },
+        ]
+    }
+
+
+class TestSplitReadsManifestRouting:
+    def test_split_read_matches_only_split_reads(
+        self, notifier, deployed_rules
+    ):
+        matched = notifier.match_notify_rules(
+            "input-clean-bucket",
+            "sequencing-reads-split/sample_id=s/year=2024/reads.fastq.gz",
+            deployed_rules,
+        )
+
+        assert matched == ["split-reads"]
+
+    def test_manifest_matches_only_manifest_rule(
+        self, notifier, deployed_rules
+    ):
+        matched = notifier.match_notify_rules(
+            "input-clean-bucket",
+            "manifest/sample_id=s/year=2024/manifest.csv",
+            deployed_rules,
+        )
+
+        assert matched == ["split-reads-manifest"]
