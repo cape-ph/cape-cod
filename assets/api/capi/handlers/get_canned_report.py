@@ -210,8 +210,14 @@ def convert_report_format(report_html, format="html"):
             additional_headers.update({"Content-Type": "text/html"})
         case "pdf":
             # in this case we want to feed the html to the pdf engine then
-            # return a base64 encoded bytestream on that
-            wep_html = weasyprint.HTML(string=report_html, encoding="utf-8")
+            # return a base64 encoded bytestream on that.
+            #
+            # NOTE: report_html is already a decoded str, so we do not pass
+            # encoding here. weasyprint's encoding arg only applies to byte
+            # sources; passing it forces an override_encoding kwarg into the
+            # HTML parser that some bundled tinyhtml5 versions reject. See
+            # issue #366 for the underlying weasyprint layer dedup fix.
+            wep_html = weasyprint.HTML(string=report_html)
             pdf_io = io.BytesIO()
             wep_html.write_pdf(target=pdf_io)
             pdf_io.seek(0)
@@ -249,7 +255,6 @@ def index_handler(event, context):
     """
 
     try:
-
         headers = event.get("headers", {})
 
         resp_data = {}
@@ -367,7 +372,7 @@ def index_handler(event, context):
     except ClientError as err:
         code, message = decode_error(err)
 
-        msg = f"Error during fetch of user attributes. {code} " f"{message}"
+        msg = f"Error during fetch of user attributes. {code} {message}"
 
         return {
             "statusCode": 500,
