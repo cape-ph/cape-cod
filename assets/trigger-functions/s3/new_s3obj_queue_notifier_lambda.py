@@ -1,5 +1,6 @@
 """Lambda function for kicking off Epi/HAI Glue Jobs."""
 
+import hashlib
 import json
 import os
 
@@ -50,6 +51,29 @@ def send_etl_message(
     )
 
 
+def derive_message_group_id(key: str, prefix: str) -> str:
+    """Build a FIFO MessageGroupId that stays within the SQS 128-char limit.
+
+    SQS rejects any MessageGroupId longer than 128 characters, so the raw
+    object key cannot be used directly: long split-read keys overflow the
+    limit and the send fails. We preserve the per-object-key semantics
+    (distinct keys map to distinct groups, so notifications deliver in
+    parallel across keys and stay ordered per key) by hashing the full key,
+    and prepend a short readable prefix for debuggability.
+
+    Args:
+        key: The full S3 object key the message is about.
+        prefix: A readable label (e.g. tributary or rule name), truncated to
+                63 chars so the total stays within the 128-char limit.
+
+    Returns:
+        A group id of the form "<prefix[:63]>-<sha256 hex>", always <= 128
+        characters (63 + 1 + 64).
+    """
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return f"{prefix[:63]}-{digest}"
+
+
 def send_notify_message(
     boto3_object: Boto3Object,
     queue_url: str | None,
@@ -60,9 +84,12 @@ def send_notify_message(
 
     Args:
         queue_url: The URL of the notify queue to send the message to.
-        message_group_id: The fifo message group id to use (per-object-key,
-                           so distinct objects can deliver in parallel while
-                           redeliveries of the same object collapse).
+        message_group_id: The FIFO message group id to use. Callers pass a
+                           bounded id (see derive_message_group_id) that stays
+                           within the SQS 128-char limit while preserving
+                           per-key grouping, so distinct objects deliver in
+                           parallel and redeliveries of the same object stay in
+                           one group.
         qmsg: A dict containing the data notification message body.
 
     Raises:
@@ -222,9 +249,22 @@ def index_handler(event, context):
                         tributary_name,
                         notification,
                     )
-                    send_notify_message(
-                        ddb_table, notify_queue_url, bucket_notif.key, qmsg
+                    group_id = derive_message_group_id(
+                        bucket_notif.key,
+                        tributary_name or notification or "notify",
                     )
+                    try:
+                        send_notify_message(
+                            ddb_table, notify_queue_url, group_id, qmsg
+                        )
+                    except ClientError as err:
+                        code, message = decode_error(err)
+                        ddb_table.logger.exception(
+                            "Failed to enqueue data notification for "
+                            f"({bucket_notif.bucket}, {bucket_notif.key}); "
+                            "continuing so the ETL path is unaffected. "
+                            f"{code} {message}"
+                        )
 
             # deconstruct the key (s3 name, prefix, suffix)
             prefix, _, objname = bucket_notif.key.rpartition("/")
