@@ -68,7 +68,7 @@ where
 # document (see etl_caerbannog_results.py). recreates the consumer's per-target
 # sample results table: one row per detected target. column order here must
 # match the report template headers, which render row values in order. the
-# consumer's home tab hides `clear`-status targets by default (a togglable
+# consumer's home tab hides `clear`-status targets by default (a toggleable
 # display setting); a static report has no toggle, so the rows are fetched here
 # and split into active vs cleared tables in python rather than dropped.
 # TODO(#363): the join-key correspondence between this sample_id and the
