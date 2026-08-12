@@ -461,6 +461,7 @@ class Tributary(CapeComponentResource):
                 self.buckets[cfg["src"]],
                 self.buckets[cfg["sink"]],
                 capeinfra.meta.automation_assets_bucket,
+                artifacts_bucket=self.buckets.get("artifacts"),
                 opts=ResourceOptions(parent=self),
                 desc_name=(f"{self.desc_name} {cfg['name']} ETL job"),
                 config=cfg,

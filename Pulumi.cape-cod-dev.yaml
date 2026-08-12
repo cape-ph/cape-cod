@@ -1812,7 +1812,6 @@ config:
                       name:
                       crawler:
                           prefix: result # prefixes for tables in the database
-                          excludes: ["caerbannog-report/**"]
                   artifacts:
                       name:
               pipelines:
