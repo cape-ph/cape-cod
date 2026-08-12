@@ -263,6 +263,39 @@ class PrivateSwimlane(ScopedSwimlane):
             #       one a default for a lot of things or create a new one
             sgis = [self.mwaa_compute_environment.security_group.id]
 
+        # the report/get handler lists and reads pre-rendered report HTML from
+        # the seqauto tributary artifacts bucket (reports/<sampleId>/*.html).
+        # expose that bucket's name to the api handlers and grant the api role
+        # list+read on it. skipped when the tributary has no artifacts bucket
+        # configured (e.g. stacks that do not store reports), mirroring the
+        # present-if-configured wiring used elsewhere.
+        reports_bucket = next(
+            (
+                trib.buckets["artifacts"]
+                for trib in capeinfra.data_lakehouse.tributaries
+                if trib.code == "seqauto" and "artifacts" in trib.buckets
+            ),
+            None,
+        )
+        if reports_bucket is not None:
+            env_vars.setdefault("REPORTS_BUCKET", reports_bucket.bucket.bucket)
+            policy_statements.append(
+                reports_bucket.bucket.arn.apply(
+                    lambda arn: add_resources(
+                        reports_bucket.policies[Bucket.PolicyEnum.read]
+                        + reports_bucket.policies[Bucket.PolicyEnum.browse],
+                        f"{arn}/*",
+                        arn,
+                    )
+                )
+            )
+        else:
+            warn(
+                "No seqauto artifacts bucket found; the report/get endpoint "
+                "will be unable to serve reports.",
+                self,
+            )
+
         self.apis[api_name]["deploy"] = CapeRestApi(
             f"{self.basename}-{api_name}-api",
             api_name,

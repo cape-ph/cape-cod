@@ -1,0 +1,3 @@
+# Hand-maintained Pulumi stack config; not prettier-formatted (2-space,
+# matches committed style). Keeps auto-format from reindenting the whole file.
+Pulumi.*.yaml
