@@ -22,7 +22,7 @@ select
     -- pipeline information
     rsv.run_date, rsv.bactopia_version, 'bactopia' AS pipeline_name
 from
-    "{database}"."input_ccd_dlh_t_seqauto_input_clean_vbkt_s3_b1f75c7" as m
+    "{database}"."input_meta" as m
 join
     "{database}"."result_software_versions" as rsv on
     rsv.input_file=m.sequencing_reads
@@ -52,7 +52,7 @@ select
     -- needed for filtering of results
     ramrfp.type, ramrfp.method
 from
-    "{database}"."input_ccd_dlh_t_seqauto_input_clean_vbkt_s3_b1f75c7" as m
+    "{database}"."input_meta" as m
 join
     "{database}"."result_software_versions" as rsv on
     rsv.input_file=m.sequencing_reads
@@ -148,6 +148,14 @@ def data_function(event, context):
             ),
             database=database,
         )
+
+        if meta_df.empty:
+            msg = (
+                f"No metadata found for sample {sample_id} in database "
+                f"{database}. Data function cannot continue"
+            )
+            logger.error(msg)
+            raise ValueError(msg)
 
         row = meta_df.iloc[0]
 
