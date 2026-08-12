@@ -259,6 +259,21 @@ class CapeRestApi(CapeComponentResource):
             # lambda function created
             self._ids_to_lambdas[hcfg["id"]] = (hcfg["name"], handler_lambda)
 
+    def get_handler_lambda_arn(self, handler_name: str) -> Output | None:
+        """Return the ARN of a deployed handler Lambda by its config name.
+
+        Args:
+            handler_name: The `name` of the handler as given in the API config
+                          (e.g. "getcannedreport").
+        Returns:
+            The handler Lambda function ARN Output, or None if no handler with
+            that name was deployed for this API.
+        """
+        for name, handler_lambda in self._ids_to_lambdas.values():
+            if name == handler_name:
+                return handler_lambda.arn
+        return None
+
     def _create_aws_proxy_roles(self):
         """Create roles that allow the API to directly proxy AWS services.
 
@@ -327,7 +342,6 @@ class CapeRestApi(CapeComponentResource):
         )
 
         for authz_name, authz_def in self._authorizers.items():
-
             spec_kwargs["authorizers"][authz_name] = {
                 "type": authz_def["type"],
                 "identity_sources": ",".join(

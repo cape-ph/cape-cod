@@ -165,6 +165,10 @@ class PrivateSwimlane(ScopedSwimlane):
         # static and instance apps share an alb
         self._create_app_alb()
         self.create_private_api_resources()
+        # the report-generation DAG task needs to start/poll the result-clean
+        # crawler and invoke the report lambda, both of which are created above
+        # (crawler in the data lakehouse, lambda in the api deploy).
+        self.configure_report_generation_perms()
         # identity pool is created well before we get here, but we can't add
         # roles/policies/attachments before we know the app clients which
         # haven't been added till now.
@@ -730,6 +734,54 @@ class PrivateSwimlane(ScopedSwimlane):
             self._deploy_api(api_name)
 
         self._create_api_alb()
+
+    def configure_report_generation_perms(self):
+        """Wire report-generation perms into the MWAA execution role.
+
+        Report-generation DAG tasks (e.g. the bactopia/kraken2 task) start and
+        poll tributary Glue crawlers to refresh their catalogs, then invoke the
+        getcannedreport API Lambda directly to render the report. Grant those
+        actions on the real resource ARNs rather than hard-coded physical names
+        (crawler names are Pulumi-generated and change on recreate).
+
+        Crawler perms cover every crawler attached to any tributary, so new
+        tributaries/crawlers are picked up without further wiring.
+
+        No-op when there is no MWAA environment, or when no crawlers or the
+        report Lambda cannot be resolved (rather than deploying broken perms).
+        """
+        if self.mwaa_compute_environment is None:
+            return
+
+        # every crawler attached to any tributary
+        crawler_arns = [
+            crawler.crawler.arn
+            for trib in capeinfra.data_lakehouse.tributaries
+            for crawler in trib.crawlers.values()
+        ]
+
+        # getcannedreport handler lambda from the deployed api(s)
+        report_lambda_arn = None
+        for api_info in self.apis.values():
+            deploy = api_info.get("deploy")
+            if deploy is None:
+                continue
+            report_lambda_arn = deploy.get_handler_lambda_arn("getcannedreport")
+            if report_lambda_arn is not None:
+                break
+
+        if not crawler_arns or report_lambda_arn is None:
+            warn(
+                "Could not resolve any tributary crawlers and/or the "
+                "getcannedreport lambda; skipping MWAA report generation "
+                "perms."
+            )
+            return
+
+        self.mwaa_compute_environment.configure_report_generation_policy(
+            crawler_arns,
+            report_lambda_arn,
+        )
 
     def create_application_instances(self):
         """Creates resources related to private swimlane web resources."""
