@@ -6,13 +6,10 @@
 # - when we have the actual athena query, we will return data from the lake
 #   based on an incoming single sample analysis jobid
 import datetime
-import json
 import logging
 
 import awswrangler as wr
 import boto3
-from botocore.exceptions import ClientError
-from capepy.aws.utils import decode_error
 
 logger = logging.getLogger()
 logger.setLevel("INFO")
@@ -67,6 +64,27 @@ where
     rsv.parameter_name='--ont';
 """
 
+# caerbannog sample results, keyed on the sample id read from the source
+# document (see etl_caerbannog_results.py). recreates the consumer's per-target
+# sample results table: one row per detected target. column order here must
+# match the report template headers, which render row values in order. the
+# consumer's home tab hides `clear`-status targets by default (a toggleable
+# display setting); a static report has no toggle, so the rows are fetched here
+# and split into active vs cleared tables in python rather than dropped.
+# TODO(#363): the join-key correspondence between this sample_id and the
+# bactopia sample_id is unverified until a real consumer run lands; when the
+# table or a given sample's rows are absent the query below degrades to empty.
+CAERBANNOG_SAMPLE_RESULTS_QRY_TEMPLATE = """
+select
+    target_name, target_severity, target_assessment,
+    target_confidence, target_description
+from
+    "{database}"."result_caerbannog_stoplight"
+where
+    sample_id='{sample_id}' and
+    target_name <> ''
+"""
+
 
 def data_function(event, context):
     """Return data required for the bactopia single sample analysis report.
@@ -80,7 +98,7 @@ def data_function(event, context):
     sample_id = event.get("sample_id", None)
 
     if not sample_id:
-        msg = f"No sample id given for report. Data function cannot continue"
+        msg = "No sample id given for report. Data function cannot continue"
         logger.error(msg)
         raise ValueError(msg)
 
@@ -110,7 +128,6 @@ def data_function(event, context):
     report_data = {}
 
     if database is not None:
-
         meta_df = wr.athena.read_sql_query(
             sql=METADATA_QRY_TEMPLATE.format(
                 database=database, sample_id=sample_id
@@ -210,6 +227,33 @@ def data_function(event, context):
                 )
 
             report_data[type_key][match_key].append(d)
+
+        # caerbannog sample results. optional and best-effort: the table only
+        # exists once a consumer run has been crawled, and a given sample may
+        # have no caerbannog data, so a failure here must not break the report.
+        # active (unknown/possible/detected) and cleared targets are surfaced
+        # in separate tables; each section is hidden by the template when
+        # empty.
+        report_data["caerbannog_sample_results"] = []
+        report_data["caerbannog_cleared_threats"] = []
+
+        try:
+            caerbannog_results_df = wr.athena.read_sql_query(
+                sql=CAERBANNOG_SAMPLE_RESULTS_QRY_TEMPLATE.format(
+                    database=database, sample_id=sample_id
+                ),
+                database=database,
+            )
+            for record in caerbannog_results_df.to_dict(orient="records"):
+                if record.get("target_assessment") == "clear":
+                    report_data["caerbannog_cleared_threats"].append(record)
+                else:
+                    report_data["caerbannog_sample_results"].append(record)
+        except Exception as e:
+            logger.warning(
+                f"Caerbannog sample results unavailable for sample "
+                f"{sample_id}: {e}"
+            )
 
     else:
         msg = (

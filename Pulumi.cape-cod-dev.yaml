@@ -293,6 +293,11 @@ config:
                 - name: etl-seqreadarch
                   key: glue/etl/etl_seqarchive.py
                   srcpth: ./assets/etl/etl_seqarchive.py
+                # TODO(#363): caerbannog consumer result archive; prefix
+                #             and archive format provisional.
+                - name: etl-caerbannog-results
+                  key: glue/etl/etl_caerbannog_results.py
+                  srcpth: ./assets/etl/etl_caerbannog_results.py
         # `report` (mapping, optional)
         # Contains configuration related to canned reports that can be
         # generated. Contains the following keys
@@ -1803,6 +1808,7 @@ config:
                       name:
                       crawler:
                           prefix: result # prefixes for tables in the database
+                          excludes: ["caerbannog-report/**"]
               pipelines:
                   data:
                       etl:
@@ -1833,6 +1839,27 @@ config:
                             suffixes:
                                 - tsv
                                 - txt
+                          # caerbannog consumer result archive: triggers on
+                          # the .tar.gz written to result-raw under
+                          # caerbannog-output, writes CSV to result-clean
+                          # (result_caerbannog_* tables). prefix/suffixes are
+                          # disjoint from the bactopia result-raw ETLs above
+                          # (pipeline-output*, tsv/yml/txt) so neither triggers
+                          # the other. TODO(#363): format provisional.
+                          - name: caerbannog-results
+                            script: glue/etl/etl_caerbannog_results.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: caerbannog-output
+                            suffixes:
+                                - gz
+                                - tar
+                            max_concurrent_runs: 5
+                            # TEMPORARY (TODO(#363)): the ETL renders a stopgap
+                            # HTML report with jinja2. Remove this when report
+                            # rendering moves out of the ETL.
+                            pymodules:
+                                - jinja2==3.1.6
                       notify:
                           # individual split read files as they land in the
                           # clean sink (one notification per file).
