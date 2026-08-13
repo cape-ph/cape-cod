@@ -41,8 +41,10 @@ removed. CSV output (not columnar) is intentional; the columnar move is #364.
 import csv
 import io
 import json
+import sys
 import tarfile
 
+from awsglue.utils import getResolvedOptions
 from capepy.aws.glue import EtlJob
 from jinja2 import Template
 
@@ -64,11 +66,6 @@ ROOT_PREFIX = "caerbannog-output"
 # namespaced under `caerbannog_` to avoid colliding with the bactopia tables.
 STOPLIGHT_TABLE = "caerbannog_stoplight"
 CLUSTER_TABLE = "caerbannog_cluster_estimates"
-
-# TEMPORARY: the self-contained HTML report is written under this prefix, which
-# the result-clean crawler EXCLUDES (Pulumi.cape-cod-dev.yaml) so it is not
-# cataloged as a table. See render_report_html's TODO(#363).
-REPORT_PREFIX = "caerbannog-report"
 
 # explicit, stable CSV headers so every run partition writes the same columns
 # in the same order (the crawler infers types per column across partitions).
@@ -412,8 +409,8 @@ def render_report_html(active, cleared, sample_id):
     dedicated reporting component that queries the crawlable result_caerbannog_*
     tables via Athena. When that lands (a later branch): delete REPORT_TEMPLATE
     + this helper, drop the report write below, and remove jinja2 from the
-    caerbannog-results job's pymodules. The write location (result-clean) is
-    likewise temporary and moves with the report path.
+    caerbannog-results job's pymodules. The write location (the tributary
+    artifacts bucket) is likewise temporary and moves with the report path.
     """
     return Template(REPORT_TEMPLATE).render(
         sample_id=sample_id,
@@ -503,11 +500,16 @@ etl_job.write_sink_file(
 )
 
 # TEMPORARY (TODO(#363), see render_report_html): render a self-contained HTML
-# sample-results report from the stoplight rows and write it under the
-# crawler-excluded report prefix. This does not belong in the ETL and moves out
-# to a dedicated reporting path later.
+# sample-results report from the stoplight rows and write it to the tributary
+# artifacts bucket at reports/<sample_id>/rabits.html. This does not belong in
+# the ETL and moves out to a dedicated reporting path later.
 active_rows, cleared_rows = stoplight_report_rows(stoplight_rows)
 report_html = render_report_html(active_rows, cleared_rows, sample_id)
-report_key = "/".join([REPORT_PREFIX, sink_prefix, "report.html"])
-print(f"Writing TEMPORARY caerbannog report to {report_key}")
-etl_job.write_sink_file(report_html, report_key)
+report_bucket = getResolvedOptions(sys.argv, ["ARTIFACTS_BUCKET_NAME"])[
+    "ARTIFACTS_BUCKET_NAME"
+]
+report_key = "/".join(["reports", sample_id, "rabits.html"])
+print(f"Writing TEMPORARY RABiTS report to {report_bucket}/{report_key}")
+etl_job.get_client("s3").put_object(
+    Bucket=report_bucket, Key=report_key, Body=report_html
+)

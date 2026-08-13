@@ -1,17 +1,12 @@
 """Abstractions for Apache Airflow."""
 
-import json
 from enum import Enum
 
 import pulumi_aws as aws
 from pulumi import Input, Output, ResourceOptions
 
 import capeinfra
-from capeinfra.iam import (
-    add_resources,
-    aggregate_statements,
-    get_inline_role,
-)
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role
 from capeinfra.pipeline.batch import BatchCompute, BatchJobDefinition
 from capepulumi import CapeComponentResource
 
@@ -284,7 +279,9 @@ class MwaaEnvironment(CapeComponentResource):
         )
 
     @property
-    def policies(self) -> dict[
+    def policies(
+        self,
+    ) -> dict[
         str,
         list[aws.iam.GetPolicyDocumentStatementArgsDict],
     ]:
@@ -435,3 +432,54 @@ class MwaaEnvironment(CapeComponentResource):
                 policy_arn=bjd_role_policy.arn,
                 opts=ResourceOptions(parent=self),
             )
+
+    def configure_report_generation_policy(
+        self,
+        crawler_arns: list[Input[str]],
+        report_lambda_arn: Input[str],
+    ):
+        """Grant the execution role perms to generate canned reports.
+
+        Report-generation DAG tasks start and poll Glue crawlers to refresh
+        their catalogs, then invoke the getcannedreport Lambda directly to
+        render the report. Composes those actions into an inline policy on the
+        execution role, scoping the crawler actions to the given crawler ARNs
+        and the invoke action to the report Lambda ARN.
+
+        Args:
+            crawler_arns: ARNs of the Glue crawlers the DAG may start/poll.
+            report_lambda_arn: ARN of the report Lambda the DAG invokes.
+        """
+        crawler_statements = Output.all(*crawler_arns).apply(
+            lambda arns: add_resources(
+                [
+                    {
+                        "effect": "Allow",
+                        "actions": ["glue:StartCrawler", "glue:GetCrawler"],
+                    }
+                ],
+                *arns,
+            )
+        )
+        lambda_statements = Output.from_input(report_lambda_arn).apply(
+            lambda arn: add_resources(
+                [
+                    {
+                        "effect": "Allow",
+                        "actions": ["lambda:InvokeFunction"],
+                    }
+                ],
+                arn,
+            )
+        )
+
+        aws.iam.RolePolicy(
+            f"{self.name}-rgen-roleplcy",
+            role=self.execution_role.id,
+            policy=aws.iam.get_policy_document_output(
+                statements=aggregate_statements(
+                    [crawler_statements, lambda_statements]
+                )
+            ).json,
+            opts=ResourceOptions(parent=self),
+        )

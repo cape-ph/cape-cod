@@ -10,7 +10,7 @@
         body {
           height: auto;
         }
-        
+
         body {
           margin: 0;
           padding: 24px;
@@ -23,19 +23,19 @@
           -webkit-font-smoothing: antialiased;
           -moz-osx-font-smoothing: grayscale;
         }
-        
+
         h1,
         h2,
         h3 {
           line-height: 1.25;
           margin: 1.25rem 0 .5rem;
         }
-        
+
         h1 {
           font-size: 1.75rem;
           color: oklch(0.3967 0.14 18.05);
         }
-        
+
         h2 {
           font-size: 1.25rem;
           margin-top: 2rem;
@@ -43,18 +43,18 @@
           border-bottom: 1px solid #e2e8f0;
           color: oklch(0.3967 0.14 18.05);
         }
-        
+
         h3 {
           font-size: 1.05rem;
           margin-top: 1.25rem;
           color: #334155;
         }
-        
+
         /* slate-700 */
         p {
           margin: .25rem 0;
         }
-        
+
         body>div {
           display: grid;
           grid-template-columns: 220px 1fr;
@@ -67,13 +67,13 @@
           /* slate-200 */
           border-radius: 12px;
         }
-        
+
         @media (max-width: 640px) {
           body>div {
             grid-template-columns: 1fr;
           }
         }
-        
+
         /* Label cells are the odd children; values are the even ones */
         body>div>div:nth-child(odd) p {
           font-weight: 600;
@@ -81,17 +81,17 @@
           /* slate-700 */
           margin-right: 8px;
         }
-        
+
         body>div>div:nth-child(odd) {
           text-align: right;
         }
-        
+
         @media (max-width: 640px) {
           body>div>div:nth-child(odd) {
             text-align: left;
           }
         }
-        
+
         /* Tables */
         table {
           width: 100%;
@@ -104,7 +104,7 @@
           border-radius: 12px;
           overflow: hidden;
         }
-        
+
         thead th {
           text-align: left;
           font-weight: 600;
@@ -112,46 +112,46 @@
           border-bottom: 1px solid #e2e8f0;
           padding: .6rem .75rem;
         }
-        
+
         tbody td {
           padding: .55rem .75rem;
           border-bottom: 1px solid oklch(97.478% 0.0064 16.315);
           vertical-align: top;
           word-break: break-word;
         }
-        
+
         tbody tr:last-child td {
           border-bottom: 0;
         }
-        
+
         /* Zebra rows for readability */
         tbody tr:nth-child(odd) td {
           background: oklch(99.087% 0.00442 33.09);
         }
-        
+
         /* Make the last 1–2 columns right-aligned if they look numeric */
         tbody td:last-child,
         tbody td:nth-last-child(2) {
           text-align: right;
         }
-        
+
         /* Headings near tables */
         h2+table,
         h3+table {
           margin-top: 8px;
         }
-        
+
         /* Links (if any) */
         a {
           color: #2563eb;
           text-decoration: underline;
           text-underline-offset: 2px;
         }
-        
+
         a:hover {
           opacity: .9;
         }
-        
+
         /* Print friendliness */
         @media print {
           body {
@@ -167,7 +167,7 @@
           th, td {
             padding: 0px;
           }
-        
+
           h1 {
             font-size: 1.5em;
           }
@@ -179,7 +179,7 @@
           h3 {
             font-size: 1.1em;
           }
-        
+
           body>div {
             break-inside: avoid;
           }
@@ -205,7 +205,7 @@
     <div>
         <div><p><b>Bioinformatic Pipeline:</b></p></div>
         <div><p>
-            {{ pipeline_meta["name"] }} (ver {{ pipeline_meta["version"] }}) 
+            {{ pipeline_meta["name"] }} (ver {{ pipeline_meta["version"] }})
         </p></div>
         <div><p><b>Analysis Run Date:</b></p></div>
         <div><p>{{ pipeline_meta["run_date"] }}</p></div>
@@ -323,51 +323,5 @@
             {% endfor %}
         </tbody>
     </table>
-    {% if caerbannog_sample_results %}
-    <h2>RABiTS Sample Results</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Threat</th>
-                <th>Severity</th>
-                <th>Threat Assessment</th>
-                <th>Confidence</th>
-                <th>Description</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in caerbannog_sample_results %}
-                <tr>
-                    {% for k,v in row.items() %}
-                        <td>{{ v }}</td>
-                    {% endfor %}
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% endif %}
-    {% if caerbannog_cleared_threats %}
-    <h2>RABiTS Cleared Threats</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Threat</th>
-                <th>Severity</th>
-                <th>Threat Assessment</th>
-                <th>Confidence</th>
-                <th>Description</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in caerbannog_cleared_threats %}
-                <tr>
-                    {% for k,v in row.items() %}
-                        <td>{{ v }}</td>
-                    {% endfor %}
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% endif %}
   </body>
 </html>

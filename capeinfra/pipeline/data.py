@@ -173,6 +173,7 @@ class EtlJob(CapeComponentResource):
         script_bucket: VersionedBucket,
         *args,
         default_args: dict = {},
+        artifacts_bucket: VersionedBucket | None = None,
         **kwargs,
     ):
         """Constructor.
@@ -186,6 +187,10 @@ class EtlJob(CapeComponentResource):
             script_bucket: The object storage location where etl scripts are
                            kept.
             default_args: default arguments for this ETL job if any.
+            artifacts_bucket: An optional object storage location the ETL job
+                              is granted write access to for run artifacts
+                              (e.g. reports) that are not catalog sink output.
+                              Passed to the job as `--ARTIFACTS_BUCKET_NAME`.
             opts: The ResourceOptions to apply to the crawler resource.
         Returns:
         """
@@ -226,6 +231,18 @@ class EtlJob(CapeComponentResource):
                 + [
                     bucket.bucket.arn.apply(
                         lambda arn: add_resources(
+                            bucket.policies[VersionedBucket.PolicyEnum.write],
+                            f"{arn}/*",
+                            arn,
+                        )
+                    )
+                    for bucket in (
+                        [artifacts_bucket] if artifacts_bucket else []
+                    )
+                ]
+                + [
+                    bucket.bucket.arn.apply(
+                        lambda arn: add_resources(
                             bucket.policies[VersionedBucket.PolicyEnum.read],
                             f"{arn}/{self.config['script']}",
                         )
@@ -256,6 +273,9 @@ class EtlJob(CapeComponentResource):
             )
 
         default_args["--SINK_BUCKET_NAME"] = self.sink_bucket.bucket
+
+        if artifacts_bucket is not None:
+            default_args["--ARTIFACTS_BUCKET_NAME"] = artifacts_bucket.bucket
 
         # FIXME: FIGURE OUT HOW TO DEAL WITH OUTPUT[str] WITH ADDITIONAL PYTHON
         # MODULES, CURRENTLY BREAKS THE INSTALLATION OF THE WHEEL

@@ -1080,6 +1080,22 @@ config:
                                     variables:
                                         LD_LIBRARY_PATH: "/opt/lib"
                                         FONTCONFIG_PATH: "/opt/fonts"
+                          - id: "get_reports_handler"
+                            name: "getreports"
+                            code: "assets/api/capi/handlers/get_reports.py"
+                            layers:
+                                - capi-all
+                            funct_args:
+                                handler: "index.index_handler"
+                                runtime: "python3.10"
+                                architectures:
+                                    - "x86_64"
+                                description: "getreports Lambda Function"
+                                memory_size: 128
+                                # lists then reads the rendered report HTML
+                                # objects for a sample, so runtime scales with
+                                # the number/size of reports.
+                                timeout: 30
 
             # `static-apps` (mapping[], optional)
             # Contains configuration for static apps deployed as part of CAPE.
@@ -1295,7 +1311,7 @@ config:
                           - s3
                     - name: "cape-frontend"
                       short_name: "cfe"
-                      image: "ami-0a4b5b6aa5a363ba8"
+                      image: "ami-033a8157caf6f9254"
                       public_ip: False
                       instance_type: "t3a.medium"
                       subnet_types:
@@ -1715,6 +1731,8 @@ config:
                       name:
                       crawler:
                           prefix: result # prefixes for tables in the database
+                  artifacts:
+                      name:
               pipelines:
                   data:
                       etl:
@@ -1761,6 +1779,8 @@ config:
                       name:
                       crawler:
                           prefix: result # prefixes for tables in the database
+                  artifacts:
+                      name:
               pipelines:
                   data:
                       etl:
@@ -1808,7 +1828,8 @@ config:
                       name:
                       crawler:
                           prefix: result # prefixes for tables in the database
-                          excludes: ["caerbannog-report/**"]
+                  artifacts:
+                      name:
               pipelines:
                   data:
                       etl:
