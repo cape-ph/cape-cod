@@ -46,8 +46,9 @@ to see if there are changes not captured here.
 We use [easyrsa](https://github.com/OpenVPN/easy-rsa) (from `OpenVPN`) to
 generate the self-signed files. This can be done by other means (e.g. using
 `openssl` directly) if desired. We assume that `easyrsa` is already installed
-and on the system path. adjust for your setup as needed. We tested against
-`easyrsa` version `3.2.0`.
+and on the system path. adjust for your setup as needed. This procedure was
+originally written against `easyrsa` version `3.2.0` and has also been verified
+against `3.2.5`.
 
 **_NOTE:_** This procedure only has to be done once so long as the certs/keys do
 not expire and are not compromised. The cert rotation procedure is not covered
@@ -85,6 +86,15 @@ easyrsa --san=DNS:server build-server-full server nopass
 # pair, it's a good idea to include some differentiator of the client in the
 # name here
 easyrsa build-client-full client1.domain.tld nopass
+```
+
+On `easyrsa` `3.2.x`, `build-client-full` prints the certificate details and
+prompts for a `yes` confirmation before signing. If the prompt is not answered,
+it aborts and rolls back the generated request and key. To sign without the
+interactive prompt (for example in a script), use batch mode instead:
+
+```bash
+easyrsa --batch build-client-full client1.domain.tld nopass
 ```
 
 - at this point, all files needed for the deployment and the vpn connection
@@ -135,9 +145,9 @@ block).
 
 ## Set Up Connection to VPN
 
-At this time, all testing of connection to the VPN has been performed with
-`OpenVPN 2.4.12` (with `OpenSSL 1.1.1k`) via the command line. Other clients may
-work, but are not covered here.
+Connection to the VPN has been tested with `openvpn3` via the command line.
+Other clients (such as the older `openvpn` 2.x CLI) may work, but are not
+covered here.
 
 This section assumes a deployed `CAPE` instance and permissions to access the
 required resource consoles. If you do not have the required permissions to
@@ -204,15 +214,30 @@ added in a similar manner as follows:
 
 Once updated, save this file to a known location.
 
+If you already have a complete `ovpn` profile for the current endpoint (for
+example when adding an additional client while the endpoint is unchanged), you
+can skip the console download and instead copy that profile, replacing only the
+`<cert>` and `<key>` blocks with the new client's cert and key. The `<ca>` block
+and `remote` line stay the same.
+
 ### Connect to VPN
 
-Assuming the `ovpn` config file is in the current directory, with the name
-`aws-cvpn-endpoint.ovpn` and `openvpn` is on the system path, you can now
-connect to the VPN with:
+Assuming the `ovpn` config file is in the current directory with the name
+`aws-cvpn-endpoint.ovpn` and `openvpn3` is on the system path, import the
+profile once and then start a session from the imported config:
 
 ```bash
-# NOTE: depending on your setup, `sudo` may be required here
-openvpn --config aws-cvpn-endpoint.ovpn
+# import the profile under a name of your choosing
+openvpn3 config-import --config aws-cvpn-endpoint.ovpn --name cape-vpn --persistent
+
+# start the connection
+openvpn3 session-start --config cape-vpn
+
+# check active sessions
+openvpn3 sessions-list
+
+# disconnect when done
+openvpn3 session-manage --config cape-vpn --disconnect
 ```
 
 ## Routes
@@ -232,6 +257,13 @@ to that client. Be sure to replace `$CLIENT_NAME` with the actual client name
 
     ```bash
     easyrsa build-client-full $CLIENT_NAME nopass
+    ```
+
+    On `easyrsa` `3.2.x` this prompts for a `yes` confirmation before signing.
+    To sign without the interactive prompt, use batch mode:
+
+    ```bash
+    easyrsa --batch build-client-full $CLIENT_NAME nopass
     ```
 
 2. Use the generated files to create an OpenVPN configuration as described above
