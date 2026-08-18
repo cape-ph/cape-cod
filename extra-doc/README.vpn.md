@@ -145,10 +145,9 @@ block).
 
 ## Set Up Connection to VPN
 
-Connection to the VPN has been tested with two clients: the `OpenVPN` 2.4.x CLI
-(`OpenVPN 2.4.12` with `OpenSSL 1.1.1k`) and `openvpn3`. Both are covered in the
-[Connect to VPN](#connect-to-vpn) section below. Other clients may work, but are
-not covered here.
+Connection to the VPN has been tested with `openvpn3` via the command line.
+Other clients (such as the older `openvpn` 2.x CLI) may work, but are not
+covered here.
 
 This section assumes a deployed `CAPE` instance and permissions to access the
 required resource consoles. If you do not have the required permissions to
@@ -223,16 +222,8 @@ and `remote` line stay the same.
 
 ### Connect to VPN
 
-Assuming the `ovpn` config file is in the current directory, with the name
-`aws-cvpn-endpoint.ovpn` and `openvpn` is on the system path, you can now
-connect to the VPN with:
-
-```bash
-# NOTE: depending on your setup, `sudo` may be required here
-openvpn --config aws-cvpn-endpoint.ovpn
-```
-
-If you are using `openvpn3` instead of the `openvpn` 2.4.x CLI, import the
+Assuming the `ovpn` config file is in the current directory with the name
+`aws-cvpn-endpoint.ovpn` and `openvpn3` is on the system path, import the
 profile once and then start a session from the imported config:
 
 ```bash
