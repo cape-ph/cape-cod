@@ -300,7 +300,7 @@ REPORT_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>RABiTS Sample Results - {{ sample_id }}</title>
+    <title>RABiTS Sample Results</title>
     <style>
       body {
         margin: 0;
