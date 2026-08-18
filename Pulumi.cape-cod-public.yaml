@@ -278,6 +278,11 @@ config:
         - name: etl-seqreadarch
           key: glue/etl/etl_seqarchive.py
           srcpth: ./assets/etl/etl_seqarchive.py
+        # TODO(#363): caerbannog consumer result archive; prefix
+        #             and archive format provisional.
+        - name: etl-caerbannog-results
+          key: glue/etl/etl_caerbannog_results.py
+          srcpth: ./assets/etl/etl_caerbannog_results.py
     # `report` (mapping, optional)
     # Contains configuration related to canned reports that can be
     # generated. Contains the following keys
@@ -1054,6 +1059,22 @@ config:
                     variables:
                       LD_LIBRARY_PATH: "/opt/lib"
                       FONTCONFIG_PATH: "/opt/fonts"
+              - id: "get_reports_handler"
+                name: "getreports"
+                code: "assets/api/capi/handlers/get_reports.py"
+                layers:
+                  - capi-all
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getreports Lambda Function"
+                  memory_size: 128
+                  # lists then reads the rendered report HTML
+                  # objects for a sample, so runtime scales with
+                  # the number/size of reports.
+                  timeout: 30
       # `static-apps` (mapping[], optional)
       # Contains configuration for static apps deployed as part of CAPE.
       # Static apps are deployed to s3 as html/js/css bundles and are
@@ -1225,7 +1246,7 @@ config:
               - cognito
           - name: "opa"
             short_name: "opa"
-            image: "ami-05080e4998b881ee0"
+            image: "ami-07b9e418d53f44854"
             public_ip: False
             instance_type: "t3a.medium"
             subnet_types:
@@ -1267,7 +1288,7 @@ config:
               - s3
           - name: "cape-frontend"
             short_name: "cfe"
-            image: "ami-06544672c7721b7a9"
+            image: "ami-07fae65036e62d931"
             public_ip: False
             instance_type: "t3a.medium"
             subnet_types:
@@ -1632,6 +1653,44 @@ config:
       #         ETL jobs will be queued until currently running jobs are
       #         completed and the number of running jobs is < max.
       #         Defaults to 5.
+      #       WARNING: pointing an `etl` (or `notify`, below) rule's `src`
+      #       bucket+prefix at a prefix this SAME pipeline WRITES into
+      #       (e.g. its own `sink`) creates a self-triggering loop: the
+      #       write lands back in the watched prefix and re-triggers the
+      #       rule. Keep watched prefixes disjoint from written-back
+      #       prefixes.
+      #     * `notify` (mapping[], optional)
+      #       A list of data notification rules for the tributary. Unlike
+      #       `etl`, these do not run a Glue job - they only place a
+      #       message on a per-tributary data notification queue when a
+      #       matching object shows up, for consumption outside this
+      #       pipeline. Entirely additive; a tributary with no `notify`
+      #       list gets no notification queue and no extra AWS resources.
+      #       Each list item has the following schema
+      #       * `name` (string, required)
+      #         A short name for the notification rule. Needs to be unique
+      #         across notify rules in the tributary. This value is sent
+      #         as the `notification` field of the data notification
+      #         message so consumers can identify which rule matched.
+      #       * `src` (string, required)
+      #         The id of the bucket to watch (e.g. `input-clean`). This
+      #         is *not* required to also be an `etl` source - a bucket
+      #         can be notify-only.
+      #       * `prefix` (string, required)
+      #         The object key prefix to match. Format-agnostic (works
+      #         for any file type under the prefix).
+      #       * `suffixes` (string[], optional)
+      #         A list of object (e.g. file) suffixes to limit the rule
+      #         to. If not specified (or empty), the rule matches any
+      #         suffix under `prefix`.
+      #       * `message_retention_seconds` (int, optional)
+      #         How long undelivered messages stay on the notification
+      #         queue. SQS accepts 60..1209600 seconds (14 days). If
+      #         omitted, the SQS default of 4 days (345600s) applies -
+      #         there is no true "infinite" retention. When more than one
+      #         `notify` entry is present for a tributary, the first
+      #         entry with a value set wins (all entries share one
+      #         queue).
       - name: hai
         buckets:
           input-raw:
@@ -1647,6 +1706,8 @@ config:
             name:
             crawler:
               prefix: result # prefixes for tables in the database
+          artifacts:
+            name:
         pipelines:
           data:
             etl:
@@ -1693,6 +1754,8 @@ config:
             name:
             crawler:
               prefix: result # prefixes for tables in the database
+          artifacts:
+            name:
         pipelines:
           data:
             etl:
@@ -1729,13 +1792,15 @@ config:
             name:
             crawler:
               prefix: input # prefixes for tables in the database
-              excludes: ["sequencing-reads/**"]
+              excludes: ["sequencing-reads/**", "sequencing-reads-split/**"]
           result-raw:
             name:
           result-clean:
             name:
             crawler:
               prefix: result # prefixes for tables in the database
+          artifacts:
+            name:
         pipelines:
           data:
             etl:
@@ -1766,3 +1831,42 @@ config:
                 suffixes:
                   - tsv
                   - txt
+              # caerbannog consumer result archive: triggers on
+              # the .tar.gz written to result-raw under
+              # caerbannog-output, writes CSV to result-clean
+              # (result_caerbannog_* tables). prefix/suffixes are
+              # disjoint from the bactopia result-raw ETLs above
+              # (pipeline-output*, tsv/yml/txt) so neither triggers
+              # the other. TODO(#363): format provisional.
+              - name: caerbannog-results
+                script: glue/etl/etl_caerbannog_results.py
+                src: result-raw
+                sink: result-clean
+                prefix: caerbannog-output
+                suffixes:
+                  - gz
+                  - tar
+                max_concurrent_runs: 5
+                # TEMPORARY (TODO(#363)): the ETL renders a stopgap
+                # HTML report with jinja2. Remove this when report
+                # rendering moves out of the ETL.
+                pymodules:
+                  - jinja2==3.1.6
+            notify:
+              # individual split read files as they land in the
+              # clean sink (one notification per file).
+              - name: split-reads
+                src: input-clean
+                prefix: sequencing-reads-split
+                message_retention_seconds: 43200 # 12 hours
+              # one manifest per uploaded archive, listing every
+              # split read file extracted from it (written by
+              # etl_seqarchive to manifest/.../manifest.csv).
+              # consumers read it to learn the full set from an
+              # upload; it is also crawled into the catalog (not
+              # excluded above) so the set is queryable like
+              # meta.csv. retention is queue-level (taken from the
+              # first rule above), so it is not repeated here.
+              - name: split-reads-manifest
+                src: input-clean
+                prefix: manifest
