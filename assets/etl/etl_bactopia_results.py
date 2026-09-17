@@ -19,8 +19,8 @@ MLST_OBJ = "mlst.tsv"
 # file in the output. this could be a bactopia or amrfinder plus reason, but the
 # amrfinderplus file from bactopia version 3.0.1 (and maybe before???) has
 # `-proteins` and later versions (at least 3.1.0+) don't.
-AMRF_OBJ_301 = "amrfinderplus-proteins.tsv"
-AMRF_OBJ_31X = "amrfinderplus.tsv"
+AMRFINDERPLUS_LEGACY_OBJ = "amrfinderplus-proteins.tsv"
+AMRFINDERPLUS_OBJ = "amrfinderplus.tsv"
 # file which contains the command used to execute bactopia
 SOFTWARE_VERSION_OBJ = "software_versions.yml"
 
@@ -31,13 +31,112 @@ SOFTWARE_VERSION_OBJ = "software_versions.yml"
 # these names are looked for explicitly if the object is in the bactopia output
 # hierarchy
 BACTRUN_FILES = [
-    # different versions of the bactopia tool chainss have different names for
-    # the amr finder files it seems
-    {"prefix": "merged-results/", "key": AMRF_OBJ_301},
-    {"prefix": "merged-results/", "key": AMRF_OBJ_31X},
+    # Keep the legacy AMRFinderPlus filename separate from the current
+    # output-contract filename.
+    {"prefix": "merged-results/", "key": AMRFINDERPLUS_LEGACY_OBJ},
+    {"prefix": "merged-results/", "key": AMRFINDERPLUS_OBJ},
     {"prefix": "merged-results/", "key": MLST_OBJ},
     {"prefix": "software-versions/", "key": SOFTWARE_VERSION_OBJ},
 ]
+
+
+class BactopiaOutputContractV1Adapter:
+    """Parse the stable Bactopia output contract v1 merged-results."""
+
+    MLST_INPUT_HEADER = (
+        "FILE",
+        "SCHEME",
+        "ST",
+        "STATUS",
+        "SCORE",
+        "ALLELES",
+    )
+    MLST_OUTPUT_HEADER = (
+        "file",
+        "scheme",
+        "st",
+        "status",
+        "score",
+        "alleles",
+    )
+    AMRFINDER_REPORT_COLUMNS = frozenset(
+        {
+            "element_symbol",
+            "element_name",
+            "scope",
+            "subtype",
+            "class",
+            "subclass",
+            "type",
+            "method",
+            "%_coverage_of_reference",
+            "%_identity_to_reference",
+        }
+    )
+
+    def parse_mlst(self, source_bytes):
+        """Return normalized MLST rows for the output contract."""
+
+        rows = list(
+            csv.reader(
+                io.StringIO(source_bytes.decode("utf-8")), delimiter="\t"
+            )
+        )
+        if not rows:
+            raise ValueError("Output contract v1 MLST output is empty")
+
+        header = tuple(cell.strip().upper() for cell in rows[0])
+        if header != self.MLST_INPUT_HEADER:
+            raise ValueError(
+                "Unexpected output contract v1 MLST header. "
+                f"Expected {self.MLST_INPUT_HEADER}, received {header}"
+            )
+
+        output = [self.MLST_OUTPUT_HEADER]
+        for line_number, row in enumerate(rows[1:], start=2):
+            if not row:
+                continue
+            if len(row) != len(self.MLST_INPUT_HEADER):
+                raise ValueError(
+                    "Unexpected output contract v1 MLST row width at line "
+                    f"{line_number}: expected {len(self.MLST_INPUT_HEADER)}, "
+                    f"received {len(row)}"
+                )
+            output.append(row)
+        return output
+
+    def parse_amrfinderplus(self, source_bytes):
+        """Normalize and validate AMRFinderPlus report-query columns."""
+
+        rows = list(
+            csv.reader(
+                io.StringIO(source_bytes.decode("utf-8")), delimiter="\t"
+            )
+        )
+        if not rows:
+            raise ValueError("Output contract v1 AMRFinderPlus output is empty")
+
+        header = [re.sub(r"[\s-]", "_", cell).lower() for cell in rows[0]]
+        missing = sorted(self.AMRFINDER_REPORT_COLUMNS - set(header))
+        if missing:
+            raise ValueError(
+                "Output contract v1 AMRFinderPlus output is missing required "
+                f"columns: {', '.join(missing)}"
+            )
+
+        output = [header]
+        for line_number, row in enumerate(rows[1:], start=2):
+            if row and len(row) != len(header):
+                raise ValueError(
+                    "Unexpected output contract v1 AMRFinderPlus row width "
+                    f"at line {line_number}: expected {len(header)}, "
+                    f"received {len(row)}"
+                )
+            output.append(row)
+        return output
+
+
+OUTPUT_ADAPTER = BactopiaOutputContractV1Adapter()
 
 
 # TODO: ISSUE #144 the output here is for the initial bactopia
@@ -96,40 +195,25 @@ with io.StringIO() as sio_buff:
     # NOTE: based on file name matching above, we should never end up where an
     #       if/elif is not hit here
     if objfull == MLST_OBJ:
-        # in the mlst.tsv case, we have no header row and need to provide our
-        # own
         print(f"Processing MLST file (raw key: {alert_obj_key})")
-        reader = csv.reader(
-            io.StringIO(etl_job.get_src_file().decode("utf-8")), delimiter="\t"
-        )
+        writer.writerows(OUTPUT_ADAPTER.parse_mlst(etl_job.get_src_file()))
 
-        # TODO: these headers are made up except for the first 3. this will
-        #       need to be fixed sometime if we keep processing this file
-        writer.writerow(
-            [
-                "sample",
-                "scheme",
-                "sequence_type",
-                *[f"gene{i}" for i in range(7)],
-            ]
-        )
-        writer.writerows([row for row in reader])
-
-    elif objfull in [AMRF_OBJ_301, AMRF_OBJ_31X]:
+    elif objfull == AMRFINDERPLUS_OBJ:
         print(f"Processing AMRFinderPlus file (raw key: {alert_obj_key})")
+        writer.writerows(
+            OUTPUT_ADAPTER.parse_amrfinderplus(etl_job.get_src_file())
+        )
+
+    elif objfull == AMRFINDERPLUS_LEGACY_OBJ:
+        print(
+            f"Processing legacy AMRFinderPlus file (raw key: {alert_obj_key})"
+        )
         reader = csv.reader(
             io.StringIO(etl_job.get_src_file().decode("utf-8")), delimiter="\t"
         )
-        # in this case we need to grab the header and modify it to replace
-        # spaces and dashes with underscores, and lowercase everything
         for idx, row in enumerate(reader):
             if idx == 0:
-                # TODO: ISSUE #TBD ETL helper library needs a normalization
-                #       function for column headers to do this...
-
-                # special processing of the columns
                 row = [re.sub(r"[\s-]", "_", c).lower() for c in row]
-
             writer.writerow(row)
 
     elif objfull == SOFTWARE_VERSION_OBJ:
