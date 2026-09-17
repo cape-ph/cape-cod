@@ -42,6 +42,11 @@ aws --region "${AWS_REGION}" s3 mb s3://"${BUCKET_TEMP_NAME}"
 # TODO: allow user to pass in a specific nextflow config string and use that
 # instead, evaluating environment variables with something like
 # `${NEXTFLOW_CONFIG@P} (requires bash v4.4+)
+AWS_CLI_PATH=$(command -v aws)
+if [[ -z ${AWS_CLI_PATH} ]]; then
+    echo "AWS CLI not found on PATH" >&2
+    exit 1
+fi
 cat >/nextflow.config <<EOF
 process {
     executor = 'awsbatch'
@@ -54,7 +59,7 @@ process {
 aws {
     region = '${AWS_REGION}'
     batch {
-        cliPath = '/home/ec2-user/miniconda/bin/aws'
+        cliPath = '${AWS_CLI_PATH}'
     }
 }
 EOF
@@ -65,7 +70,7 @@ EOF
 BACTOPIA_CACHEDIR=s3://${BUCKET_TEMP_NAME} nextflow \
     run "${PIPELINE}" ${PIPELINE_VERSION} \
     -c /nextflow.config \
-    -work-dir s3://"${BUCKET_TEMP_NAME}" \
+    -work-dir s3://"${BUCKET_TEMP_NAME}"/work \
     ${NF_OPTS}
 
 # Cleanup

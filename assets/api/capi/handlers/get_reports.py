@@ -4,18 +4,26 @@ Report ETLs write pre-rendered HTML reports to the seqauto tributary artifacts
 bucket under `reports/<sample_id>/<report_name>.html` (e.g. the RABiTS report at
 `reports/<sample_id>/rabits.html`). This handler lists those objects for a given
 sample and returns a mapping of report name (the object file name without the
-`.html` suffix) to the report HTML, e.g.:
+`.html` suffix) to an object holding the report HTML and the time it was
+generated (the object's last-modified time), e.g.:
 
-    {"rabits": "<html>...</html>", "bactopia": "<html>...</html>"}
+    {
+        "rabits": {"createdAt": "2024-06-01T12:34:56Z", "body": "<html>..."},
+        "bactopia": {"createdAt": "2024-06-02T09:00:00Z", "body": "<html>..."}
+    }
 
-so the front end can render every available report (e.g. as an accordion)
-without any further per-report requests. A sample with no reports (or an unknown
-sample) returns an empty object.
+so the front end can render every available report (e.g. as an accordion) and
+sort/label them by generation time without any further per-report requests. A
+sample with no reports (or an unknown sample) returns an empty object.
+
+`createdAt` is an RFC 3339 / ISO 8601 UTC timestamp, directly parsable by
+`new Date(...)` in JavaScript/TypeScript.
 """
 
 import json
 import logging
 import os
+from datetime import timezone
 
 import boto3
 from botocore.exceptions import ClientError
@@ -29,6 +37,10 @@ logger.setLevel("INFO")
 # keys and non-html objects are ignored).
 REPORTS_PREFIX = "reports"
 REPORT_SUFFIX = ".html"
+
+# keys of the per-report object returned for each report.
+REPORT_CREATED_AT_KEY = "createdAt"
+REPORT_BODY_KEY = "body"
 
 # name of the env var (set by the private swimlane api wiring) holding the name
 # of the artifacts bucket that reports are stored in.
@@ -44,7 +56,9 @@ def get_sample_reports(bucket, sample_id):
 
     Returns:
         A mapping of report name (object file name without the `.html` suffix)
-        to the report HTML string. Empty when the sample has no reports.
+        to an object of the form `{"createdAt": <iso8601-utc>, "body": <html>}`,
+        where `createdAt` is the object's last-modified time. Empty when the
+        sample has no reports.
     """
     s3_client = boto3.client("s3")
     prefix = f"{REPORTS_PREFIX}/{sample_id}/"
@@ -65,7 +79,18 @@ def get_sample_reports(bucket, sample_id):
                 .read()
                 .decode("utf-8")
             )
-            reports[name[: -len(REPORT_SUFFIX)]] = report_html
+            # s3 last-modified is a tz-aware utc datetime; emit rfc 3339 with a
+            # `Z` suffix so it parses directly in javascript/typescript.
+            created_at = (
+                obj["LastModified"]
+                .astimezone(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+            reports[name[: -len(REPORT_SUFFIX)]] = {
+                REPORT_CREATED_AT_KEY: created_at,
+                REPORT_BODY_KEY: report_html,
+            }
 
     return reports
 

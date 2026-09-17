@@ -915,10 +915,27 @@ paths:
                             schema:
                                 type: object
                                 description:
-                                    A mapping of report name to the report HTML.
-                                    Empty when the sample has no reports.
+                                    A mapping of report name to an object with
+                                    the report HTML and the time it was
+                                    generated. Empty when the sample has no
+                                    reports.
                                 additionalProperties:
-                                    type: string
+                                    type: object
+                                    properties:
+                                        createdAt:
+                                            type: string
+                                            format: date-time
+                                            description:
+                                                RFC 3339 / ISO 8601 UTC time the
+                                                report was generated, parsable
+                                                by the JavaScript Date
+                                                constructor.
+                                        body:
+                                            type: string
+                                            description: The report HTML.
+                                    required:
+                                        - createdAt
+                                        - body
                 "500":
                     description:
                         "Server Error - Unable to fetch reports."
