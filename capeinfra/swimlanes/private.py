@@ -119,6 +119,34 @@ class PrivateSwimlane(ScopedSwimlane):
         self._exposed_env_vars = {}
 
         self._exposed_env_vars.setdefault(
+            "WORKFLOW_QUEUE_NAME",
+            {
+                "resource_name": self.batch_compute_environments[
+                    "workflows"
+                ].job_queue.name,
+                "type": "untyped",
+            },
+        )
+        self._exposed_env_vars.setdefault(
+            "NEXTFLOW_JOB_DEFINITION_NAME",
+            {
+                "resource_name": self.job_definitions[
+                    "nextflow"
+                ].job_definition.name,
+                "type": "untyped",
+            },
+        )
+        self._exposed_env_vars.setdefault(
+            "JOB_QUEUE_NAME",
+            {
+                "resource_name": self.batch_compute_environments[
+                    "analysis"
+                ].job_queue.name,
+                "type": "untyped",
+            },
+        )
+
+        self._exposed_env_vars.setdefault(
             "DDB_REGION",
             {
                 "resource_name": self.aws_region,
@@ -212,6 +240,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # NOTE: if there's a bad env var in here, we'll let the KeyError go to
         #       halt the deployment.
         env_vars = {}
+        handler_env_vars = {}
         resource_grants = {}
         for ev in self.apis[api_name]["spec"].get("env_vars", []):
             env_vars.setdefault(ev, self._exposed_env_vars[ev]["resource_name"])
@@ -226,6 +255,20 @@ class PrivateSwimlane(ScopedSwimlane):
             # it's in there before adding...
             if self._exposed_env_vars[ev]["resource_name"] not in res:
                 res.append(self._exposed_env_vars[ev]["resource_name"])
+
+        for handler in self.apis[api_name]["spec"].get("handlers", []):
+            handler_vars = {}
+            for ev in handler.get("env_vars", []):
+                handler_vars[ev] = self._exposed_env_vars[ev]["resource_name"]
+
+                res = resource_grants.setdefault(
+                    self._exposed_env_vars[ev]["type"], []
+                )
+                if self._exposed_env_vars[ev]["resource_name"] not in res:
+                    res.append(self._exposed_env_vars[ev]["resource_name"])
+
+            if handler_vars:
+                handler_env_vars[handler["id"]] = handler_vars
 
         # TODO: this is the new style policy statements we should be moving to
         policy_statements = []
@@ -306,6 +349,7 @@ class PrivateSwimlane(ScopedSwimlane):
             policy_statements,
             self.api_vpcendpoint,
             self.apigw_domainname.domain_name,
+            handler_env_vars=handler_env_vars,
             config=self.apis[api_name]["spec"],
             desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),

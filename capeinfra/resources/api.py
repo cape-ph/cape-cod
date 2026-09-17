@@ -47,6 +47,8 @@ class CapeRestApi(CapeComponentResource):
         vpc_endpoint: aws.ec2.VpcEndpoint,
         domain_name: Output,
         *args,
+        handler_env_vars: Mapping[str, Mapping[str, Output[str] | str]]
+        | None = None,
         # TODO: the vpc config was added hastily here as we need the
         #       lambdas to be deployed in the vpc to have access to MWAA.
         #       may not need changing, but the design should be thought more
@@ -70,6 +72,8 @@ class CapeRestApi(CapeComponentResource):
                           "prod")
             env_vars: A mapping of environment variable labels to values that
                       will be passed into all Lambda handlers for the API.
+            handler_env_vars: A mapping from handler id to environment variable
+                              labels and values passed only to that handler.
             resource_grants: A mapping of resource types to a list of resource
                              names that will be allowed specific access for the
                              API. See iam.py `get_api_policy` for the specific
@@ -91,6 +95,7 @@ class CapeRestApi(CapeComponentResource):
         self.api_name = api_name
         self.stage_suffix = stage_suffix
         self.env_vars = env_vars
+        self.handler_env_vars = handler_env_vars or {}
         self.spec_path = spec_path
         self.api_vpcendpoint = vpc_endpoint
         self.domain_name = domain_name
@@ -231,6 +236,7 @@ class CapeRestApi(CapeComponentResource):
                 "variables"
             )
             vars.update(self.env_vars)
+            vars.update(self.handler_env_vars.get(hcfg["id"], {}))
 
             handler_lambda = aws.lambda_.Function(
                 f"{self.name}-{hcfg['name']}-lmbdfn",

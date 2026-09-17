@@ -730,6 +730,9 @@ config:
                 #     * memory_size (int, defaults to 128[unit is MB])
                 #     * runtime (string defaults to "python3.10")
                 #     * timeout (int, defaults to 3[unit is seconds])
+                #   * `env_vars` (string[], optional)
+                #     A list of swimlane-exposed env vars passed only to this
+                #     handler. Entries must already be exposed by the swimlane.
                 apis:
                     - name: "capi"
                       desc: "CAPE API"
@@ -939,6 +942,10 @@ config:
                             code: "assets/api/capi/handlers/submit_dap_run.py"
                             layers:
                                 - capi-all
+                            env_vars:
+                                - "WORKFLOW_QUEUE_NAME"
+                                - "NEXTFLOW_JOB_DEFINITION_NAME"
+                                - "JOB_QUEUE_NAME"
                             funct_args:
                                 handler: "index.index_handler"
                                 runtime: "python3.10"

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 
 import boto3
 from botocore.exceptions import ClientError
@@ -12,6 +13,25 @@ logger = logging.getLogger(__name__)
 batch_client = boto3.client("batch")
 
 
+def _get_batch_configuration():
+    """Return Batch resource names supplied by the deployment environment."""
+
+    configuration = {
+        "WORKFLOW_QUEUE_NAME": os.getenv("WORKFLOW_QUEUE_NAME"),
+        "NEXTFLOW_JOB_DEFINITION_NAME": os.getenv(
+            "NEXTFLOW_JOB_DEFINITION_NAME"
+        ),
+        "JOB_QUEUE_NAME": os.getenv("JOB_QUEUE_NAME"),
+    }
+    missing = [name for name, value in configuration.items() if not value]
+    if missing:
+        logger.error(
+            "Missing required Batch configuration: %s", ", ".join(missing)
+        )
+        return None
+    return configuration
+
+
 def index_handler(event, context):
     """Handler for the POST of a new analysis pipeline run.
 
@@ -20,17 +40,12 @@ def index_handler(event, context):
     :param context: Context object.
     """
 
-    # TODO: Replace these hardcoded values
-    # workflow_queue_name = os.getenv("WORKFLOW_QUEUE_NAME")
-    # nextflow_job_definition = os.getenv("NEXTFLOW_JOB_DEFINITION_NAME")
-    # job_queue_name = os.getenv("JOB_QUEUE_NAME")
-    workflow_queue_name = "ccd-pvsl-workflows-btch-jobq-e326d2f"
-    nextflow_job_definition = "ccd-pvsl-nextflow-jobdef"
-    job_queue_name = "ccd-pvsl-analysis-btch-jobq-d740dd5"
-
-    # obligatory data validation
-    if None in [workflow_queue_name, nextflow_job_definition, job_queue_name]:
-        msg = "No AWS Batch Job queues or definition provided. Cannot submit new data analysis pipeline message."
+    batch_configuration = _get_batch_configuration()
+    if batch_configuration is None:
+        msg = (
+            "No AWS Batch queues or job definition configured. "
+            "Cannot submit new data analysis pipeline message."
+        )
         logger.error(msg)
         return {"statusCode": 500, "body": msg}
 
@@ -43,13 +58,16 @@ def index_handler(event, context):
 
         response = batch_client.submit_job(
             jobName=f"nextflow-{context.aws_request_id}",
-            jobQueue=workflow_queue_name,
-            jobDefinition=nextflow_job_definition,
+            jobQueue=batch_configuration["WORKFLOW_QUEUE_NAME"],
+            jobDefinition=batch_configuration["NEXTFLOW_JOB_DEFINITION_NAME"],
             containerOverrides={
                 "environment": [
                     {"name": "PIPELINE", "value": pipeline_project},
                     {"name": "PIPELINE_VERSION", "value": pipeline_version},
-                    {"name": "PIPELINE_QUEUE", "value": job_queue_name},
+                    {
+                        "name": "PIPELINE_QUEUE",
+                        "value": batch_configuration["JOB_QUEUE_NAME"],
+                    },
                     {"name": "NF_OPTS", "value": nf_opts},
                 ]
             },
