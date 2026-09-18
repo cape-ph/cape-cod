@@ -6,6 +6,7 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
+from capepy.aws.dynamodb import PipelineTable
 from capepy.aws.utils import decode_error
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,26 @@ def _get_batch_configuration():
     return configuration
 
 
+def _get_pipeline_profile(pipeline_name, pipeline_version):
+    """Resolve one trusted DAP profile for a submitted pipeline."""
+
+    if not pipeline_name:
+        return None
+
+    profiles = PipelineTable().get_pipelines_by_name(
+        pipeline_name, pipeline_version
+    )
+    if not profiles:
+        raise ValueError(
+            f"No DAP profile found for {pipeline_name}@{pipeline_version}"
+        )
+    if len(profiles) != 1:
+        raise ValueError(
+            f"Multiple DAP profiles found for {pipeline_name}@{pipeline_version}"
+        )
+    return profiles[0]["profile"]
+
+
 def index_handler(event, context):
     """Handler for the POST of a new analysis pipeline run.
 
@@ -52,25 +73,51 @@ def index_handler(event, context):
     try:
         body = json.loads(event["body"])
 
-        pipeline_project = body["pipelineProject"]
         pipeline_version = body["pipelineVersion"]
         nf_opts = body["nextflowOptions"]
+        pipeline_profile = _get_pipeline_profile(
+            body.get("pipelineName"), pipeline_version
+        )
+        if pipeline_profile is None:
+            pipeline_project = body["pipelineProject"]
+            process_overrides = {}
+        else:
+            pipeline_project = pipeline_profile["project"]
+            pipeline_version = pipeline_profile["version"]
+            process_overrides = (
+                pipeline_profile.get("execution", {})
+                .get("nextflow", {})
+                .get("processOverrides", {})
+            )
+            if not isinstance(process_overrides, dict):
+                raise ValueError(
+                    "DAP Nextflow process overrides must be an object"
+                )
+
+        container_environment = [
+            {"name": "PIPELINE", "value": pipeline_project},
+            {"name": "PIPELINE_VERSION", "value": pipeline_version},
+            {
+                "name": "PIPELINE_QUEUE",
+                "value": batch_configuration["JOB_QUEUE_NAME"],
+            },
+            {"name": "NF_OPTS", "value": nf_opts},
+        ]
+        if process_overrides:
+            container_environment.append(
+                {
+                    "name": "NEXTFLOW_PROCESS_OVERRIDES",
+                    "value": json.dumps(
+                        process_overrides, separators=(",", ":")
+                    ),
+                }
+            )
 
         response = batch_client.submit_job(
             jobName=f"nextflow-{context.aws_request_id}",
             jobQueue=batch_configuration["WORKFLOW_QUEUE_NAME"],
             jobDefinition=batch_configuration["NEXTFLOW_JOB_DEFINITION_NAME"],
-            containerOverrides={
-                "environment": [
-                    {"name": "PIPELINE", "value": pipeline_project},
-                    {"name": "PIPELINE_VERSION", "value": pipeline_version},
-                    {
-                        "name": "PIPELINE_QUEUE",
-                        "value": batch_configuration["JOB_QUEUE_NAME"],
-                    },
-                    {"name": "NF_OPTS", "value": nf_opts},
-                ]
-            },
+            containerOverrides={"environment": container_environment},
         )
 
         msg = {
@@ -103,10 +150,10 @@ def index_handler(event, context):
                 "Access-Control-Allow-Methods": "OPTIONS,POST",
             },
         }
-    except KeyError as ke:
-        msg = f"Required value {ke.args[0]} is missing. event: [{event}]"
+    except (KeyError, ValueError) as err:
+        msg = f"Required or invalid value is missing: {err.args[0]}"
         print(
-            f"Exception caught when processing json payload. {msg}. Error: {ke}"
+            f"Exception caught when processing json payload. {msg}. Error: {err}"
         )
         return {
             "statusCode": 400,

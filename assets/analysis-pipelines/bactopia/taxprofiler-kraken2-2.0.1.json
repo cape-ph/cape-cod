@@ -1,0 +1,66 @@
+{
+    "pipelineType": "nextflow",
+    "pipelineName": "Taxprofiler Kraken2",
+    "pipelineId": "taxprofiler-kraken2-2.0.1",
+    "pipelineDescription": "Run nf-core/taxprofiler v2.0.1 with the Kraken2 preset",
+    "project": "nf-core/taxprofiler",
+    "version": "2.0.1",
+    "execution": {
+        "framework": "nextflow",
+        "class": "taxonomic-profiling",
+        "nextflow": {
+            "processOverrides": {
+                "kraken2": {
+                    "selector": ".*KRAKEN2_KRAKEN2.*",
+                    "cpus": 4,
+                    "memory": "16.GB",
+                    "time": "4.h"
+                }
+            }
+        }
+    },
+    "parametersSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "-profile": {
+                "const": "docker",
+                "default": "docker"
+            },
+            "--input": {
+                "type": "string",
+                "title": "Taxprofiler input samplesheet"
+            },
+            "--databases": {
+                "type": "string",
+                "title": "Taxprofiler database sheet"
+            },
+            "--outdir": {
+                "type": "string",
+                "title": "S3 location of the taxprofiler output"
+            },
+            "--run_kraken2": {
+                "const": true,
+                "default": true
+            },
+            "--kraken2_save_minimizers": {
+                "const": false,
+                "default": false
+            }
+        },
+        "unevaluatedProperties": false,
+        "required": ["--input", "--databases", "--outdir"]
+    },
+    "uiSchema": {
+        "type": "VerticalLayout",
+        "elements": [
+            { "type": "Control", "scope": "#/properties/--input" },
+            { "type": "Control", "scope": "#/properties/--databases" },
+            { "type": "Control", "scope": "#/properties/--outdir" }
+        ]
+    },
+    "submission": {
+        "optionsFieldName": "nextflowOptions",
+        "encoding": "cli-string"
+    }
+}

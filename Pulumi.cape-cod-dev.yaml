@@ -1558,6 +1558,9 @@ config:
                               value: "1"
                             - type: MEMORY
                               value: "2048"
+                        environment:
+                            - name: "NEXTFLOW_AWS_BATCH_CLI_PATH"
+                              value: "/home/ec2-user/miniconda/bin/aws"
                         mountPoints:
                             - sourceVolume: "nextflow_shared_data"
                               containerPath: "/mnt/nextflow_shared_data"
@@ -1621,7 +1624,9 @@ config:
             #         A list of exclude patterns for the crawler. Leave the
             #         empty for no exclusions. The rules for these patterns are
             #         defined in the official aws docs (under exclude patterns)
+            # yamllint disable rule:line-length
             #         https://docs.aws.amazon.com/glue/latest/dg/define-crawler-choose-data-sources.html
+            # yamllint enable rule:line-length
             #       * `classifiers` (string[], optional)
             #         A list of custom classifiers for the crawler. If not
             #         provided the AWS schema detection will be allowed to
@@ -1678,7 +1683,9 @@ config:
             #         compatible version format (i.e.
             #         `package_name[version_specifier]`). More information on
             #         version specifiers van be found here:
+            # yamllint disable rule:line-length
             #         https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
+            # yamllint enable rule:line-length
             #       * `max_concurrent_runs` (int, optional)
             #         The max number of concurrent runs for the ETL Job. If the
             #         number of requested ETL runs is greater than this value,

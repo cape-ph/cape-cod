@@ -55,6 +55,21 @@ def test_bactopia_v4_base_profile_uses_shared_runtime():
     }
 
 
+def test_taxprofiler_kraken2_profile_has_runtime_policy():
+    profile = _load_profile("taxprofiler-kraken2-2.0.1.json")
+    override = profile["execution"]["nextflow"]["processOverrides"]["kraken2"]
+
+    assert profile["project"] == "nf-core/taxprofiler"
+    assert profile["version"] == "2.0.1"
+    assert profile["execution"]["class"] == "taxonomic-profiling"
+    assert override == {
+        "selector": ".*KRAKEN2_KRAKEN2.*",
+        "cpus": 4,
+        "memory": "16.GB",
+        "time": "4.h",
+    }
+
+
 def test_bactopia_v4_ont_profile_contract():
     profile = _load_profile("ont-bactopia-4.1.0.json")
     schema = profile["parametersSchema"]
@@ -106,6 +121,78 @@ def test_submit_handler_rejects_missing_deployment_batch_values(monkeypatch):
     assert submit_handler._get_batch_configuration() is None
 
 
+def test_submit_handler_passes_profile_process_overrides(monkeypatch):
+    submit_handler = _load_submit_handler(monkeypatch)
+    for name, value in {
+        "WORKFLOW_QUEUE_NAME": "workflow-queue",
+        "NEXTFLOW_JOB_DEFINITION_NAME": "nextflow-job-definition",
+        "JOB_QUEUE_NAME": "analysis-queue",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    class FakePipelineTable:
+        def get_pipelines_by_name(self, pipeline_name, pipeline_version):
+            assert pipeline_name == "Taxprofiler Kraken2"
+            assert pipeline_version == "2.0.1"
+            return [
+                {
+                    "profile": {
+                        "project": "nf-core/taxprofiler",
+                        "version": "2.0.1",
+                        "execution": {
+                            "nextflow": {
+                                "processOverrides": {
+                                    "kraken2": {
+                                        "selector": ".*KRAKEN2_KRAKEN2.*",
+                                        "cpus": 4,
+                                        "memory": "16.GB",
+                                        "time": "4.h",
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            ]
+
+    monkeypatch.setattr(submit_handler, "PipelineTable", FakePipelineTable)
+    captured = {}
+
+    class FakeBatchClient:
+        def submit_job(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "jobArn": "arn:aws:batch:job/test",
+                "jobName": "nextflow-test",
+                "jobId": "job-test",
+            }
+
+    monkeypatch.setattr(submit_handler, "batch_client", FakeBatchClient())
+    response = submit_handler.index_handler(
+        {
+            "body": json.dumps(
+                {
+                    "pipelineName": "Taxprofiler Kraken2",
+                    "pipelineVersion": "2.0.1",
+                    "nextflowOptions": "--run_kraken2",
+                }
+            )
+        },
+        SimpleNamespace(aws_request_id="request-test"),
+    )
+
+    assert response["statusCode"] == 200
+    environment = {
+        item["name"]: item["value"]
+        for item in captured["containerOverrides"]["environment"]
+    }
+    assert environment["PIPELINE"] == "nf-core/taxprofiler"
+    assert (
+        json.loads(environment["NEXTFLOW_PROCESS_OVERRIDES"])["kraken2"]["cpus"]
+        == 4
+    )
+
+
 def test_submit_handler_uses_deployment_batch_values(monkeypatch):
     submit_handler = _load_submit_handler(monkeypatch)
     monkeypatch.setenv("WORKFLOW_QUEUE_NAME", "workflow-queue")
@@ -150,6 +237,19 @@ def test_submit_handler_uses_deployment_batch_values(monkeypatch):
     assert environment["PIPELINE_QUEUE"] == "analysis-queue"
 
 
+def test_kickstart_renders_structured_process_overrides():
+    entrypoint = (
+        REPO_ROOT / "assets/containers/nextflow-kickstart/entrypoint.sh"
+    ).read_text()
+
+    assert (
+        "NEXTFLOW_PROCESS_OVERRIDES=${NEXTFLOW_PROCESS_OVERRIDES}" in entrypoint
+    )
+    assert "Invalid validated Nextflow process override policy" in entrypoint
+    assert "to_entries[]" in entrypoint
+    assert "withName: '${selector}'" in entrypoint
+
+
 def _find_mapping_with_id(value, target_id):
     if isinstance(value, dict):
         if value.get("id") == target_id:
@@ -180,3 +280,47 @@ def test_dev_api_scopes_dynamic_batch_values_to_submit_handler():
         "NEXTFLOW_JOB_DEFINITION_NAME",
         "JOB_QUEUE_NAME",
     }
+
+
+def test_kickstart_separates_parent_and_batch_host_cli_paths():
+    entrypoint = (
+        REPO_ROOT / "assets/containers/nextflow-kickstart/entrypoint.sh"
+    ).read_text()
+
+    assert "PARENT_AWS_CLI_PATH=$(command -v aws)" in entrypoint
+    assert (
+        "NEXTFLOW_AWS_BATCH_CLI_PATH=${NEXTFLOW_AWS_BATCH_CLI_PATH}"
+        in entrypoint
+    )
+    assert "cliPath = '${NEXTFLOW_AWS_BATCH_CLI_PATH}'" in entrypoint
+    assert "cliPath = '${PARENT_AWS_CLI_PATH}'" not in entrypoint
+
+
+def _find_nextflow_job(value):
+    if isinstance(value, dict):
+        if value.get("image") == "nextflow_kickstart" and value.get(
+            "command"
+        ) == ["/usr/local/bin/entrypoint.sh"]:
+            return value
+        for child in value.values():
+            result = _find_nextflow_job(child)
+            if result is not None:
+                return result
+    elif isinstance(value, list):
+        for child in value:
+            result = _find_nextflow_job(child)
+            if result is not None:
+                return result
+    return None
+
+
+def test_dev_nextflow_job_passes_batch_host_cli_path():
+    pulumi_config = yaml.safe_load(
+        (REPO_ROOT / "Pulumi.cape-cod-dev.yaml").read_text()
+    )
+    nextflow_job = _find_nextflow_job(pulumi_config)
+
+    assert nextflow_job is not None
+    assert {
+        item["name"]: item["value"] for item in nextflow_job["environment"]
+    }["NEXTFLOW_AWS_BATCH_CLI_PATH"] == "/home/ec2-user/miniconda/bin/aws"
