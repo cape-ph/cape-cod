@@ -12,8 +12,8 @@
             "processOverrides": {
                 "kraken2": {
                     "selector": ".*KRAKEN2_KRAKEN2.*",
-                    "cpus": 4,
-                    "memory": "16.GB",
+                    "cpus": 2,
+                    "memory": "9.GB",
                     "time": "4.h"
                 }
             }

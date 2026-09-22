@@ -40,6 +40,7 @@ def test_bactopia_v4_base_profile_uses_shared_runtime():
 
     assert profile["project"] == "bactopia/bactopia"
     assert profile["version"] == "v4.1.0"
+    assert profile["execution"] == {"class": "general-analysis"}
     assert schema["properties"]["-profile"] == {
         "const": "docker",
         "default": "docker",
@@ -64,8 +65,8 @@ def test_taxprofiler_kraken2_profile_has_runtime_policy():
     assert profile["execution"]["class"] == "taxonomic-profiling"
     assert override == {
         "selector": ".*KRAKEN2_KRAKEN2.*",
-        "cpus": 4,
-        "memory": "16.GB",
+        "cpus": 2,
+        "memory": "9.GB",
         "time": "4.h",
     }
 
@@ -106,7 +107,10 @@ def test_submit_handler_reads_deployment_batch_values(monkeypatch):
     for name, value in values.items():
         monkeypatch.setenv(name, value)
 
-    assert submit_handler._get_batch_configuration() == values
+    assert submit_handler._get_batch_configuration() == {
+        **values,
+        "EXECUTION_CLASS_QUEUE_MAP": {},
+    }
 
 
 def test_submit_handler_rejects_missing_deployment_batch_values(monkeypatch):
@@ -129,6 +133,10 @@ def test_submit_handler_passes_profile_process_overrides(monkeypatch):
         "JOB_QUEUE_NAME": "analysis-queue",
     }.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setenv(
+        "EXECUTION_CLASS_QUEUE_MAP",
+        json.dumps({"taxonomic-profiling": "taxonomy-queue"}),
+    )
 
     class FakePipelineTable:
         def get_pipelines_by_name(self, pipeline_name, pipeline_version):
@@ -140,16 +148,17 @@ def test_submit_handler_passes_profile_process_overrides(monkeypatch):
                         "project": "nf-core/taxprofiler",
                         "version": "2.0.1",
                         "execution": {
+                            "class": "taxonomic-profiling",
                             "nextflow": {
                                 "processOverrides": {
                                     "kraken2": {
                                         "selector": ".*KRAKEN2_KRAKEN2.*",
-                                        "cpus": 4,
-                                        "memory": "16.GB",
+                                        "cpus": 2,
+                                        "memory": "9.GB",
                                         "time": "4.h",
                                     }
                                 }
-                            }
+                            },
                         },
                     }
                 }
@@ -187,10 +196,63 @@ def test_submit_handler_passes_profile_process_overrides(monkeypatch):
         for item in captured["containerOverrides"]["environment"]
     }
     assert environment["PIPELINE"] == "nf-core/taxprofiler"
+    assert environment["PIPELINE_QUEUE"] == "taxonomy-queue"
     assert (
         json.loads(environment["NEXTFLOW_PROCESS_OVERRIDES"])["kraken2"]["cpus"]
-        == 4
+        == 2
     )
+
+
+def test_submit_handler_rejects_unknown_execution_class(monkeypatch):
+    submit_handler = _load_submit_handler(monkeypatch)
+    for name, value in {
+        "WORKFLOW_QUEUE_NAME": "workflow-queue",
+        "NEXTFLOW_JOB_DEFINITION_NAME": "nextflow-job-definition",
+        "JOB_QUEUE_NAME": "analysis-queue",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv(
+        "EXECUTION_CLASS_QUEUE_MAP",
+        json.dumps({"taxonomic-profiling": "taxonomy-queue"}),
+    )
+
+    class FakePipelineTable:
+        def get_pipelines_by_name(self, pipeline_name, pipeline_version):
+            return [
+                {
+                    "profile": {
+                        "project": "example/pipeline",
+                        "version": pipeline_version,
+                        "execution": {"class": "unsupported-class"},
+                    }
+                }
+            ]
+
+    monkeypatch.setattr(submit_handler, "PipelineTable", FakePipelineTable)
+    submitted = False
+
+    class FakeBatchClient:
+        def submit_job(self, **kwargs):
+            nonlocal submitted
+            submitted = True
+            return {}
+
+    monkeypatch.setattr(submit_handler, "batch_client", FakeBatchClient())
+    response = submit_handler.index_handler(
+        {
+            "body": json.dumps(
+                {
+                    "pipelineName": "Unknown",
+                    "pipelineVersion": "1.0.0",
+                    "nextflowOptions": "",
+                }
+            )
+        },
+        SimpleNamespace(aws_request_id="request-test"),
+    )
+
+    assert response["statusCode"] == 400
+    assert submitted is False
 
 
 def test_submit_handler_uses_deployment_batch_values(monkeypatch):
@@ -279,7 +341,41 @@ def test_dev_api_scopes_dynamic_batch_values_to_submit_handler():
         "WORKFLOW_QUEUE_NAME",
         "NEXTFLOW_JOB_DEFINITION_NAME",
         "JOB_QUEUE_NAME",
+        "EXECUTION_CLASS_QUEUE_MAP",
     }
+
+
+def test_dev_config_routes_taxonomic_runs_to_general_analysis():
+    pulumi_config = yaml.safe_load(
+        (REPO_ROOT / "Pulumi.cape-cod-dev.yaml").read_text()
+    )
+    private_config = pulumi_config["config"]["cape-cod:swimlanes"]["private"]
+    compute = private_config["compute"]
+    environments = {
+        (item["name"], item.get("generation")): item
+        for item in compute["environments"]["batch"]
+    }
+
+    assert compute["execution_routes"] == {
+        "workflow-orchestration": {
+            "environment": "workflows",
+            "generation": 1,
+        },
+        "general-analysis": {
+            "environment": "analysis",
+            "generation": 1,
+        },
+        "taxonomic-profiling": {
+            "environment": "analysis",
+            "generation": 1,
+        },
+    }
+    assert environments[("workflows", 1)]["image"] == "ami-0ad4ff177982b3e5e"
+    assert environments[("analysis", 1)]["image"] == "ami-0ad4ff177982b3e5e"
+    assert not any(
+        item["name"] == "taxonomic-profiling"
+        for item in compute["environments"]["batch"]
+    )
 
 
 def test_kickstart_separates_parent_and_batch_host_cli_paths():

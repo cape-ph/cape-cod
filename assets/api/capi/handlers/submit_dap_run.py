@@ -14,6 +14,28 @@ logger = logging.getLogger(__name__)
 batch_client = boto3.client("batch")
 
 
+def _parse_execution_class_queue_map(raw_value):
+    """Parse the trusted execution-class to Batch-queue mapping."""
+
+    if not raw_value:
+        return {}
+    try:
+        routes = json.loads(raw_value)
+    except json.JSONDecodeError:
+        logger.error("Invalid execution-class queue map JSON")
+        return None
+    if not isinstance(routes, dict) or any(
+        not isinstance(execution_class, str)
+        or not execution_class
+        or not isinstance(queue_name, str)
+        or not queue_name
+        for execution_class, queue_name in routes.items()
+    ):
+        logger.error("Invalid execution-class queue map structure")
+        return None
+    return routes
+
+
 def _get_batch_configuration():
     """Return Batch resource names supplied by the deployment environment."""
 
@@ -23,12 +45,24 @@ def _get_batch_configuration():
             "NEXTFLOW_JOB_DEFINITION_NAME"
         ),
         "JOB_QUEUE_NAME": os.getenv("JOB_QUEUE_NAME"),
+        "EXECUTION_CLASS_QUEUE_MAP": _parse_execution_class_queue_map(
+            os.getenv("EXECUTION_CLASS_QUEUE_MAP")
+        ),
     }
-    missing = [name for name, value in configuration.items() if not value]
-    if missing:
-        logger.error(
-            "Missing required Batch configuration: %s", ", ".join(missing)
+    missing = [
+        name
+        for name in (
+            "WORKFLOW_QUEUE_NAME",
+            "NEXTFLOW_JOB_DEFINITION_NAME",
+            "JOB_QUEUE_NAME",
         )
+        if not configuration[name]
+    ]
+    if missing or configuration["EXECUTION_CLASS_QUEUE_MAP"] is None:
+        if missing:
+            logger.error(
+                "Missing required Batch configuration: %s", ", ".join(missing)
+            )
         return None
     return configuration
 
@@ -51,6 +85,34 @@ def _get_pipeline_profile(pipeline_name, pipeline_version):
             f"Multiple DAP profiles found for {pipeline_name}@{pipeline_version}"
         )
     return profiles[0]["profile"]
+
+
+def _get_pipeline_queue(pipeline_profile, batch_configuration):
+    """Resolve the trusted profile's child queue, with a legacy fallback."""
+
+    if pipeline_profile is None:
+        return batch_configuration["JOB_QUEUE_NAME"]
+
+    execution = pipeline_profile.get("execution", {})
+    if execution is None:
+        execution = {}
+    if not isinstance(execution, dict):
+        raise ValueError("DAP execution configuration must be an object")
+
+    execution_class = execution.get("class")
+    if execution_class is None:
+        return batch_configuration["JOB_QUEUE_NAME"]
+    if not isinstance(execution_class, str) or not execution_class:
+        raise ValueError("DAP execution class must be a non-empty string")
+
+    queue_name = batch_configuration["EXECUTION_CLASS_QUEUE_MAP"].get(
+        execution_class
+    )
+    if not queue_name:
+        raise ValueError(
+            f"No Batch queue configured for execution class {execution_class}"
+        )
+    return queue_name
 
 
 def index_handler(event, context):
@@ -84,23 +146,28 @@ def index_handler(event, context):
         else:
             pipeline_project = pipeline_profile["project"]
             pipeline_version = pipeline_profile["version"]
-            process_overrides = (
-                pipeline_profile.get("execution", {})
-                .get("nextflow", {})
-                .get("processOverrides", {})
+            execution = pipeline_profile.get("execution", {})
+            if execution is None:
+                execution = {}
+            if not isinstance(execution, dict):
+                raise ValueError(
+                    "DAP execution configuration must be an object"
+                )
+            process_overrides = execution.get("nextflow", {}).get(
+                "processOverrides", {}
             )
             if not isinstance(process_overrides, dict):
                 raise ValueError(
                     "DAP Nextflow process overrides must be an object"
                 )
 
+        pipeline_queue = _get_pipeline_queue(
+            pipeline_profile, batch_configuration
+        )
         container_environment = [
             {"name": "PIPELINE", "value": pipeline_project},
             {"name": "PIPELINE_VERSION", "value": pipeline_version},
-            {
-                "name": "PIPELINE_QUEUE",
-                "value": batch_configuration["JOB_QUEUE_NAME"],
-            },
+            {"name": "PIPELINE_QUEUE", "value": pipeline_queue},
             {"name": "NF_OPTS", "value": nf_opts},
         ]
         if process_overrides:
