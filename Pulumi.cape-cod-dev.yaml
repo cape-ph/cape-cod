@@ -550,7 +550,7 @@ config:
                 # `engine_version` (string, optional)
                 # The database engine version to use. We have only tested and
                 # configured on postgres >=18.x.
-                engine_version: "18.2"
+                engine_version: "18.3"
                 # `instance_class` (string, optional)
                 # The machine class the RDS instance will live on. Should map to
                 # values here:
