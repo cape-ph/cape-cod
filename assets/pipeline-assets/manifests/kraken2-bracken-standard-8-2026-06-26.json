@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "assetId": "kraken2-bracken-standard-8",
+  "assetKind": "database",
+  "toolFamily": "kraken2-bracken",
+  "collection": "Standard-8",
+  "version": "2026-06-26",
+  "consumers": [
+    "nf-core/taxprofiler@2.0.1"
+  ],
+  "source": {
+    "archiveUrl": "https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08_GB_20260626.tar.gz",
+    "inspectUrl": "https://genome-idx.s3.amazonaws.com/kraken/standard_08_GB_20260626/inspect.txt",
+    "libraryUrl": "https://genome-idx.s3.amazonaws.com/kraken/standard_08_GB_20260626/library_report.tsv",
+    "md5Url": "https://genome-idx.s3.amazonaws.com/kraken/standard_08_GB_20260626/standard_08_GB.md5",
+    "archiveSizeGb": 5.5,
+    "indexSizeGb": 7.5,
+    "databaseCapGb": 8,
+    "description": "Standard Kraken2 and Bracken package with the database capped at 8 GB"
+  },
+  "publish": {
+    "rootPrefix": "pipelines/shared/databases/kraken2-bracken/standard-8/2026-06-26"
+  }
+}
