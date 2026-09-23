@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -153,7 +154,7 @@ def test_submit_handler_passes_profile_process_overrides(monkeypatch):
                                 "processOverrides": {
                                     "kraken2": {
                                         "selector": ".*KRAKEN2_KRAKEN2.*",
-                                        "cpus": 2,
+                                        "cpus": Decimal("2"),
                                         "memory": "9.GB",
                                         "time": "4.h",
                                     }

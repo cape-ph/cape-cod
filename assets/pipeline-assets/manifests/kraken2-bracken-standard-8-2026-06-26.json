@@ -8,6 +8,14 @@
   "consumers": [
     "nf-core/taxprofiler@2.0.1"
   ],
+  "runtime": {
+    "databaseSheet": {
+      "tool": "kraken2",
+      "dbName": "standard-8",
+      "dbParams": "",
+      "dbType": "long"
+    }
+  },
   "source": {
     "archiveUrl": "https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08_GB_20260626.tar.gz",
     "inspectUrl": "https://genome-idx.s3.amazonaws.com/kraken/standard_08_GB_20260626/inspect.txt",

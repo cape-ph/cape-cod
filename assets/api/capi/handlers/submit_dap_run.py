@@ -7,7 +7,10 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 from capepy.aws.dynamodb import PipelineTable
-from capepy.aws.utils import decode_error
+from capepy.aws.utils import (
+    decode_error,
+    json_serialize_the_unserializable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +178,9 @@ def index_handler(event, context):
                 {
                     "name": "NEXTFLOW_PROCESS_OVERRIDES",
                     "value": json.dumps(
-                        process_overrides, separators=(",", ":")
+                        process_overrides,
+                        default=json_serialize_the_unserializable,
+                        separators=(",", ":"),
                     ),
                 }
             )
