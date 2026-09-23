@@ -139,6 +139,13 @@ for all operations.
 
 ## 🔬 Usage/Deployment
 
+### Pipeline asset publication
+
+Pulumi does not publish large pipeline assets. If a deployment uses a new
+asset version, publish and verify that asset manually before using it. This is
+a manual process documented in the [Shared pipeline assets](./extra-doc/README.pipeline-assets.md)
+sub-readme.
+
 ### Extending the cape-cod Stack
 
 To make your own stack with a secure encryption key and to set your own config
@@ -184,6 +191,7 @@ in some detail in the VPN README referenced in the
 ## 📐 Additional Documentation
 
 - [General CAPE Usage](./extra-doc/README.using-cape.md)
+- [Shared pipeline assets](./extra-doc/README.pipeline-assets.md)
 - [Debug VPN Deployment/Setup](./extra-doc/README.vpn.md)
 - [Writeup of some queuing considerations](./extra-doc/README.queuing.md)
 

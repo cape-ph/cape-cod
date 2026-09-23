@@ -6,10 +6,11 @@ updated: 2026-09-23
 status: current
 ---
 
-Status: current Issue 379 checkpoint as of commit `abad135` and the successful
-2026-09-23 deployment and normal DAP validation. This page supersedes older
-status statements in [[analyses/bactopia-41-new-session-handoff]] and records
-historical handoffs below without rewriting their source evidence.
+Status: current Issue 379 checkpoint after commit `abad135`, the successful
+2026-09-23 deployment, and the representative data-product validation. This
+page supersedes older status statements in
+[[analyses/bactopia-41-new-session-handoff]] and records historical handoffs
+below without rewriting their source evidence.
 
 ## Current checkpoint
 
@@ -19,15 +20,20 @@ Completed:
 - The standalone `nf-core/taxprofiler` v2.0.1 Kraken2 DAP is the selected replacement for Bactopia's v4 Kraken2 wrapper.
 - The immutable Standard-8 Kraken2/Bracken database is published in the meta-assets bucket and the runtime export is deployed.
 - The deployed DAP handler serializes DynamoDB `Decimal` process overrides through capepy's shared JSON serializer.
-- The normal DAP path returned HTTP 200; the parent, Kraken2 child, and MultiQC child all succeeded. The normal DAP fixture used one synthetic read, while representative Kraken2 report evidence exists from the standalone canary.
+- The normal DAP path returned HTTP 200. The representative taxprofiler parent `f72665b0-9ff9-4e11-9ead-5ac5cd3aab2d`, Kraken2 child `104e0d80-1f4b-485f-9e79-2c851f16554d`, and MultiQC child all succeeded with exit code 0.
+- The standalone taxprofiler report exists at `batch_job_scratch/issue379-taxprofiler-bactopia-v4-20260923192043/output/kraken2/standard-8/caerbannog-test-nf2604-bt410_bactopia-20260916-132854_standard-8.kraken2.kraken2.report.txt`. Its schema and semantic output remain compatible with the v3 baseline; rank-code and low-count ordering differences are expected.
+- The deployed output-derived Bactopia report ETL succeeded for the v4 HTML replay. The result-clean crawler succeeded, and the corrected metadata CSV omits `bactopia_run` as a data column while retaining it as the partition.
+- The stale duplicate `bactopia_run` column in the dev Glue table was repaired with owner approval. The follow-up Athena query succeeded and returned the expected v4 metadata, including Bactopia 4.1.0, Nextflow 26.04.6, input path, output root, QC path, and `--ont`.
+- The deployed Aiken-era `report/get` handler was invoked directly for `micah-test-2` and returned separate `bactopia`, `kraken2`, and `rabits` HTML bodies with `createdAt` values. This confirms the multi-report body API used by the frontend.
 - The asset publisher, taxprofiler database-sheet generator, edge-case tests, and transitional `cape-cod-env` handoff note are committed in `abad135`.
 
-Remaining for migration acceptance:
+Validation boundary and remaining work:
 
-- Run a representative Bactopia v4.1 -> taxprofiler Kraken2 -> CAPE ETL -> report path.
-- Add the v4 crawlable run-metadata sidecar needed for future report joins; legacy v3 `software_versions.yml` compatibility is not a new-run requirement.
-- Reconcile final report, Athena, and semantic Kraken2 output behavior against the v4 contract.
-- Clean and commit the authored issue-379 wiki checkpoint separately from the feature commit.
+- `report/get` reads pre-rendered objects from `reports/<sample_id>/`; it does not generate reports. The existing Aiken artifact bodies are present for historical samples, but the new Issue 379 v4 replay objects currently exist in result-raw/result-clean and have not been published as new `reports/<sample_id>/bactopia.html` or `kraken2.html` artifacts.
+- `report/create` remains a separate on-demand path. Its deployed data Lambda currently fails because the report role lacks `s3:GetObject` access to the input-clean objects required by the `input_meta` Athena CTAS query. The defect and longer-term pre-generation work are recorded in issue #367.
+- The current v4 taxprofiler raw report and CAPE ETL metadata are validated. Rendering and publishing the current v4 Kraken2 HTML artifact remains owned by the external report-generation path, not this CAPE Cod ETL change.
+- The v4 crawlable run-metadata contract is now implemented through the existing Bactopia results ETL and partitioned `software_versions.csv`; legacy v3 `software_versions.yml` compatibility remains preserved.
+- Clean and commit the remaining authored Issue 379 wiki checkpoint separately from the feature commit. Do not stage unrelated working-tree files.
 
 Ownership boundaries:
 

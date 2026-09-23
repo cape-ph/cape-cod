@@ -1889,6 +1889,7 @@ config:
                             suffixes:
                                 - tsv
                                 - yml
+                                - html
                             pymodules:
                                 - pyyaml==6.0.2
                           - name: bactopia-samples

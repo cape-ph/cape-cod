@@ -61,6 +61,92 @@ def _written_csv(fake_job):
     return key, list(csv.reader(io.StringIO(content)))
 
 
+def test_v4_workflow_report_adapter_emits_crawlable_report_join_rows(
+    monkeypatch,
+):
+    module, _ = _load_etl(
+        monkeypatch,
+        "etl_bactopia_results_workflow_report_test",
+        "assets/etl/etl_bactopia_results.py",
+        "pipeline-output/bactopia-runs/run-1/merged-results/mlst.tsv",
+        _read_fixture("merged-results/mlst.tsv"),
+    )
+
+    rows = module.OUTPUT_ADAPTER.parse_workflow_report(
+        _read_fixture("bactopia-report.html"), "run-1"
+    )
+
+    assert rows[0] == module.OUTPUT_ADAPTER.WORKFLOW_REPORT_OUTPUT_HEADER
+    assert rows[1][0:11] == [
+        "sample",
+        "2026-09-16 13:28:57.000000",
+        "2026-09-16 13:53:55.000000",
+        "bactopia",
+        "4.1.0",
+        "26.04.6",
+        "s3://example-input-clean/input/sample.fastq.gz",
+        "s3://example-result-clean/pipeline-output/bactopia-runs/run-1/",
+        "s3://example-result-clean/pipeline-output/bactopia-runs/run-1/sample/main/qc/sample_ONT.fastq.gz",
+        "bactopia-v4-v1",
+        "--ont",
+    ]
+    assert rows[1][11].startswith("nextflow run bactopia/bactopia")
+
+
+def test_v4_workflow_report_etl_writes_software_versions_table(monkeypatch):
+    _, fake_job = _load_etl(
+        monkeypatch,
+        "etl_bactopia_results_workflow_report_etl_test",
+        "assets/etl/etl_bactopia_results.py",
+        "pipeline-output/bactopia-runs/run-1/nf-reports/bactopia-report.html",
+        _read_fixture("bactopia-report.html"),
+    )
+
+    key, rows = _written_csv(fake_job)
+
+    assert key == "software_versions/bactopia_run=run-1/software_versions.csv"
+    assert rows[1][0:6] == [
+        "sample",
+        "2026-09-16 13:28:57.000000",
+        "2026-09-16 13:53:55.000000",
+        "bactopia",
+        "4.1.0",
+        "26.04.6",
+    ]
+
+
+def test_v4_workflow_report_adapter_rejects_missing_command(monkeypatch):
+    module, _ = _load_etl(
+        monkeypatch,
+        "etl_bactopia_results_workflow_report_schema_test",
+        "assets/etl/etl_bactopia_results.py",
+        "pipeline-output/bactopia-runs/run-1/merged-results/mlst.tsv",
+        _read_fixture("merged-results/mlst.tsv"),
+    )
+    source = _read_fixture("bactopia-report.html").replace(
+        b"Nextflow command", b"Workflow command"
+    )
+
+    with pytest.raises(ValueError, match="Nextflow command"):
+        module.OUTPUT_ADAPTER.parse_workflow_report(source, "run-1")
+
+
+def test_v4_workflow_report_adapter_rejects_missing_sample_option(monkeypatch):
+    module, _ = _load_etl(
+        monkeypatch,
+        "etl_bactopia_results_workflow_report_sample_test",
+        "assets/etl/etl_bactopia_results.py",
+        "pipeline-output/bactopia-runs/run-1/merged-results/mlst.tsv",
+        _read_fixture("merged-results/mlst.tsv"),
+    )
+    source = _read_fixture("bactopia-report.html").replace(
+        b"--sample sample", b"--sample"
+    )
+
+    with pytest.raises(ValueError, match="--sample"):
+        module.OUTPUT_ADAPTER.parse_workflow_report(source, "run-1")
+
+
 def test_v4_mlst_adapter_emits_stable_six_column_schema(monkeypatch):
     module, fake_job = _load_etl(
         monkeypatch,

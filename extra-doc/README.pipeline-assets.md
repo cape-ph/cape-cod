@@ -4,6 +4,11 @@ CAPE stores shared, immutable pipeline assets in the meta-assets S3 bucket. The
 bucket is created by CAPE infrastructure, but large asset payloads are not
 managed as Pulumi `FileAsset` objects.
 
+For now, publishing a new pipeline asset is a manual deployment step. Pulumi
+creates the bucket and supporting infrastructure, but it does not download or
+publish the large asset payload. Follow this document to plan, publish, and
+verify the immutable asset before using a new version in a deployment.
+
 ## Manifest layout
 
 Keep one small JSON manifest per asset version under:

@@ -1,10 +1,12 @@
 """ETL script for the initial subset of bactopia results we'll handle."""
 
 import csv
+import html
 import io
 import os
 import re
 import shlex
+from datetime import datetime
 
 import yaml
 from capepy.aws.glue import EtlJob
@@ -23,6 +25,9 @@ AMRFINDERPLUS_LEGACY_OBJ = "amrfinderplus-proteins.tsv"
 AMRFINDERPLUS_OBJ = "amrfinderplus.tsv"
 # file which contains the command used to execute bactopia
 SOFTWARE_VERSION_OBJ = "software_versions.yml"
+# Bactopia writes this report after the workflow completes successfully.
+WORKFLOW_REPORT_OBJ = "bactopia-report.html"
+BACTOPIA_OUTPUT_PREFIX = "pipeline-output/bactopia-runs"
 
 # TODO: These are the keys we care about matching and processing right now.
 #       this is not exhaustive in the long term and really only supports
@@ -72,6 +77,20 @@ class BactopiaOutputContractV1Adapter:
             "%_coverage_of_reference",
             "%_identity_to_reference",
         }
+    )
+    WORKFLOW_REPORT_OUTPUT_HEADER = (
+        "sample_id",
+        "run_date",
+        "workflow_complete",
+        "pipeline_name",
+        "bactopia_version",
+        "nextflow_version",
+        "input_file",
+        "output_root",
+        "qc_path",
+        "output_contract_version",
+        "parameter_name",
+        "command",
     )
 
     def parse_mlst(self, source_bytes):
@@ -135,6 +154,118 @@ class BactopiaOutputContractV1Adapter:
             output.append(row)
         return output
 
+    def parse_workflow_report(self, source_bytes, bactopia_run):
+        """Normalize the final Bactopia workflow report for crawlable output."""
+        try:
+            source = html.unescape(source_bytes.decode("utf-8"))
+        except UnicodeDecodeError as error:
+            raise ValueError(
+                f"Invalid Bactopia workflow report encoding: {error}"
+            ) from error
+
+        def extract(pattern, field):
+            match = re.search(pattern, source, flags=re.DOTALL)
+            if not match:
+                raise ValueError(f"Bactopia workflow report is missing {field}")
+            value = re.sub(r"<[^>]+>", "", match.group(1))
+            value = " ".join(value.split())
+            if not value:
+                raise ValueError(
+                    f"Bactopia workflow report field {field} is empty"
+                )
+            return value
+
+        def normalize_time(value, field):
+            try:
+                return datetime.strptime(value, "%d-%b-%Y %H:%M:%S").strftime(
+                    "%Y-%m-%d %H:%M:%S.%f"
+                )
+            except ValueError as error:
+                raise ValueError(
+                    f"Bactopia workflow report field {field} has an invalid time: {value}"
+                ) from error
+
+        workflow_start = normalize_time(
+            extract(r'id="workflow_start">([^<]+)<', "workflow_start"),
+            "workflow_start",
+        )
+        workflow_complete = normalize_time(
+            extract(r'id="workflow_complete">([^<]+)<', "workflow_complete"),
+            "workflow_complete",
+        )
+        pipeline_name = extract(
+            r"<dt[^>]*>\s*Workflow name\s*</dt>\s*"
+            r"<dd[^>]*>(.*?)</dd>",
+            "workflow name",
+        )
+        bactopia_version = extract(
+            r"<dt[^>]*>\s*Workflow version\s*</dt>\s*"
+            r"<dd[^>]*>(.*?)</dd>",
+            "workflow version",
+        )
+        nextflow_details = extract(
+            r"<dt[^>]*>\s*Nextflow version\s*</dt>\s*"
+            r"<dd[^>]*>(.*?)</dd>",
+            "Nextflow version",
+        )
+        nextflow_match = re.search(
+            r"\bversion\s+([0-9]+(?:\.[0-9]+)+)", nextflow_details
+        )
+        if nextflow_match is None:
+            raise ValueError(
+                "Bactopia workflow report has no parseable Nextflow version"
+            )
+        nextflow_version = nextflow_match.group(1)
+        command = extract(
+            r"<dt[^>]*>\s*Nextflow command\s*</dt>\s*"
+            r"<dd[^>]*>.*?<code>(.*?)</code>",
+            "Nextflow command",
+        )
+        command = " ".join(command.split())
+        command_parts = shlex.split(command)
+
+        def command_option(option):
+            try:
+                option_index = command_parts.index(option)
+                value = command_parts[option_index + 1]
+                if value.startswith("--"):
+                    raise ValueError
+                return value
+            except (ValueError, IndexError) as error:
+                raise ValueError(
+                    f"Bactopia workflow command is missing {option}"
+                ) from error
+
+        input_file = command_option("--ont")
+        output_root = command_option("--outdir")
+        sample_id = command_option("--sample")
+        if not input_file.startswith("s3://"):
+            raise ValueError("Bactopia --ont input must be an S3 URI")
+        if not output_root.startswith("s3://"):
+            raise ValueError("Bactopia --outdir must be an S3 URI")
+
+        qc_path = (
+            f"{output_root.rstrip('/')}/{sample_id}/main/qc/"
+            f"{sample_id}_ONT.fastq.gz"
+        )
+        return [
+            self.WORKFLOW_REPORT_OUTPUT_HEADER,
+            [
+                sample_id,
+                workflow_start,
+                workflow_complete,
+                pipeline_name,
+                bactopia_version,
+                nextflow_version,
+                input_file,
+                output_root,
+                qc_path,
+                "bactopia-v4-v1",
+                "--ont",
+                command,
+            ],
+        ]
+
 
 OUTPUT_ADAPTER = BactopiaOutputContractV1Adapter()
 
@@ -153,18 +284,30 @@ objname = None
 suffix = None
 
 alert_obj_key = etl_job.parameters["OBJECT_KEY"]
-for file in BACTRUN_FILES:
-    if alert_obj_key.endswith(f"{file['prefix']}{file['key']}"):
-        # in the case of bactopia output files, we'll want the first 2 parts of
-        # the original prefix (e.g. 'bactopia-runs/bactopia-20241008-183748/')
-        # and the object name sith suffix. conveniently this means we can just
-        # split on "merged-results/"
-        prefix, objfull = alert_obj_key.split(file["prefix"])
-        _, prefix = prefix.split("bactopia-runs/")
-        # if we have an old named amrfinder plus file, rename the output name to be
-        # the asme as the newer ones
-        objname, suffix = objfull.split(".")
-        break
+run_manifest_match = re.fullmatch(
+    rf"{re.escape(BACTOPIA_OUTPUT_PREFIX)}/([^/]+)/"
+    rf"nf-reports/{re.escape(WORKFLOW_REPORT_OBJ)}",
+    alert_obj_key,
+)
+if run_manifest_match:
+    prefix = run_manifest_match.group(1)
+    objfull = WORKFLOW_REPORT_OBJ
+    objname = "software_versions"
+    suffix = "html"
+else:
+    for file in BACTRUN_FILES:
+        if alert_obj_key.endswith(f"{file['prefix']}{file['key']}"):
+            # in the case of Bactopia output files, we'll want the first 2 parts
+            # of the original prefix (e.g.
+            # 'bactopia-runs/bactopia-20241008-183748/') and the object name
+            # with its suffix. conveniently this means we can just split on
+            # "merged-results/"
+            prefix, objfull = alert_obj_key.split(file["prefix"])
+            _, prefix = prefix.split("bactopia-runs/")
+            # if we have an old named amrfinder plus file, rename the output
+            # name to be the same as the newer ones
+            objname, suffix = objfull.split(".")
+            break
 
 
 # we should have no missing values here
@@ -243,5 +386,11 @@ with io.StringIO() as sio_buff:
                         [id, bactopia_version, run_date, part, parameter_name]
                     )
                     id += 1
+
+    elif objfull == WORKFLOW_REPORT_OBJ:
+        print(f"Processing Bactopia workflow report (raw key: {alert_obj_key})")
+        writer.writerows(
+            OUTPUT_ADAPTER.parse_workflow_report(etl_job.get_src_file(), prefix)
+        )
 
     etl_job.write_sink_file(sio_buff.getvalue(), clean_obj_key)
