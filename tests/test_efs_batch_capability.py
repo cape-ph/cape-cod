@@ -4,13 +4,14 @@ import ast
 import base64
 import json
 from pathlib import Path
+from typing import Any, Callable, cast
 
 import pytest
 
 REPO_ROOT = Path(__file__).parents[1]
 
 
-def _load_bootstrap_renderer():
+def _load_bootstrap_renderer() -> Callable[[dict[str, Any]], str]:
     source = (REPO_ROOT / "capeinfra/pipeline/batch.py").read_text()
     tree = ast.parse(source)
     function = next(
@@ -22,9 +23,12 @@ def _load_bootstrap_renderer():
     module = ast.fix_missing_locations(
         ast.Module(body=[function], type_ignores=[])
     )
-    namespace = {"base64": base64, "json": json}
+    namespace: dict[str, Any] = {"base64": base64, "json": json}
     exec(compile(module, "batch.py", "exec"), namespace)
-    return namespace["render_host_bootstrap_user_data"]
+    return cast(
+        Callable[[dict[str, Any]], str],
+        namespace["render_host_bootstrap_user_data"],
+    )
 
 
 def test_render_host_bootstrap_user_data_writes_efs_contract():
