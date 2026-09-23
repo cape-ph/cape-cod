@@ -16,7 +16,6 @@ from pipeline_assets import (
 from pipeline_assets import publisher as asset_publisher
 from pipeline_assets.database_sheet import build_database_sheet
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_DIR = REPO_ROOT / "assets/pipeline-assets/manifests"
 

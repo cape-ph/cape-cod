@@ -194,18 +194,15 @@ class BactopiaOutputContractV1Adapter:
             "workflow_complete",
         )
         pipeline_name = extract(
-            r"<dt[^>]*>\s*Workflow name\s*</dt>\s*"
-            r"<dd[^>]*>(.*?)</dd>",
+            r"<dt[^>]*>\s*Workflow name\s*</dt>\s*" r"<dd[^>]*>(.*?)</dd>",
             "workflow name",
         )
         bactopia_version = extract(
-            r"<dt[^>]*>\s*Workflow version\s*</dt>\s*"
-            r"<dd[^>]*>(.*?)</dd>",
+            r"<dt[^>]*>\s*Workflow version\s*</dt>\s*" r"<dd[^>]*>(.*?)</dd>",
             "workflow version",
         )
         nextflow_details = extract(
-            r"<dt[^>]*>\s*Nextflow version\s*</dt>\s*"
-            r"<dd[^>]*>(.*?)</dd>",
+            r"<dt[^>]*>\s*Nextflow version\s*</dt>\s*" r"<dd[^>]*>(.*?)</dd>",
             "Nextflow version",
         )
         nextflow_match = re.search(

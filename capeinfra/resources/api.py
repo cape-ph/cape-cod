@@ -47,8 +47,9 @@ class CapeRestApi(CapeComponentResource):
         vpc_endpoint: aws.ec2.VpcEndpoint,
         domain_name: Output,
         *args,
-        handler_env_vars: Mapping[str, Mapping[str, Output[str] | str]]
-        | None = None,
+        handler_env_vars: (
+            Mapping[str, Mapping[str, Output[str] | str]] | None
+        ) = None,
         # TODO: the vpc config was added hastily here as we need the
         #       lambdas to be deployed in the vpc to have access to MWAA.
         #       may not need changing, but the design should be thought more

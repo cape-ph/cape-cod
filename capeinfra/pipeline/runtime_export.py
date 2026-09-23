@@ -6,7 +6,6 @@ from typing import Any
 
 import pulumi
 
-
 PIPELINE_ASSET_ROOT_PREFIX = "pipelines/"
 PIPELINE_ASSET_MANIFEST_PREFIX = "pipelines/manifests/"
 PIPELINE_SHARED_DATABASE_PREFIX = "pipelines/shared/databases/"
@@ -44,8 +43,12 @@ def build_pipeline_runtime_export(
 ) -> pulumi.Output[dict[str, Any]]:
     """Build a stable infrastructure handoff for pipeline deployment tooling."""
     meta_bucket = meta.automation_assets_bucket.bucket
-    pipeline_registry = private_swimlane.analysis_pipeline_registry.analysis_pipeline_registry_ddb_table
-    workflow_registry = private_swimlane.workflow_meta_registry.workflow_meta_ddb_table.ddb_table
+    pipeline_registry = (
+        private_swimlane.analysis_pipeline_registry.analysis_pipeline_registry_ddb_table
+    )
+    workflow_registry = (
+        private_swimlane.workflow_meta_registry.workflow_meta_ddb_table.ddb_table
+    )
     nextflow_job_definition = private_swimlane.job_definitions[
         "nextflow"
     ].job_definition
