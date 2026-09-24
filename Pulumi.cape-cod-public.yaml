@@ -278,6 +278,11 @@ config:
         - name: etl-seqreadarch
           key: glue/etl/etl_seqarchive.py
           srcpth: ./assets/etl/etl_seqarchive.py
+        # TODO(#363): caerbannog consumer result archive; prefix
+        #             and archive format provisional.
+        - name: etl-caerbannog-results
+          key: glue/etl/etl_caerbannog_results.py
+          srcpth: ./assets/etl/etl_caerbannog_results.py
     # `report` (mapping, optional)
     # Contains configuration related to canned reports that can be
     # generated. Contains the following keys
@@ -528,7 +533,7 @@ config:
         # `engine_version` (string, optional)
         # The database engine version to use. We have only tested and
         # configured on postgres >=18.x.
-        engine_version: "18.2"
+        engine_version: "18.3"
         # `instance_class` (string, optional)
         # The machine class the RDS instance will live on. Should map to
         # values here:
@@ -708,6 +713,9 @@ config:
         #     * memory_size (int, defaults to 128[unit is MB])
         #     * runtime (string defaults to "python3.10")
         #     * timeout (int, defaults to 3[unit is seconds])
+        #   * `env_vars` (string[], optional)
+        #     A list of swimlane-exposed env vars passed only to this
+        #     handler. Entries must already be exposed by the swimlane.
         apis:
           - name: "capi"
             desc: "CAPE API"
@@ -909,6 +917,7 @@ config:
                   description: "getdaplogs Lambda Function"
                   memory_size: 128
                   timeout: 3
+                  # yamllint disable rule:line-length
               # TODO: if not used as part of workflows (probably
               #       won't be) this should be removed
               - id: "submit_dap_run_handler"
@@ -916,6 +925,11 @@ config:
                 code: "assets/api/capi/handlers/submit_dap_run.py"
                 layers:
                   - capi-all
+                env_vars:
+                  - "WORKFLOW_QUEUE_NAME"
+                  - "NEXTFLOW_JOB_DEFINITION_NAME"
+                  - "JOB_QUEUE_NAME"
+                  - "EXECUTION_CLASS_QUEUE_MAP"
                 funct_args:
                   handler: "index.index_handler"
                   runtime: "python3.10"
@@ -1054,6 +1068,22 @@ config:
                     variables:
                       LD_LIBRARY_PATH: "/opt/lib"
                       FONTCONFIG_PATH: "/opt/fonts"
+              - id: "get_reports_handler"
+                name: "getreports"
+                code: "assets/api/capi/handlers/get_reports.py"
+                layers:
+                  - capi-all
+                funct_args:
+                  handler: "index.index_handler"
+                  runtime: "python3.10"
+                  architectures:
+                    - "x86_64"
+                  description: "getreports Lambda Function"
+                  memory_size: 128
+                  # lists then reads the rendered report HTML
+                  # objects for a sample, so runtime scales with
+                  # the number/size of reports.
+                  timeout: 30
       # `static-apps` (mapping[], optional)
       # Contains configuration for static apps deployed as part of CAPE.
       # Static apps are deployed to s3 as html/js/css bundles and are
@@ -1225,7 +1255,7 @@ config:
               - cognito
           - name: "opa"
             short_name: "opa"
-            image: "ami-05080e4998b881ee0"
+            image: "ami-07b9e418d53f44854"
             public_ip: False
             instance_type: "t3a.medium"
             subnet_types:
@@ -1267,7 +1297,7 @@ config:
               - s3
           - name: "cape-frontend"
             short_name: "cfe"
-            image: "ami-06544672c7721b7a9"
+            image: "ami-08143e7b201031ca6"
             public_ip: False
             instance_type: "t3a.medium"
             subnet_types:
@@ -1357,6 +1387,22 @@ config:
       # CAPE. If this is not provided, an empty configuration will be used
       # and no compute environments will be deployed
       compute:
+        # Logical execution classes resolve to a logical environment
+        # and its active generation. Keep this route stable while a
+        # versioned environment is created and promoted.
+        execution_routes:
+          workflow-orchestration:
+            environment: workflows
+            generation: 1
+          general-analysis:
+            environment: analysis
+            generation: 1
+          # S3-backed taxonomic runs use the general analysis pool;
+          # the EFS capability remains dormant until a future consumer
+          # explicitly opts into it.
+          taxonomic-profiling:
+            environment: analysis
+            generation: 1
         # `environments` (mapping, optional)
         # Environments for aws batch and mwaa (airflow) are configured
         # in this section. There are mappings for both types of
@@ -1453,9 +1499,28 @@ config:
           # Each batch mapping in the list has the
           # following schema in addition to the shared keys mentioned
           # above:
+          # * `generation` (integer, optional)
+          #   The generation of this logical environment. Keep the
+          #   logical name stable while generations coexist during a
+          #   staged migration.
+          # * `resource_key` (string, optional)
+          #   The stable Pulumi resource key. Set this explicitly for
+          #   a legacy generation so its physical identity is kept.
+          # * `lifecycle` (string, optional)
+          #   Set to `legacy` to preserve an attached old generation
+          #   until its queue is drained and removed separately.
           # * `image` (string, required)
           #   The ID of the AWS AMI to launce the instances with. This
           #   image must exist in AWS already.
+          # * `host_bootstrap` (mapping, optional)
+          #   Optional host capability bootstrap data. EFS-backed
+          #   hosts may declare `efs_mounts` here; the Batch component
+          #   renders the merged AMI mounter contract as launch-template
+          #   user data. See `extra-doc/README.efs-batch.md` for the
+          #   full capability contract and operational guidance.
+          # * `security_group_source` (string, optional)
+          #   Reuse the managed security group from another Batch
+          #   environment when an external resource already trusts it.
           # * `resources` (mapping, required)
           #   A mapping of compute environment resource arguments to be
           #   passed *as-is* to the compute environment constructor. The
@@ -1467,6 +1532,8 @@ config:
           #   configured.
           batch:
             - name: workflows
+              generation: 1
+              resource_key: workflows
               image: ami-0ad4ff177982b3e5e
               subnet_types:
                 - compute
@@ -1479,6 +1546,8 @@ config:
                 desired_vcpus: 2
                 max_vcpus: 4
             - name: analysis
+              generation: 1
+              resource_key: analysis
               image: ami-0ad4ff177982b3e5e
               type: batch
               subnet_types:
@@ -1506,14 +1575,10 @@ config:
                 value: "1"
               - type: MEMORY
                 value: "2048"
-            mountPoints:
-              - sourceVolume: "nextflow_shared_data"
-                containerPath: "/mnt/nextflow_shared_data"
-                readOnly: true
-            volumes:
-              - name: "nextflow_shared_data"
-                efsVolumeConfiguration:
-                  fileSystemId: fs-0cc7e588b5015c314
+            environment:
+              - name: "NEXTFLOW_AWS_BATCH_CLI_PATH"
+                value: "/home/ec2-user/miniconda/bin/aws"
+                # yamllint enable rule:line-length
   # `cape-cod:datalakehouse` (mapping, required)
   # Contains configuration specific to the data lake house (DLH). The DLH
   # contains tributaries, which are compionents that consist of a pair of raw
@@ -1568,7 +1633,9 @@ config:
       #         A list of exclude patterns for the crawler. Leave the
       #         empty for no exclusions. The rules for these patterns are
       #         defined in the official aws docs (under exclude patterns)
+      # yamllint disable rule:line-length
       #         https://docs.aws.amazon.com/glue/latest/dg/define-crawler-choose-data-sources.html
+      # yamllint enable rule:line-length
       #       * `classifiers` (string[], optional)
       #         A list of custom classifiers for the crawler. If not
       #         provided the AWS schema detection will be allowed to
@@ -1625,13 +1692,53 @@ config:
       #         compatible version format (i.e.
       #         `package_name[version_specifier]`). More information on
       #         version specifiers van be found here:
+      # yamllint disable rule:line-length
       #         https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
+      # yamllint enable rule:line-length
       #       * `max_concurrent_runs` (int, optional)
       #         The max number of concurrent runs for the ETL Job. If the
       #         number of requested ETL runs is greater than this value,
       #         ETL jobs will be queued until currently running jobs are
       #         completed and the number of running jobs is < max.
       #         Defaults to 5.
+      #       WARNING: pointing an `etl` (or `notify`, below) rule's `src`
+      #       bucket+prefix at a prefix this SAME pipeline WRITES into
+      #       (e.g. its own `sink`) creates a self-triggering loop: the
+      #       write lands back in the watched prefix and re-triggers the
+      #       rule. Keep watched prefixes disjoint from written-back
+      #       prefixes.
+      #     * `notify` (mapping[], optional)
+      #       A list of data notification rules for the tributary. Unlike
+      #       `etl`, these do not run a Glue job - they only place a
+      #       message on a per-tributary data notification queue when a
+      #       matching object shows up, for consumption outside this
+      #       pipeline. Entirely additive; a tributary with no `notify`
+      #       list gets no notification queue and no extra AWS resources.
+      #       Each list item has the following schema
+      #       * `name` (string, required)
+      #         A short name for the notification rule. Needs to be unique
+      #         across notify rules in the tributary. This value is sent
+      #         as the `notification` field of the data notification
+      #         message so consumers can identify which rule matched.
+      #       * `src` (string, required)
+      #         The id of the bucket to watch (e.g. `input-clean`). This
+      #         is *not* required to also be an `etl` source - a bucket
+      #         can be notify-only.
+      #       * `prefix` (string, required)
+      #         The object key prefix to match. Format-agnostic (works
+      #         for any file type under the prefix).
+      #       * `suffixes` (string[], optional)
+      #         A list of object (e.g. file) suffixes to limit the rule
+      #         to. If not specified (or empty), the rule matches any
+      #         suffix under `prefix`.
+      #       * `message_retention_seconds` (int, optional)
+      #         How long undelivered messages stay on the notification
+      #         queue. SQS accepts 60..1209600 seconds (14 days). If
+      #         omitted, the SQS default of 4 days (345600s) applies -
+      #         there is no true "infinite" retention. When more than one
+      #         `notify` entry is present for a tributary, the first
+      #         entry with a value set wins (all entries share one
+      #         queue).
       - name: hai
         buckets:
           input-raw:
@@ -1647,6 +1754,8 @@ config:
             name:
             crawler:
               prefix: result # prefixes for tables in the database
+          artifacts:
+            name:
         pipelines:
           data:
             etl:
@@ -1693,6 +1802,8 @@ config:
             name:
             crawler:
               prefix: result # prefixes for tables in the database
+          artifacts:
+            name:
         pipelines:
           data:
             etl:
@@ -1729,13 +1840,15 @@ config:
             name:
             crawler:
               prefix: input # prefixes for tables in the database
-              excludes: ["sequencing-reads/**"]
+              excludes: ["sequencing-reads/**", "sequencing-reads-split/**"]
           result-raw:
             name:
           result-clean:
             name:
             crawler:
               prefix: result # prefixes for tables in the database
+          artifacts:
+            name:
         pipelines:
           data:
             etl:
@@ -1756,6 +1869,7 @@ config:
                 suffixes:
                   - tsv
                   - yml
+                  - html
                 pymodules:
                   - pyyaml==6.0.2
               - name: bactopia-samples
@@ -1766,3 +1880,42 @@ config:
                 suffixes:
                   - tsv
                   - txt
+              # caerbannog consumer result archive: triggers on
+              # the .tar.gz written to result-raw under
+              # caerbannog-output, writes CSV to result-clean
+              # (result_caerbannog_* tables). prefix/suffixes are
+              # disjoint from the bactopia result-raw ETLs above
+              # (pipeline-output*, tsv/yml/txt) so neither triggers
+              # the other. TODO(#363): format provisional.
+              - name: caerbannog-results
+                script: glue/etl/etl_caerbannog_results.py
+                src: result-raw
+                sink: result-clean
+                prefix: caerbannog-output
+                suffixes:
+                  - gz
+                  - tar
+                max_concurrent_runs: 5
+                # TEMPORARY (TODO(#363)): the ETL renders a stopgap
+                # HTML report with jinja2. Remove this when report
+                # rendering moves out of the ETL.
+                pymodules:
+                  - jinja2==3.1.6
+            notify:
+              # individual split read files as they land in the
+              # clean sink (one notification per file).
+              - name: split-reads
+                src: input-clean
+                prefix: sequencing-reads-split
+                message_retention_seconds: 43200 # 12 hours
+              # one manifest per uploaded archive, listing every
+              # split read file extracted from it (written by
+              # etl_seqarchive to manifest/.../manifest.csv).
+              # consumers read it to learn the full set from an
+              # upload; it is also crawled into the catalog (not
+              # excluded above) so the set is queryable like
+              # meta.csv. retention is queue-level (taken from the
+              # first rule above), so it is not repeated here.
+              - name: split-reads-manifest
+                src: input-clean
+                prefix: manifest
