@@ -565,11 +565,31 @@ class ScopedSwimlane(CapeComponentResource):
                 )
             self.batch_compute_environment_keys[identity] = resource_key
 
+            security_group_ids = None
+            security_group_source = env.get("security_group_source")
+            if security_group_source:
+                source_environment = self.batch_compute_environments.get(
+                    security_group_source
+                )
+                if source_environment is None:
+                    raise ValueError(
+                        f"Batch environment {name} references unknown "
+                        f"security group source {security_group_source}"
+                    )
+                if source_environment.security_group is None:
+                    raise ValueError(
+                        f"Batch environment {name} references an environment "
+                        f"without a managed security group: "
+                        f"{security_group_source}"
+                    )
+                security_group_ids = [source_environment.security_group.id]
+
             for sn_type in env.get("subnet_types"):
                 self.batch_compute_environments[resource_key] = BatchCompute(
                     f"{self.basename}-{resource_key}-btch",
                     vpc=self.vpc,
                     subnets=self.get_subnets_by_type(sn_type),
+                    security_group_ids=security_group_ids,
                     config=env,
                 )
 

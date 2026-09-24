@@ -1536,6 +1536,15 @@ config:
                     # * `image` (string, required)
                     #   The ID of the AWS AMI to launce the instances with. This
                     #   image must exist in AWS already.
+                    # * `host_bootstrap` (mapping, optional)
+                    #   Optional host capability bootstrap data. EFS-backed
+                    #   hosts may declare `efs_mounts` here; the Batch component
+                    #   renders the merged AMI mounter contract as launch-template
+                    #   user data. See `extra-doc/README.efs-batch.md` for the
+                    #   full capability contract and operational guidance.
+                    # * `security_group_source` (string, optional)
+                    #   Reuse the managed security group from another Batch
+                    #   environment when an external resource already trusts it.
                     # * `resources` (mapping, required)
                     #   A mapping of compute environment resource arguments to be
                     #   passed *as-is* to the compute environment constructor. The
