@@ -1,5 +1,6 @@
 {
     "autoImportCompletions": true,
     "typeCheckingMode": "basic",
+    "extraPaths": ["."],
     "ignore": ["assets/etl/**"]
 }

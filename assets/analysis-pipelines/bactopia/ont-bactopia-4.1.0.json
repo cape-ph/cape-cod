@@ -1,0 +1,62 @@
+{
+    "pipelineType": "nextflow",
+    "pipelineName": "Bactopia ONT Sample",
+    "pipelineId": "bactopia-ont-v4.1.0",
+    "pipelineDescription": "Execute Bactopia's ONT sample sequencing workflow with v4.1.0",
+    "project": "bactopia/bactopia",
+    "version": "v4.1.0",
+    "inherits": ["bactopia-base-4.1.0"],
+    "parametersSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "allOf": [{ "$ref": "#/$defs/bactopia-base-4.1.0" }],
+        "properties": {
+            "--max_cpus": {
+                "type": "integer",
+                "title": "Max CPUs",
+                "minimum": 1,
+                "default": 8
+            },
+            "--max_memory": {
+                "type": "string",
+                "title": "Max Memory",
+                "default": "24.GB"
+            },
+            "--skip_qc_plots": {
+                "type": "boolean",
+                "title": "Skip QC plots",
+                "description": "Skip the long-running QC plots. Defaults to true for the initial v4 production policy.",
+                "default": true
+            },
+            "--ont": {
+                "type": "string",
+                "title": "ONT"
+            },
+            "--sample": {
+                "type": "string",
+                "title": "Sample Name"
+            },
+            "--outdir": {
+                "type": "string",
+                "title": "S3 Location of the output directory"
+            }
+        },
+        "unevaluatedProperties": false,
+        "required": ["--sample", "--ont", "--outdir"]
+    },
+    "uiSchema": {
+        "type": "VerticalLayout",
+        "elements": [
+            { "type": "Control", "scope": "#/properties/--max_cpus" },
+            { "type": "Control", "scope": "#/properties/--max_memory" },
+            { "type": "Control", "scope": "#/properties/--skip_qc_plots" },
+            { "type": "Control", "scope": "#/properties/--ont" },
+            { "type": "Control", "scope": "#/properties/--sample" },
+            { "type": "Control", "scope": "#/properties/--outdir" }
+        ]
+    },
+    "submission": {
+        "optionsFieldName": "nextflowOptions",
+        "encoding": "cli-string"
+    }
+}

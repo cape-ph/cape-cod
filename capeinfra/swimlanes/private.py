@@ -3,6 +3,8 @@
 This includes the private VPC, API/VPC endpoints and other top-level resources.
 """
 
+import json
+
 import pulumi_aws as aws
 from pulumi import Config, Output, ResourceOptions, warn
 from pulumi_synced_folder import S3BucketFolder
@@ -118,6 +120,105 @@ class PrivateSwimlane(ScopedSwimlane):
         #       not hard coding the env var label in this class.
         self._exposed_env_vars = {}
 
+        execution_routes = self.config.get(
+            "compute", "execution_routes", default={}
+        )
+        if not isinstance(execution_routes, dict):
+            raise ValueError("compute.execution_routes must be an object")
+
+        def resolve_batch_environment(route):
+            if isinstance(route, str):
+                resource_key = route
+            elif isinstance(route, dict):
+                resource_key = route.get("resource_key")
+                if resource_key is None:
+                    environment_name = route.get("environment")
+                    generation = route.get("generation")
+                    if not isinstance(environment_name, str):
+                        raise ValueError(
+                            f"Execution route environment must be a string: "
+                            f"{route}"
+                        )
+                    if generation is not None and not isinstance(
+                        generation, int
+                    ):
+                        raise ValueError(
+                            f"Execution route generation must be an integer: "
+                            f"{route}"
+                        )
+                    resource_key = self.batch_compute_environment_keys.get(
+                        (environment_name, generation)
+                    )
+                if resource_key is None:
+                    raise ValueError(
+                        f"Invalid execution route definition: {route}"
+                    )
+            else:
+                raise ValueError(f"Invalid execution route definition: {route}")
+
+            environment = self.batch_compute_environments.get(resource_key)
+            if environment is None:
+                raise ValueError(
+                    f"Execution route references unknown Batch environment "
+                    f"resource key {resource_key}"
+                )
+            return environment
+
+        workflow_environment = resolve_batch_environment(
+            execution_routes.get("workflow-orchestration") or "workflows"
+        )
+        analysis_environment = resolve_batch_environment(
+            execution_routes.get("general-analysis") or "analysis"
+        )
+
+        self._exposed_env_vars.setdefault(
+            "WORKFLOW_QUEUE_NAME",
+            {
+                "resource_name": workflow_environment.job_queue.name,
+                "type": "untyped",
+            },
+        )
+        self._exposed_env_vars.setdefault(
+            "NEXTFLOW_JOB_DEFINITION_NAME",
+            {
+                "resource_name": self.job_definitions[
+                    "nextflow"
+                ].job_definition.name,
+                "type": "untyped",
+            },
+        )
+        self._exposed_env_vars.setdefault(
+            "JOB_QUEUE_NAME",
+            {
+                "resource_name": analysis_environment.job_queue.name,
+                "type": "untyped",
+            },
+        )
+
+        if execution_routes:
+            route_classes = list(execution_routes)
+            route_queues = []
+            for execution_class in route_classes:
+                route_queues.append(
+                    resolve_batch_environment(
+                        execution_routes[execution_class]
+                    ).job_queue.name
+                )
+
+            self._exposed_env_vars.setdefault(
+                "EXECUTION_CLASS_QUEUE_MAP",
+                {
+                    "resource_name": Output.all(*route_queues).apply(
+                        lambda queues: json.dumps(
+                            dict(zip(route_classes, queues)),
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                    ),
+                    "type": "metadata",
+                },
+            )
+
         self._exposed_env_vars.setdefault(
             "DDB_REGION",
             {
@@ -212,6 +313,7 @@ class PrivateSwimlane(ScopedSwimlane):
         # NOTE: if there's a bad env var in here, we'll let the KeyError go to
         #       halt the deployment.
         env_vars = {}
+        handler_env_vars = {}
         resource_grants = {}
         for ev in self.apis[api_name]["spec"].get("env_vars", []):
             env_vars.setdefault(ev, self._exposed_env_vars[ev]["resource_name"])
@@ -226,6 +328,20 @@ class PrivateSwimlane(ScopedSwimlane):
             # it's in there before adding...
             if self._exposed_env_vars[ev]["resource_name"] not in res:
                 res.append(self._exposed_env_vars[ev]["resource_name"])
+
+        for handler in self.apis[api_name]["spec"].get("handlers", []):
+            handler_vars = {}
+            for ev in handler.get("env_vars", []):
+                handler_vars[ev] = self._exposed_env_vars[ev]["resource_name"]
+
+                res = resource_grants.setdefault(
+                    self._exposed_env_vars[ev]["type"], []
+                )
+                if self._exposed_env_vars[ev]["resource_name"] not in res:
+                    res.append(self._exposed_env_vars[ev]["resource_name"])
+
+            if handler_vars:
+                handler_env_vars[handler["id"]] = handler_vars
 
         # TODO: this is the new style policy statements we should be moving to
         policy_statements = []
@@ -306,6 +422,7 @@ class PrivateSwimlane(ScopedSwimlane):
             policy_statements,
             self.api_vpcendpoint,
             self.apigw_domainname.domain_name,
+            handler_env_vars=handler_env_vars,
             config=self.apis[api_name]["spec"],
             desc_name=f"{self.apis[api_name]['spec']['desc']}",
             opts=ResourceOptions(parent=self),

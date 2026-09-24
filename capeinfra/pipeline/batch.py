@@ -241,6 +241,22 @@ class BatchCompute(CapeComponentResource):
 
         env_subnets = [sn.id for _, sn in subnets.items()]
 
+        lifecycle = self.config.get("lifecycle")
+        if lifecycle not in (None, "legacy"):
+            raise ValueError(
+                f"Unsupported Batch environment lifecycle: {lifecycle}"
+            )
+        preserve_legacy_resources = lifecycle == "legacy"
+        compute_environment_options = ResourceOptions(parent=self)
+        if preserve_legacy_resources:
+            # Keep an old generation attached to its queue while a replacement
+            # generation is created and promoted. AWS Batch cannot delete a
+            # compute environment while its queue still references it.
+            compute_environment_options = ResourceOptions(
+                parent=self,
+                ignore_changes=["compute_resources"],
+            )
+
         compute_env_name = f"{self.name}-cmpt-env"
         compute_resource_args = {
             "type": "EC2",
@@ -290,7 +306,7 @@ class BatchCompute(CapeComponentResource):
             compute_resources=aws.batch.ComputeEnvironmentComputeResourcesArgs(
                 **compute_resource_args
             ),
-            opts=ResourceOptions(parent=self),
+            opts=compute_environment_options,
         )
 
         # TODO: figure out a good fair share policy, for now allow a job to
