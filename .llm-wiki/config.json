@@ -3,5 +3,6 @@
   "mode": "company",
   "topic": "CAPE Cod Pulumi Infrastructure as Code",
   "created": "2026-07-13",
-  "version": "1.0"
+  "version": "1.0",
+  "vault_id": "a9e98297-9e03-457e-93f5-ca15bed57a0f"
 }

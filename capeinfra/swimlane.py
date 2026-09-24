@@ -80,6 +80,9 @@ class ScopedSwimlane(CapeComponentResource):
         # facing nat gateway for az "us=east-2b"
         self.az_assets = dict[str, dict[str, Any]]()
         self.batch_compute_environments = dict[str, BatchCompute]()
+        self.batch_compute_environment_keys = dict[
+            tuple[str, int | None], str
+        ]()
         self.job_definitions = dict[str, BatchJobDefinition]()
         self.albs = {}
         self.domain_name = self.config.get("domain")
@@ -539,9 +542,32 @@ class ScopedSwimlane(CapeComponentResource):
             "compute", "environments", "batch", default=[]
         ):
             name = env.get("name")
+            generation = env.get("generation")
+            if generation is not None and (
+                not isinstance(generation, int) or generation < 1
+            ):
+                raise ValueError(
+                    f"Batch environment {name} generation must be a positive integer"
+                )
+            resource_key = env.get("resource_key")
+            if resource_key is None:
+                resource_key = (
+                    name if generation is None else f"{name}-g{generation}"
+                )
+            if resource_key in self.batch_compute_environments:
+                raise ValueError(
+                    f"Duplicate Batch environment resource key: {resource_key}"
+                )
+            identity = (name, generation)
+            if identity in self.batch_compute_environment_keys:
+                raise ValueError(
+                    f"Duplicate Batch environment generation: {name} {generation}"
+                )
+            self.batch_compute_environment_keys[identity] = resource_key
+
             for sn_type in env.get("subnet_types"):
-                self.batch_compute_environments[name] = BatchCompute(
-                    f"{self.basename}-{name}-btch",
+                self.batch_compute_environments[resource_key] = BatchCompute(
+                    f"{self.basename}-{resource_key}-btch",
                     vpc=self.vpc,
                     subnets=self.get_subnets_by_type(sn_type),
                     config=env,
@@ -564,8 +590,7 @@ class ScopedSwimlane(CapeComponentResource):
             opts=ResourceOptions(parent=self),
             tags={
                 "desc_name": (
-                    f"{self.desc_name} Route53 private Zone for "
-                    f"{domain_name}"
+                    f"{self.desc_name} Route53 private Zone for {domain_name}"
                 ),
             },
         )

@@ -1,0 +1,2 @@
+identity	shared-hashes	median-multiplicity	p-value	query	target
+0.99	100/100	1	0.0	sample	refseq

@@ -11,27 +11,39 @@ from capepy.aws.glue import EtlJob
 etl_job = EtlJob()
 
 
-def parse_sample_tsv(path):
-    print(f"Processing sample tsv file (raw key: {path})")
-    return list(
+def _parse_delimited_source(path, delimiter):
+    rows = list(
         csv.reader(
-            io.StringIO(etl_job.get_src_file().decode("utf-8")), delimiter="\t"
+            io.StringIO(etl_job.get_src_file().decode("utf-8")),
+            delimiter=delimiter,
         )
     )
+    if not rows or not rows[0]:
+        raise ValueError(f"Bactopia output is empty: {path}")
+
+    expected_width = len(rows[0])
+    for line_number, row in enumerate(rows[1:], start=2):
+        if row and len(row) != expected_width:
+            raise ValueError(
+                f"Unexpected Bactopia output row width at line {line_number} "
+                f"for {path}: expected {expected_width}, received {len(row)}"
+            )
+    return rows
+
+
+def parse_sample_tsv(path):
+    print(f"Processing sample tsv file (raw key: {path})")
+    return _parse_delimited_source(path, "\t")
 
 
 def parse_mash_txt(path):
     print(f"Processing mash txt file (raw key: {path})")
-    return list(
-        csv.reader(
-            io.StringIO(etl_job.get_src_file().decode("utf-8")), delimiter="\t"
-        )
-    )
+    return _parse_delimited_source(path, "\t")
 
 
 def parse_sourmash_txt(path):
     print(f"Processing sourmash txt file (raw key: {path})")
-    return list(csv.reader(io.StringIO(etl_job.get_src_file().decode("utf-8"))))
+    return _parse_delimited_source(path, ",")
 
 
 SAMPLE_FILETYPES = [
@@ -53,6 +65,27 @@ SAMPLE_FILETYPES = [
 ]
 
 
+class BactopiaOutputContractV1SampleAdapter:
+    """Match per-sample files from the Bactopia v4 output contract."""
+
+    handlers = SAMPLE_FILETYPES
+
+    def match(self, object_key):
+        for handler in self.handlers:
+            match = re.match(handler["pattern"], object_key)
+            if match:
+                return (
+                    match.group(1),
+                    Path(object_key),
+                    handler["parser"],
+                    handler["table_name"],
+                )
+        return None
+
+
+SAMPLE_ADAPTER = BactopiaOutputContractV1SampleAdapter()
+
+
 # TODO: ISSUE #144 the output here is for the initial bactopia
 #       data handling only (and is specific to a particular invocation of
 #       bactopia that is not the only way we care about). It is by no means
@@ -66,14 +99,9 @@ parser = None
 table_name = None
 
 alert_obj_key = etl_job.parameters["OBJECT_KEY"]
-for filetype in SAMPLE_FILETYPES:
-    matches = re.match(filetype["pattern"], alert_obj_key)
-    if matches:
-        sample_id = matches.group(1)
-        obj_path = Path(alert_obj_key)
-        parser = filetype["parser"]
-        table_name = filetype["table_name"]
-        break
+match = SAMPLE_ADAPTER.match(alert_obj_key)
+if match:
+    sample_id, obj_path, parser, table_name = match
 
 
 # we should have no missing values here

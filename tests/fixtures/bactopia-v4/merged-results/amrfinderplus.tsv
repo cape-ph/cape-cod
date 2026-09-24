@@ -1,0 +1,2 @@
+Element symbol	Element name	Scope	Subtype	Class	Subclass	Type	Method	% Coverage of reference	% Identity to reference
+blaTEM	TEM beta-lactamase	core	beta-lactam	AMR	beta-lactam	AMR	EXACTP	100.0	99.5

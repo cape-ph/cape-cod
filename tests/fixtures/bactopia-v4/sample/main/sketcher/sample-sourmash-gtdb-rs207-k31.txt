@@ -1,0 +1,2 @@
+similarity,containment,intersect_bp,f_orig_query,f_match_query,f_match_target,average_abund,median_abund,std_abund,query_name,query_filename,match_name,match_filename
+0.99,0.95,1000,0.9,0.8,0.7,1.0,1.0,0.0,sample,sample.sig,refseq,refseq.sig
