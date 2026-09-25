@@ -74,10 +74,13 @@ def _csv_writes(fake_job):
     }
 
 
-def test_kraken_report_writes_rows_and_summary(monkeypatch):
+@pytest.mark.parametrize("layout_prefix", ["output/", ""])
+def test_kraken_report_writes_rows_and_summary(monkeypatch, layout_prefix):
     object_key = (
-        "taxprofiler-output/btk-release-live-20260924151922/output/kraken2/"
-        "standard-8/btk-release-live-20260924151922_btk-release-live-20260924151922_"
+        "taxprofiler-output/btk-release-live-20260924151922/"
+        + layout_prefix
+        + "kraken2/standard-8/"
+        "btk-release-live-20260924151922_btk-release-live-20260924151922_"
         "standard-8.kraken2.kraken2.report.txt"
     )
     _, fake_job = _load_etl(
@@ -135,6 +138,7 @@ def test_kraken_report_writes_rows_and_summary(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("layout_prefix", ["output/", ""])
 @pytest.mark.parametrize(
     ("relative_path", "object_key_suffix", "expected_key", "expected_header"),
     [
@@ -213,11 +217,17 @@ def test_kraken_report_writes_rows_and_summary(monkeypatch):
     ],
 )
 def test_taxprofiler_metadata_outputs(
-    monkeypatch, relative_path, object_key_suffix, expected_key, expected_header
+    monkeypatch,
+    relative_path,
+    object_key_suffix,
+    expected_key,
+    expected_header,
+    layout_prefix,
 ):
     object_key = (
         "taxprofiler-output/btk-release-live-20260924151922/"
-        + object_key_suffix
+        + layout_prefix
+        + object_key_suffix.removeprefix("output/")
     )
     _, fake_job = _load_etl(
         monkeypatch,

@@ -64,13 +64,16 @@ def _context(object_key):
         return None
     if not SAMPLE_ID_PATTERN.fullmatch(parts[1]):
         raise ValueError(f"Invalid taxprofiler sample id: {parts[1]}")
+    relative_parts = parts[2:]
+    if relative_parts and relative_parts[0] == "output":
+        relative_parts = relative_parts[1:]
     return {
         "sample_id": parts[1],
-        "relative_key": "/".join(parts[2:]),
+        "relative_key": "/".join(relative_parts),
         "filename": parts[-1],
         "database_id": (
-            parts[4]
-            if len(parts) > 5 and parts[2:4] == ["output", "kraken2"]
+            relative_parts[1]
+            if len(relative_parts) > 2 and relative_parts[0] == "kraken2"
             else None
         ),
         "source_key": object_key,
@@ -85,48 +88,48 @@ def _classify(object_key):
     relative_key = context["relative_key"]
     filename = context["filename"]
 
-    if relative_key.startswith("output/kraken2/") and filename.endswith(
+    if relative_key.startswith("kraken2/") and filename.endswith(
         ".kraken2.report.txt"
     ):
         return "kraken_report", context
-    if relative_key.endswith("output/multiqc/multiqc_data/multiqc_data.json"):
+    if relative_key.endswith("multiqc/multiqc_data/multiqc_data.json"):
         return "multiqc_json", context
     if relative_key.endswith(
-        "output/multiqc/multiqc_data/multiqc_general_stats.txt"
+        "multiqc/multiqc_data/multiqc_general_stats.txt"
     ):
         return "multiqc_general_stats", context
-    if relative_key.endswith("output/multiqc/multiqc_data/multiqc_kraken.txt"):
+    if relative_key.endswith("multiqc/multiqc_data/multiqc_kraken.txt"):
         return "multiqc_kraken", context
     if (
-        relative_key.startswith("output/multiqc/multiqc_data/")
+        relative_key.startswith("multiqc/multiqc_data/")
         and filename.startswith("kraken-top-n-plot_")
         and filename.endswith(".txt")
     ):
         return "multiqc_plot", context
     if relative_key.endswith(
-        "output/multiqc/multiqc_data/multiqc_software_versions.txt"
+        "multiqc/multiqc_data/multiqc_software_versions.txt"
     ):
         return "multiqc_versions", context
     if (
-        relative_key.startswith("output/pipeline_info/")
+        relative_key.startswith("pipeline_info/")
         and filename.startswith("params_")
         and filename.endswith(".json")
     ):
         return "params", context
     if (
-        relative_key.startswith("output/pipeline_info/")
+        relative_key.startswith("pipeline_info/")
         and filename.startswith("execution_trace_")
         and filename.endswith(".txt")
     ):
         return "execution_trace", context
     if (
-        relative_key.startswith("output/pipeline_info/")
+        relative_key.startswith("pipeline_info/")
         and filename.startswith("nf_core_taxprofiler_software_mqc_versions")
         and filename.endswith(".yml")
     ):
         return "pipeline_versions", context
     if (
-        relative_key.startswith("output/pipeline_info/")
+        relative_key.startswith("pipeline_info/")
         and filename.startswith("execution_report_")
         and filename.endswith(".html")
     ):
