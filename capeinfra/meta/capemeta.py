@@ -20,7 +20,7 @@ from pulumi import (
 )
 
 import capeinfra
-from capeinfra.iam import add_resources, get_inline_role
+from capeinfra.iam import add_resources, aggregate_statements, get_inline_role
 from capeinfra.resources.compute import (
     CapeAwsManagedLambdaLayer,
     CapeGHReleaseLambdaLayer,
@@ -90,7 +90,9 @@ class CapeMeta(CapeComponentResource):
         )
 
     @property
-    def policies(self) -> dict[
+    def policies(
+        self,
+    ) -> dict[
         str,
         list[aws.iam.GetPolicyDocumentStatementArgsDict],
     ]:
@@ -163,7 +165,6 @@ class CapeMeta(CapeComponentResource):
 
 
 class CapePy(CapeComponentResource):
-
     @property
     def type_name(self) -> str:
         """Return the type_name (pulumi namespacing)."""
@@ -629,7 +630,6 @@ class CapePrincipals(CapeComponentResource):
         #       long for the name, and using a pulumi Output in a resource name
         #       isn't supported.
         for idx, (uid, attrs) in enumerate(self._user_attrs.items()):
-
             serializer = TypeSerializer()
             serialized_attrs = {
                 k: serializer.serialize(v) for k, v in attrs.items()
@@ -776,10 +776,24 @@ class CapePrincipals(CapeComponentResource):
         """
         attrs = {}
         if attrs_file is not None:
-            with open(attrs_file, "r") as af:
-                attrs = json.load(af)
+            try:
+                with self._open_config_file(attrs_file) as af:
+                    attrs = json.load(af)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"CAPE user attributes file is invalid: {attrs_file}"
+                ) from error
 
         self._user_attrs[user.id] = attrs
+
+    @staticmethod
+    def _open_config_file(filepth):
+        try:
+            return open(filepth)
+        except OSError as error:
+            raise ValueError(
+                f"Unable to open CAPE config file: {filepth}"
+            ) from error
 
     def _add_user_to_group(self, uname: str, gname: str):
         """Add a CAPE user to a CAPE group.
@@ -819,7 +833,7 @@ class CapePrincipals(CapeComponentResource):
             log.warn(f"Unable to locate specified groups file: {filepth}", self)
             return
 
-        with open(filepth) as grpcsv:
+        with self._open_config_file(filepth) as grpcsv:
             grpreader = csv.reader(grpcsv, skipinitialspace=True)
             # our first row will be column names. grab em and make sure we have
             # the set we expect.
@@ -859,7 +873,7 @@ class CapePrincipals(CapeComponentResource):
             log.warn(f"Unable to locate specified user file: {filepth}", self)
             return
 
-        with open(filepth) as usrcsv:
+        with self._open_config_file(filepth) as usrcsv:
             usrreader = csv.reader(usrcsv, skipinitialspace=True)
             # our first row will be column names. grab em and make sure we have
             # the set we expect
@@ -964,6 +978,7 @@ class CapeCannedReports(CapeComponentResource):
 
         self._template_prefix = self.config.get("template_prefix")
         report_cfgs = self.config.get("reports")
+        self._report_configs = list(report_cfgs or [])
 
         self.report_data_functions = []
 
@@ -973,13 +988,13 @@ class CapeCannedReports(CapeComponentResource):
             #       get into general cost savings opportunities. for now however
             #       we will deploy all infra even when resources that need the
             #       infra are not configured.
-            log.info(f"No canned CAPE-wide canned reports configured.", self)
+            log.info("No canned CAPE-wide canned reports configured.", self)
 
         self.create_canned_report_store()
 
         self._report_roles = {}
 
-        for rc in report_cfgs:
+        for rc in self._report_configs:
             self._create_canned_report(rc)
 
     def create_canned_report_store(self):
@@ -1013,7 +1028,7 @@ class CapeCannedReports(CapeComponentResource):
             report_config: The configuration for a canned report.
         """
         template_key = f"{self._template_prefix}/{report_config['id']}"
-        template_obj = self.assets_bucket.add_object(
+        self.assets_bucket.add_object(
             f"{self.name}-cnndrprt-{report_config['short_name']}",
             key=template_key,
             source=FileAsset(report_config["template_path"]),
@@ -1049,6 +1064,7 @@ class CapeCannedReports(CapeComponentResource):
                 "arn:aws:iam::aws:policy/AmazonAthenaFullAccess",
             ],
         )
+        self._report_roles[report_config["id"]] = report_role
 
         # we should not get here unless we have a configured report, and if we
         # have a configured report all of these dict keys should exist. if they
@@ -1101,6 +1117,69 @@ class CapeCannedReports(CapeComponentResource):
         Output.all(report_meta_kw=report_meta).apply(
             lambda kw: self._store_canned_report_meta(kw)
         )
+
+    def configure_data_access(self, data_lakehouse):
+        """Attach configured report data permissions after the data lake exists."""
+        for report_config in self._report_configs:
+            access_config = report_config.get("data_access", {})
+            if not access_config:
+                continue
+
+            report_role = self._report_roles[report_config["id"]]
+            bucket_statements = []
+
+            for bucket_config in access_config.get("buckets", []):
+                tributary = next(
+                    (
+                        tributary
+                        for tributary in data_lakehouse.tributaries
+                        if tributary.code == bucket_config["tributary"]
+                    ),
+                    None,
+                )
+                if tributary is None:
+                    raise ValueError(
+                        "Unknown report data tributary: "
+                        f"{bucket_config['tributary']}"
+                    )
+                bucket = tributary.buckets[bucket_config["bucket"]]
+                bucket_statements.append(
+                    bucket.bucket.arn.apply(
+                        lambda arn, bucket=bucket: add_resources(
+                            bucket.policies[VersionedBucket.PolicyEnum.read]
+                            + bucket.policies[
+                                VersionedBucket.PolicyEnum.browse
+                            ],
+                            arn,
+                            f"{arn}/*",
+                        )
+                    )
+                )
+
+            if access_config.get("athena_results", False):
+                bucket = data_lakehouse.athena_results_bucket
+                bucket_statements.append(
+                    bucket.bucket.arn.apply(
+                        lambda arn, bucket=bucket: add_resources(
+                            bucket.policies[VersionedBucket.PolicyEnum.read]
+                            + bucket.policies[VersionedBucket.PolicyEnum.write]
+                            + bucket.policies[
+                                VersionedBucket.PolicyEnum.browse
+                            ],
+                            arn,
+                            f"{arn}/*",
+                        )
+                    )
+                )
+
+            aws.iam.RolePolicy(
+                f"{self.name}-{report_config['short_name']}-data-access",
+                role=report_role.id,
+                policy=aws.iam.get_policy_document_output(
+                    statements=aggregate_statements(bucket_statements)
+                ).json,
+                opts=ResourceOptions(parent=self),
+            )
 
     def _store_canned_report_meta(self, kwargs):
         """"""
