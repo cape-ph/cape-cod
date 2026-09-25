@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Kraken2 Taxonomic Classification</title>
+    <style>
+      html, body { height: auto; }
+      body {
+        margin: 0;
+        padding: 24px;
+        max-width: 980px;
+        margin-inline: auto;
+        font: 14px/1.6 system-ui, sans-serif;
+        color: #0f172a;
+        background: #fff;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      h1 {
+        font-size: 1.75rem;
+        margin-bottom: .25rem;
+        color: oklch(0.3967 0.14 18.05);
+      }
+      .subtitle { color: #64748b; margin-top: 0; }
+      h2 {
+        font-size: 1.25rem;
+        margin-top: 2rem;
+        padding-bottom: .35rem;
+        border-bottom: 1px solid #e2e8f0;
+        color: oklch(0.3967 0.14 18.05);
+      }
+      .cards {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .card {
+        flex: 1 1 160px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: .85rem 1rem;
+        background: oklch(99.087% 0.00442 33.09);
+      }
+      .card .label {
+        font-size: .75rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #64748b;
+      }
+      .card .value { font-size: 1.4rem; font-weight: 600; }
+      .card .sub { font-size: .85rem; color: #64748b; }
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin-top: 12px;
+        font-size: .95rem;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      thead th {
+        text-align: left;
+        font-weight: 600;
+        background: oklch(95.979% 0.00643 16.336);
+        border-bottom: 1px solid #e2e8f0;
+        padding: .6rem .75rem;
+        white-space: nowrap;
+      }
+      tbody td {
+        padding: .5rem .75rem;
+        border-bottom: 1px solid oklch(97.478% 0.0064 16.315);
+        vertical-align: middle;
+      }
+      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr:nth-child(odd) td {
+        background: oklch(99.087% 0.00442 33.09);
+      }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .rank-badge {
+        display: inline-block;
+        min-width: 1.6rem;
+        text-align: center;
+        font-size: .72rem;
+        font-weight: 600;
+        color: #475569;
+        background: #e2e8f0;
+        border-radius: 6px;
+        padding: .1rem .35rem;
+      }
+      .bar {
+        position: relative;
+        min-width: 90px;
+        height: 1.05rem;
+        background: oklch(97.478% 0.0064 16.315);
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .bar > span {
+        position: absolute;
+        inset: 0 auto 0 0;
+        background: #3b82f6;
+        opacity: .75;
+      }
+      .bar > em {
+        position: relative;
+        font-style: normal;
+        font-size: .78rem;
+        padding: 0 .4rem;
+        color: #0f172a;
+        line-height: 1.05rem;
+      }
+      .tree {
+        --cols: minmax(0, 1fr) 3.5rem 4.5rem 6.5rem 6.5rem 5rem;
+        margin-top: 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        overflow: hidden;
+        font-size: .93rem;
+      }
+      .tree-head, .row {
+        display: grid;
+        grid-template-columns: var(--cols);
+        align-items: center;
+        column-gap: .5rem;
+      }
+      .tree-head {
+        background: oklch(95.979% 0.00643 16.336);
+        font-weight: 600;
+        padding: .55rem .75rem;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .row {
+        padding: .32rem .75rem;
+        border-bottom: 1px solid oklch(97.478% 0.0064 16.315);
+      }
+      .row:hover { background: oklch(99.087% 0.00442 33.09); }
+      summary.row { list-style: none; cursor: pointer; }
+      summary.row::-webkit-details-marker { display: none; }
+      .c-name { display: flex; align-items: center; min-width: 0; }
+      .c-name .name { word-break: break-word; }
+      .c-num, .num { text-align: right; font-variant-numeric: tabular-nums; }
+      .caret {
+        flex: none;
+        width: 0;
+        height: 0;
+        margin-right: .45rem;
+        border-left: 5px solid #94a3b8;
+        border-top: 4px solid transparent;
+        border-bottom: 4px solid transparent;
+        transition: transform .12s ease;
+      }
+      details[open] > summary > .c-name > .caret { transform: rotate(90deg); }
+      .caret.spacer { border-left-color: transparent; }
+      .tree-controls {
+        display: flex;
+        align-items: baseline;
+        gap: .75rem;
+        margin-top: 16px;
+      }
+      .segmented {
+        display: inline-flex;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .segmented button {
+        font: inherit;
+        font-size: .85rem;
+        color: #475569;
+        background: #fff;
+        border: 0;
+        border-right: 1px solid #e2e8f0;
+        padding: .35rem .85rem;
+        cursor: pointer;
+      }
+      .segmented button:last-child { border-right: 0; }
+      .segmented button:hover { background: oklch(99.087% 0.00442 33.09); }
+      .segmented button.active { background: #2563eb; color: #fff; }
+      .tree-controls .hint { font-size: .82rem; color: #94a3b8; }
+      .empty {
+        margin-top: 16px;
+        padding: 1rem;
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        color: #64748b;
+        background: oklch(99.087% 0.00442 33.09);
+      }
+      @media print {
+        body { background: #fff; color: #000; font-size: 0.8em; }
+        table, .tree { font-size: 0.8em; }
+        .tree-controls { display: none; }
+        details.node { break-inside: avoid; }
+        h1 { font-size: 1.5em; }
+        h2 { font-size: 1.2em; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Kraken2 Taxonomic Classification</h1>
+    <p class="subtitle"><b>Sample:</b> {{ sample_id }}</p>
+
+    <div class="cards">
+      <div class="card">
+        <div class="label">Total reads</div>
+        <div class="value">{{ "{:,}".format(summary.total_reads) }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Classified</div>
+        <div class="value">{{ "%.2f"|format(summary.classified_pct) }}%</div>
+        <div class="sub">{{ "{:,}".format(summary.classified_reads) }} reads</div>
+      </div>
+      <div class="card">
+        <div class="label">Unclassified</div>
+        <div class="value">{{ "%.2f"|format(summary.unclassified_pct) }}%</div>
+        <div class="sub">{{ "{:,}".format(summary.unclassified_reads) }} reads</div>
+      </div>
+      <div class="card">
+        <div class="label">Distinct taxa</div>
+        <div class="value">{{ "{:,}".format(summary.distinct_taxa) }}</div>
+      </div>
+      {% if summary.top_species %}
+      <div class="card">
+        <div class="label">Top species</div>
+        <div class="value" style="font-size:1rem">{{ summary.top_species.name }}</div>
+        <div class="sub">{{ "%.2f"|format(summary.top_species.pct) }}% of reads</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if top_species %}
+    <h2>Top species</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Species</th>
+          <th class="num">Clade %</th>
+          <th style="width:120px">Share</th>
+          <th class="num">Reads</th>
+          <th class="num">TaxID</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in top_species %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="num">{{ "%.2f"|format(row.pct) }}</td>
+          <td>
+            <div class="bar"><span style="width: {{ row.pct }}%"></span>
+              <em>{{ "%.2f"|format(row.pct) }}%</em></div>
+          </td>
+          <td class="num">{{ "{:,}".format(row.clade_reads) }}</td>
+          <td class="num">{{ row.taxid }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <h2>Full taxonomic breakdown</h2>
+    {% if has_taxa %}
+    <div class="tree-controls">
+      <div class="segmented" role="group" aria-label="Tree detail level">
+        <button type="button" data-mode="relevant" class="active"
+                onclick="setMode('relevant')">Relevant</button>
+        <button type="button" data-mode="expanded"
+                onclick="setMode('expanded')">Expanded</button>
+        <button type="button" data-mode="collapsed"
+                onclick="setMode('collapsed')">Collapsed</button>
+      </div>
+      <span class="hint">Relevant shows the prevalent lineage; click any row
+        to drill in.</span>
+    </div>
+    <div class="tree">
+      <div class="tree-head">
+        <span>Taxon</span>
+        <span>Rank</span>
+        <span class="num">Clade %</span>
+        <span class="num">Clade reads</span>
+        <span class="num">Direct reads</span>
+        <span class="num">TaxID</span>
+      </div>
+      {{ tree_html | safe }}
+    </div>
+    <script>
+      function setMode(mode) {
+        document.querySelectorAll("details.node").forEach(function (node) {
+          if (mode === "expanded") {
+            node.open = true;
+          } else if (mode === "collapsed") {
+            node.open = false;
+          } else {
+            node.open = node.dataset.default === "open";
+          }
+        });
+        document.querySelectorAll(".segmented button").forEach(function (btn) {
+          btn.classList.toggle("active", btn.dataset.mode === mode);
+        });
+      }
+    </script>
+    {% else %}
+    <div class="empty">No classifications were reported for this sample.</div>
+    {% endif %}
+  </body>
+</html>

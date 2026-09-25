@@ -290,6 +290,9 @@ config:
                 - name: etl-bactopia-samples
                   key: glue/etl/etl_bactopia_samples.py
                   srcpth: ./assets/etl/etl_bactopia_samples.py
+                - name: etl-taxprofiler-results
+                  key: glue/etl/etl_taxprofiler_results.py
+                  srcpth: ./assets/etl/etl_taxprofiler_results.py
                 - name: etl-seqreadarch
                   key: glue/etl/etl_seqarchive.py
                   srcpth: ./assets/etl/etl_seqarchive.py
@@ -371,6 +374,28 @@ config:
                               Function"
                           memory_size: 512
                           timeout: 45
+                - id: taxprofiler-kraken2
+                  short_name: tpkraken
+                  display_name: "Taxprofiler Kraken2"
+                  template_path: "./assets/report/taxprofiler-kraken2/template.html.j2"
+                  data_function:
+                      code: "./assets/report/taxprofiler-kraken2/data_function.py"
+                      layers:
+                          - capi-all
+                          - aws-sdk-pandas
+                      funct_args:
+                          handler: "index.data_function"
+                          runtime: "python3.10"
+                          architectures:
+                              - "x86_64"
+                          description: "Taxprofiler Kraken2 Report Data Lambda"
+                          memory_size: 512
+                          timeout: 20
+                  data_access:
+                      buckets:
+                          - tributary: seqauto
+                            bucket: result-clean
+                      athena_results: true
     # `cape-cod:swimlanes` (mapping, required)
     # Contains the configuration for all swimlanes. Swimlanes define logical
     # separations of public, protected and private resources in CAPE. Each
@@ -1909,6 +1934,19 @@ config:
                             suffixes:
                                 - tsv
                                 - txt
+                          - name: taxprofiler-results
+                            script: glue/etl/etl_taxprofiler_results.py
+                            src: result-raw
+                            sink: result-clean
+                            prefix: taxprofiler-output
+                            suffixes:
+                                - txt
+                                - json
+                                - yml
+                                - html
+                            pymodules:
+                                - pyyaml==6.0.2
+                            max_concurrent_runs: 5
                           # caerbannog consumer result archive: triggers on
                           # the .tar.gz written to result-raw under
                           # caerbannog-output, writes CSV to result-clean
