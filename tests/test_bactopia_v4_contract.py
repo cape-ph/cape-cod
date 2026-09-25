@@ -30,13 +30,26 @@ def _load_submit_handler(monkeypatch):
     )
 
 
-def _load_profile(name):
-    path = REPO_ROOT / "assets" / "analysis-pipelines" / "bactopia" / name
-    return json.loads(path.read_text())
+def _load_profiles():
+    profile_root = REPO_ROOT / "assets" / "analysis-pipelines"
+    return [
+        json.loads(path.read_text())
+        for path in sorted(profile_root.glob("**/*.json"))
+    ]
+
+
+def _load_profile(pipeline_id):
+    matches = [
+        profile
+        for profile in _load_profiles()
+        if profile.get("pipelineId") == pipeline_id
+    ]
+    assert len(matches) == 1, f"expected one profile for {pipeline_id}"
+    return matches[0]
 
 
 def test_bactopia_v4_base_profile_uses_shared_runtime():
-    profile = _load_profile("bactopia-base-4.1.0.json")
+    profile = _load_profile("bactopia-bactopia-base-v4.1.0")
     schema = profile["parametersSchema"]
 
     assert profile["project"] == "bactopia/bactopia"
@@ -58,9 +71,12 @@ def test_bactopia_v4_base_profile_uses_shared_runtime():
 
 
 def test_taxprofiler_kraken2_profile_has_runtime_policy():
-    profile = _load_profile("taxprofiler-kraken2-2.0.1.json")
+    profile = _load_profile("taxprofiler-kraken2-2.0.1")
+    schema = profile["parametersSchema"]
     override = profile["execution"]["nextflow"]["processOverrides"]["kraken2"]
 
+    assert "--outdir" in schema["required"]
+    assert {"--input", "--databases"}.isdisjoint(schema["required"])
     assert profile["project"] == "nf-core/taxprofiler"
     assert profile["version"] == "2.0.1"
     assert profile["execution"]["class"] == "taxonomic-profiling"
@@ -73,7 +89,7 @@ def test_taxprofiler_kraken2_profile_has_runtime_policy():
 
 
 def test_bactopia_v4_ont_profile_contract():
-    profile = _load_profile("ont-bactopia-4.1.0.json")
+    profile = _load_profile("bactopia-ont-v4.1.0")
     schema = profile["parametersSchema"]
     properties = schema["properties"]
 
@@ -89,13 +105,12 @@ def test_bactopia_v4_ont_profile_contract():
 
 
 def test_v3_profiles_remain_available():
-    for name in (
-        "bactopia-base-3.2.0.json",
-        "ont-bactopia-3.2.0.json",
-    ):
-        assert (
-            REPO_ROOT / "assets" / "analysis-pipelines" / "bactopia" / name
-        ).exists()
+    profile_ids = {profile["pipelineId"] for profile in _load_profiles()}
+
+    assert {
+        "bactopia-bactopia-base-v3.2.0",
+        "bactopia-ont-v3.2.0",
+    } <= profile_ids
 
 
 def test_submit_handler_reads_deployment_batch_values(monkeypatch):
