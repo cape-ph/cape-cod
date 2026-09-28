@@ -48,3 +48,6 @@ target stack and evaluate the output before the user deploys:
   in flight; keep it uncommitted. Do not add it to this repo's `.gitignore` -
   the ignore rule belongs in the upstream shared repo that feeds this and other
   repos. Leave `PLAN.md` untracked here.
+- After edits, run every configured pre-commit hook against the changed files
+  with `pre-commit run --files ...`. Use the repository's Black and isort hooks
+  for Python; do not substitute Ruff as a formatter or normal validation tool.
