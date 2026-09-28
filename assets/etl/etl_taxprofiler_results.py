@@ -5,6 +5,7 @@ import csv
 import html
 import io
 import json
+import math
 import os
 import re
 from pathlib import PurePosixPath
@@ -26,6 +27,11 @@ TAXA_COLUMNS = [
     "taxid",
     "taxon_name",
     "depth",
+]
+MINIMIZER_COLUMNS = [
+    "source_row",
+    "minimizer_count",
+    "distinct_minimizer_count",
 ]
 SUMMARY_COLUMNS = [
     "total_reads",
@@ -94,9 +100,7 @@ def _classify(object_key):
         return "kraken_report", context
     if relative_key.endswith("multiqc/multiqc_data/multiqc_data.json"):
         return "multiqc_json", context
-    if relative_key.endswith(
-        "multiqc/multiqc_data/multiqc_general_stats.txt"
-    ):
+    if relative_key.endswith("multiqc/multiqc_data/multiqc_general_stats.txt"):
         return "multiqc_general_stats", context
     if relative_key.endswith("multiqc/multiqc_data/multiqc_kraken.txt"):
         return "multiqc_kraken", context
@@ -149,34 +153,63 @@ def _partition_prefix(context, table, extra=None):
 def _parse_kraken_report(source_bytes):
     rows = []
     malformed = []
+    report_width = None
     for source_row, line in enumerate(
         source_bytes.decode("utf-8").splitlines()
     ):
-        if not line.strip():
+        if not line.strip() and "\t" not in line:
             continue
         parts = line.split("\t")
-        if len(parts) != 6:
+        if len(parts) not in (6, 8) or (
+            report_width is not None and len(parts) != report_width
+        ):
             malformed.append(source_row)
             continue
+        if report_width is None:
+            report_width = len(parts)
+
+        rank_column = 3 if report_width == 6 else 5
         try:
             percent = float(parts[0])
             clade_reads = int(parts[1])
             direct_reads = int(parts[2])
-        except ValueError:
+            minimizers = (
+                [int(value) for value in parts[3:5]]
+                if report_width == 8
+                else []
+            )
+            minimizer_count = minimizers[0] if minimizers else None
+            distinct_minimizer_count = minimizers[1] if minimizers else None
+            taxid = parts[rank_column + 1].strip()
+            rank = parts[rank_column].strip()
+            raw_name = parts[rank_column + 2]
+            valid_numbers = (
+                math.isfinite(percent)
+                and percent >= 0
+                and clade_reads >= 0
+                and direct_reads >= 0
+                and all(value >= 0 for value in minimizers)
+            )
+            valid_fields = bool(rank and taxid.isdecimal() and raw_name.strip())
+        except (TypeError, ValueError):
+            valid_numbers = False
+            valid_fields = False
+
+        if not valid_numbers or not valid_fields:
             malformed.append(source_row)
             continue
 
-        rank = parts[3].strip()
-        raw_name = parts[5]
         rows.append(
             {
                 "source_row": source_row,
                 "percent": percent,
                 "clade_reads": clade_reads,
                 "direct_reads": direct_reads,
+                "minimizer_count": minimizer_count,
+                "distinct_minimizer_count": distinct_minimizer_count,
                 "rank": rank,
                 "rank_base": rank[:1],
-                "taxid": parts[4].strip(),
+                "taxid": taxid,
                 "taxon_name": raw_name.strip(),
                 "depth": (len(raw_name) - len(raw_name.lstrip(" "))) // 2,
             }
@@ -456,6 +489,16 @@ if kind == "kraken_report":
         f"{_partition_prefix(context, 'kraken2_summary')}/summary.csv",
         SUMMARY_COLUMNS,
         [_summary_row(taxa_rows)],
+    )
+    minimizer_rows = [
+        [row[column] for column in MINIMIZER_COLUMNS]
+        for row in taxa_rows
+        if row["minimizer_count"] is not None
+    ]
+    _write_csv(
+        f"{_partition_prefix(context, 'kraken2_minimizers')}/minimizers.csv",
+        MINIMIZER_COLUMNS,
+        minimizer_rows,
     )
 elif kind == "multiqc_general_stats":
     _write_csv(

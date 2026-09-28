@@ -103,8 +103,15 @@ def test_kraken_report_writes_rows_and_summary(monkeypatch, layout_prefix):
         "kraken2_summary/sample_id=btk-release-live-20260924151922/"
         "database_id=standard-8/summary.csv"
     )
+    minimizer_key = (
+        "kraken2_minimizers/sample_id=btk-release-live-20260924151922/"
+        "database_id=standard-8/minimizers.csv"
+    )
 
-    assert set(writes) == {taxa_key, summary_key}
+    assert set(writes) == {taxa_key, summary_key, minimizer_key}
+    assert writes[minimizer_key] == [
+        ["source_row", "minimizer_count", "distinct_minimizer_count"]
+    ]
     assert writes[taxa_key][0] == [
         "source_row",
         "percent",
@@ -136,6 +143,107 @@ def test_kraken_report_writes_rows_and_summary(monkeypatch, layout_prefix):
     ).hexdigest() == (
         "55b371480d082c4c4088b78f9c7d424b5b135965aae61a45a5b314879e46cbfd"
     )
+
+
+def test_kraken_report_accepts_taxprofiler_minimizer_columns(monkeypatch):
+    object_key = (
+        "taxprofiler-output/live-sample/kraken2/standard-8/"
+        "live-sample.kraken2.kraken2.report.txt"
+    )
+    source = (
+        b"10.0\t10\t10\t3\t2\tU\t0\tunclassified\n"
+        b"90.0\t90\t10\t4\t3\tR\t1\troot\n"
+        b"80.0\t80\t5\t5\t4\tS\t562\t  Escherichia coli\n"
+    )
+    _, fake_job = _load_etl(
+        monkeypatch,
+        "etl_taxprofiler_minimizer_report_test",
+        object_key,
+        source,
+    )
+
+    writes = _csv_writes(fake_job)
+    taxa_key = (
+        "kraken2_taxa/sample_id=live-sample/database_id=standard-8/taxa.csv"
+    )
+    summary_key = "kraken2_summary/sample_id=live-sample/database_id=standard-8/summary.csv"
+    minimizer_key = (
+        "kraken2_minimizers/sample_id=live-sample/"
+        "database_id=standard-8/minimizers.csv"
+    )
+
+    assert writes[taxa_key][1][4:8] == ["U", "U", "0", "unclassified"]
+    assert writes[taxa_key][3][4:8] == [
+        "S",
+        "S",
+        "562",
+        "Escherichia coli",
+    ]
+    assert writes[summary_key][1][0:2] == ["100", "90"]
+    assert writes[minimizer_key] == [
+        ["source_row", "minimizer_count", "distinct_minimizer_count"],
+        ["0", "3", "2"],
+        ["1", "4", "3"],
+        ["2", "5", "4"],
+    ]
+    assert len(writes[minimizer_key]) - 1 == len(writes[taxa_key]) - 1
+
+
+def test_six_and_eight_column_rows_normalize_identically(monkeypatch):
+    six_source = b"80.0\t80\t5\tS\t562\t  Escherichia coli\n"
+    eight_source = b"80.0\t80\t5\t0\t0\tS\t562\t  Escherichia coli\n"
+    object_key = (
+        "taxprofiler-output/live-sample/kraken2/standard-8/"
+        "live-sample.kraken2.kraken2.report.txt"
+    )
+    module, _ = _load_etl(
+        monkeypatch,
+        "etl_taxprofiler_report_shape_equivalence_test",
+        object_key,
+        six_source,
+    )
+
+    six_rows = module._parse_kraken_report(six_source)
+    eight_rows = module._parse_kraken_report(eight_source)
+    for six_row, eight_row in zip(six_rows, eight_rows):
+        assert {key: six_row[key] for key in module.TAXA_COLUMNS} == {
+            key: eight_row[key] for key in module.TAXA_COLUMNS
+        }
+    assert six_rows[0]["minimizer_count"] is None
+    assert six_rows[0]["distinct_minimizer_count"] is None
+    assert eight_rows[0]["minimizer_count"] == 0
+    assert eight_rows[0]["distinct_minimizer_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        b"\t\t\t\t\t\n",
+        b"10.0\t10\t10\t0\t0\tU\t0\n",
+        b"10.0\t10\t10\tU\t0\tunclassified\n"
+        b"10.0\t10\t10\t0\t0\tU\t0\tunclassified\n",
+        b"10.0\t10\t10\t0\tbad\tU\t0\tunclassified\n",
+        b"10.0\t10\t10\t\t0\tunclassified\n",
+        b"10.0\t10\t10\tU\tbad\tunclassified\n",
+        b"10.0\t10\t10\tU\t0\t\n",
+        b"nan\t10\t10\tU\t0\tunclassified\n",
+        b"10.0\t-10\t10\tU\t0\tunclassified\n",
+        b"10.0\t10\t10\t0.5\t0\tU\t0\tunclassified\n",
+        b"10.0\t10\t10\t-1\t0\tU\t0\tunclassified\n",
+    ],
+)
+def test_kraken_report_rejects_malformed_rows(monkeypatch, source):
+    object_key = (
+        "taxprofiler-output/live-sample/kraken2/standard-8/"
+        "live-sample.kraken2.kraken2.report.txt"
+    )
+    with pytest.raises(ValueError, match="Malformed Kraken2 report"):
+        _load_etl(
+            monkeypatch,
+            "etl_taxprofiler_malformed_shape_test",
+            object_key,
+            source,
+        )
 
 
 @pytest.mark.parametrize("layout_prefix", ["output/", ""])
