@@ -1,0 +1,6 @@
+KRAKEN2_KRAKEN2:
+  kraken2: 2.1.5
+  pigz: 2.8
+Workflow:
+  nf-core/taxprofiler: v2.0.1-g70ecc15
+  Nextflow: 26.04.6

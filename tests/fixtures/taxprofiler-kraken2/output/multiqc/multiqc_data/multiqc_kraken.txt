@@ -1,0 +1,2 @@
+Sample	U	R	S
+btk-release-live-20260924151922	{'unclassified': 143283}	{'root': 248629}	{'Bacillus thuringiensis': 46804, 'other': 1}

@@ -49,7 +49,7 @@
             }
         },
         "unevaluatedProperties": false,
-        "required": ["--input", "--databases", "--outdir"]
+        "required": ["--outdir"]
     },
     "uiSchema": {
         "type": "VerticalLayout",

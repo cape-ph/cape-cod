@@ -22,3 +22,4 @@ data_lakehouse = DatalakeHouse(
     f"{stack_ns}-dlh",
     desc_name=f"{CAPE_STACK_NS} private swimlane",
 )
+meta.canned_reports.configure_data_access(data_lakehouse)

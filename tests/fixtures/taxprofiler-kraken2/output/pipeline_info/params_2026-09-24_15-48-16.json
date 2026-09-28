@@ -1,0 +1,7 @@
+{
+  "input": "s3://example/input.csv",
+  "databases": "s3://example/standard-8.csv",
+  "outdir": "s3://example/taxprofiler-output/btk-release-live-20260924151922/output",
+  "run_kraken2": true,
+  "kraken2_save_minimizers": false
+}

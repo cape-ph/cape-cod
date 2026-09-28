@@ -1,0 +1,20 @@
+{
+  "report_general_stats_data": {
+    "kraken": {
+      "btk-release-live-20260924151922": {
+        "pct_top_one": 11.942476882565474,
+        "pct_top_n": 16.236042785115025,
+        "pct_unclassified": 36.55999305966645
+      }
+    }
+  },
+  "report_saved_raw_data": {
+    "multiqc_kraken": {
+      "btk-release-live-20260924151922": {
+        "S": {
+          "Bacillus thuringiensis": 46804
+        }
+      }
+    }
+  }
+}

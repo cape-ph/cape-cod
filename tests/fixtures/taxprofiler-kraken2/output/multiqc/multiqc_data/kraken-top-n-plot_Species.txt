@@ -1,0 +1,2 @@
+Sample	Bacillus thuringiensis	Other	Unclassified
+btk-release-live-20260924151922	46804.0	1.0	143283.0
