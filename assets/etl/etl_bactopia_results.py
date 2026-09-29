@@ -8,7 +8,6 @@ import re
 import shlex
 from datetime import datetime
 
-import yaml
 from capepy.aws.glue import EtlJob
 
 etl_job = EtlJob()
@@ -17,14 +16,10 @@ etl_job = EtlJob()
 BACTRUN_PARTITION = "bactopia_run"
 # the files of interest (needed to handle each differently)
 MLST_OBJ = "mlst.tsv"
-# the versions of the bactopia toolchain seem to have different names of this
-# file in the output. this could be a bactopia or amrfinder plus reason, but the
-# amrfinderplus file from bactopia version 3.0.1 (and maybe before???) has
-# `-proteins` and later versions (at least 3.1.0+) don't.
-AMRFINDERPLUS_LEGACY_OBJ = "amrfinderplus-proteins.tsv"
+# Bactopia v4 uses the current AMRFinderPlus and workflow-report contracts.
+# This ETL is intentionally v4-only; legacy v3 output is not processed into
+# the v4 result schema.
 AMRFINDERPLUS_OBJ = "amrfinderplus.tsv"
-# file which contains the command used to execute bactopia
-SOFTWARE_VERSION_OBJ = "software_versions.yml"
 # Bactopia writes this report after the workflow completes successfully.
 WORKFLOW_REPORT_OBJ = "bactopia-report.html"
 BACTOPIA_OUTPUT_PREFIX = "pipeline-output/bactopia-runs"
@@ -36,12 +31,8 @@ BACTOPIA_OUTPUT_PREFIX = "pipeline-output/bactopia-runs"
 # these names are looked for explicitly if the object is in the bactopia output
 # hierarchy
 BACTRUN_FILES = [
-    # Keep the legacy AMRFinderPlus filename separate from the current
-    # output-contract filename.
-    {"prefix": "merged-results/", "key": AMRFINDERPLUS_LEGACY_OBJ},
     {"prefix": "merged-results/", "key": AMRFINDERPLUS_OBJ},
     {"prefix": "merged-results/", "key": MLST_OBJ},
-    {"prefix": "software-versions/", "key": SOFTWARE_VERSION_OBJ},
 ]
 
 
@@ -241,9 +232,12 @@ class BactopiaOutputContractV1Adapter:
         if not output_root.startswith("s3://"):
             raise ValueError("Bactopia --outdir must be an S3 URI")
 
+        run_output_root = output_root.rstrip("/")
+        expected_run_suffix = f"/bactopia-runs/{bactopia_run}"
+        if not run_output_root.endswith(expected_run_suffix):
+            run_output_root = f"{run_output_root}{expected_run_suffix}"
         qc_path = (
-            f"{output_root.rstrip('/')}/{sample_id}/main/qc/"
-            f"{sample_id}_ONT.fastq.gz"
+            f"{run_output_root}/{sample_id}/main/qc/{sample_id}_ONT.fastq.gz"
         )
         return [
             self.WORKFLOW_REPORT_OUTPUT_HEADER,
@@ -343,46 +337,6 @@ with io.StringIO() as sio_buff:
         writer.writerows(
             OUTPUT_ADAPTER.parse_amrfinderplus(etl_job.get_src_file())
         )
-
-    elif objfull == AMRFINDERPLUS_LEGACY_OBJ:
-        print(
-            f"Processing legacy AMRFinderPlus file (raw key: {alert_obj_key})"
-        )
-        reader = csv.reader(
-            io.StringIO(etl_job.get_src_file().decode("utf-8")), delimiter="\t"
-        )
-        for idx, row in enumerate(reader):
-            if idx == 0:
-                row = [re.sub(r"[\s-]", "_", c).lower() for c in row]
-            writer.writerow(row)
-
-    elif objfull == SOFTWARE_VERSION_OBJ:
-        print(f"Processing software versions file (raw key: {alert_obj_key})")
-        writer.writerow(
-            [
-                "id",
-                "bactopia_version",
-                "run_date",
-                "input_file",
-                "parameter_name",
-            ]
-        )
-        software_version = yaml.safe_load(etl_job.get_src_file())
-        bactopia_version = software_version.get("Workflow", {}).get(
-            "bactopia", None
-        )
-        command = software_version.get("Workflow", {}).get("command", None)
-        run_date = software_version.get("Workflow", {}).get("date", None)
-        if command:
-            parts = shlex.split(command)
-            id = 1
-            for i, part in enumerate(parts):
-                parameter_name = parts[i - 1] if i > 0 else None
-                if part.startswith("s3://") and parameter_name != "-work-dir":
-                    writer.writerow(
-                        [id, bactopia_version, run_date, part, parameter_name]
-                    )
-                    id += 1
 
     elif objfull == WORKFLOW_REPORT_OBJ:
         print(f"Processing Bactopia workflow report (raw key: {alert_obj_key})")

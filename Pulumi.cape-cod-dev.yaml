@@ -374,6 +374,11 @@ config:
                               Function"
                           memory_size: 512
                           timeout: 45
+                  data_access:
+                      buckets:
+                          - tributary: seqauto
+                            bucket: input-clean
+                      athena_results: true
                 - id: taxprofiler-kraken2
                   short_name: tpkraken
                   display_name: "Taxprofiler Kraken2"
@@ -1869,6 +1874,8 @@ config:
                             pymodules:
                                 - pyfastx==2.1.0
                             max_concurrent_runs: 5
+                          # Bactopia result ETL is v4-only. Legacy v3
+                          # software_versions.yml is not processed here.
                           - name: bactopia-results
                             script: glue/etl/etl_bactopia_results.py
                             src: result-raw
@@ -1876,9 +1883,7 @@ config:
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
-                                - yml
-                            pymodules:
-                                - pyyaml==6.0.2
+                                - html
             - name: seqauto
               buckets:
                   input-raw:
@@ -1915,6 +1920,8 @@ config:
                                 - gz
                                 - tar
                             max_concurrent_runs: 5
+                          # Bactopia result ETL is v4-only. Legacy v3
+                          # software_versions.yml is not processed here.
                           - name: bactopia-results
                             script: glue/etl/etl_bactopia_results.py
                             src: result-raw
@@ -1922,10 +1929,7 @@ config:
                             prefix: pipeline-output/bactopia-runs
                             suffixes:
                                 - tsv
-                                - yml
                                 - html
-                            pymodules:
-                                - pyyaml==6.0.2
                           - name: bactopia-samples
                             script: glue/etl/etl_bactopia_samples.py
                             src: result-raw

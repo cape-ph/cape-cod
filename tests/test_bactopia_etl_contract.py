@@ -115,6 +115,41 @@ def test_v4_workflow_report_etl_writes_software_versions_table(monkeypatch):
     ]
 
 
+def test_v4_etl_excludes_legacy_v3_inputs(monkeypatch):
+    module, _ = _load_etl(
+        monkeypatch,
+        "etl_bactopia_results_v4_only_test",
+        "assets/etl/etl_bactopia_results.py",
+        "pipeline-output/bactopia-runs/run-1/merged-results/mlst.tsv",
+        _read_fixture("merged-results/mlst.tsv"),
+    )
+
+    assert {item["key"] for item in module.BACTRUN_FILES}.isdisjoint(
+        {"software_versions.yml", "amrfinderplus-proteins.tsv"}
+    )
+
+
+def test_v4_workflow_report_adapter_anchors_qc_path_to_run_root(monkeypatch):
+    module, _ = _load_etl(
+        monkeypatch,
+        "etl_bactopia_results_workflow_report_root_test",
+        "assets/etl/etl_bactopia_results.py",
+        "pipeline-output/bactopia-runs/run-1/merged-results/mlst.tsv",
+        _read_fixture("merged-results/mlst.tsv"),
+    )
+    source = _read_fixture("bactopia-report.html").replace(
+        b"--outdir 's3://example-result-clean/pipeline-output/bactopia-runs/run-1/'",
+        b"--outdir 's3://example-result-clean/pipeline-output'",
+    )
+
+    rows = module.OUTPUT_ADAPTER.parse_workflow_report(source, "run-1")
+
+    assert rows[1][8] == (
+        "s3://example-result-clean/pipeline-output/bactopia-runs/"
+        "run-1/sample/main/qc/sample_ONT.fastq.gz"
+    )
+
+
 def test_v4_workflow_report_adapter_rejects_missing_command(monkeypatch):
     module, _ = _load_etl(
         monkeypatch,
